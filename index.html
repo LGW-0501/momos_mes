@@ -1719,7 +1719,8 @@
             <button class="btn" onclick="csvBeans()">엑셀 다운로드</button></span></div>
         <div class="hint">포장 전 원두(반제품)입니다. <b class="bad">컬러 · 품목보고번호 · 원산지</b>는 한글표시사항(식품표시광고법)에 들어가는 값이라
           <b>반드시 채워야 합니다</b> — 비어 있으면 생산·검수 화면에 빨갛게 뜨고, 그 줄이 표에서도 붉게 표시됩니다.
-          제조일자는 쓴 원두의 로스팅일에서 자동으로 따옵니다.<br>
+          제조일자는 쓴 원두의 로스팅일에서 자동으로 따옵니다.
+          <b>로스터기 칸</b>(S35·S70·P60)은 그 원두를 <b>어느 로스터기에서 로스팅할 수 있는지</b>와 <b>1배치 투입 kg</b>입니다 — 체크를 끄면 그 로스터기에서 불가, kg을 비우면 로스터기 기본값을 씁니다 (로스팅 요청서의 기준표와 같은 값).<br>
           <b>칸이 좁아 안 보이면</b> 머리글 오른쪽 끝을 잡고 <b>끌어서 넓히세요</b> — 브라우저가 기억합니다 (두 번 누르면 그 칸만 원래대로).
           <b>종료</b>를 누르면 마지막 로스팅일을 적고 <b>종료</b> 쪽으로 옮겨집니다 — 생산계획·원두 선택 목록에서 빠지고, 지난 기록은 그대로 남습니다.</div>
         <div class="selbar" id="selBar-beans"></div>
@@ -2674,7 +2675,7 @@ const SORT_COLS = {
   tMach:  { 1:m=>m.name, 2:m=>Number(m.workers)||0, 3:m=>Number(m.hours)||0 },
   tWork:  { 1:w=>w.name, 2:w=>w.role, 3:w=>w.perm },
   /* 작업지시 · 라벨작업 · 실적 · 출고 · 재고확인 · 로스팅 · 집계 · 변경이력 */
-  woTbl:  { 1:o=>Number(o.priority)||0, 2:o=>o.order_no, 3:o=>o.product_name||prodById(o.product_id)?.name||"", 4:o=>o.channel,
+  woTbl:  { 1:o=>Number(o.priority)||0, 2:o=>o.serial||"", 3:o=>o.product_name||prodById(o.product_id)?.name||"", 4:o=>o.channel,
             5:o=>o.machine||"", 6:o=>Number(o.qty_plan)||0, 7:o=>Number(o.qty_done)||0, 8:o=>Number(o.qty_ng)||0,
             9:o=>pctOf(o), 10:o=>stIdx(o) },
   mtTbl:  { 1:t=>["대기","작업중","작업완료"].indexOf(t.status), 2:t=>t.product_name, 3:t=>Number(t.spec_g)||0, 4:t=>Number(t.plan_ea)||0,
@@ -4064,7 +4065,7 @@ async function mesLogAudit(action, target, detail){
 }
 
 /* ── 작업지시 — 칸 수정 · 라벨 · 순서 · 검수 체크 ───────────── */
-const ORD_EDITABLE = ["qty_plan","channel","machine","machine_id","priority","note",
+const ORD_EDITABLE = ["serial","serial_full","qty_plan","channel","machine","machine_id","priority","note",
                       "lot","pack_type","batch_plan"];
 /* ── 작업지시 수기추가 ────────────────────────────────────────
    번호는 서버가 붙입니다 — 두 사람이 동시에 눌러도 겹치지 않게. */
@@ -11014,7 +11015,16 @@ function renderBase(){
       .map(([v,t])=>`<button class="btn ${beanView===v?"primary":""}" onclick="setBeanView('${v}')">${t}</button>`).join(" ");
   const bshow = sorted("tBeans", beanView==="off" ? offB : beanView==="all" ? DB.beans : liveB);
   SHOWN.beans = bshow.map(b=>b.id);
+  const rAct = DB.roasters.filter(r=>r.active!==false);
+  /* 로스터기 칸이 끼어들어 정렬 칸 번호가 밀린다 — 그때그때 다시 잡는다 */
+  { const n = rAct.length, base = { 1:b=>beanOff(b)?1:0, 2:b=>b.mms_code, 3:b=>b.machine, 4:b=>b.name };
+    const tail = { 5:b=>b.color, 6:b=>b.report_no, 7:b=>b.compose, 8:b=>b.note, 9:b=>b.launch, 10:b=>b.end_date,
+      11:b=>DB.mms.filter(m=>m.bean===b.name && Number(m.stock_kg)>0).reduce((t,m)=>t+Number(m.stock_kg||0),0) };
+    Object.keys(tail).forEach(k=>{ base[Number(k)+n] = tail[k]; });
+    SORT_COLS.tBeans = base; }
+  COL_DEFAULT.tBeans = [66,74,122,190,300, ...rAct.map(()=>118), 92,160,330,128,116,116,108,70,96,84,70];
   tbl("tBeans", [selAllBox("beans"),"상태","MMS 코드","머신 종류","원두명",
+      ...rAct.map(r=>`<span class="fix">${r.name}</span><br><span class="hint" style="padding:0;font-weight:600;font-size:10.5px">가능 · 1배치 kg</span>`),
       '<span class="fix">컬러</span>','<span class="fix">품목보고번호</span>','<span class="fix">원산지</span>',
       "적요","출시일","종료일","MMS 재고(kg)","배치 수","연결 완제품","처리",""],
     bshow.map((b,i)=>{
@@ -11027,6 +11037,13 @@ function renderBase(){
         <td class="l wrap">${inp("beans",b.id,"mms_code",b.mms_code)}</td>
         <td class="l wrap">${inp("beans",b.id,"machine",b.machine)}</td>
         <td class="l wrap">${inp("beans",b.id,"name",b.name)}</td>
+        ${rAct.map(r=>{ const al = brAllowed(b.name, r.id), v = brRow(b.name, r.id)?.batch_kg || "";
+          return `<td class="c fix" style="white-space:nowrap"><div class="brc${al?"":" off"}">
+            <input type="checkbox" ${al?"checked":""} title="${r.name}에서 로스팅 가능" style="width:auto;height:auto"
+              onchange="setBeanAllow('${b.name}','${r.id}',this.checked);renderBase()">
+            <input type="number" class="num" step="0.5" style="width:62px" value="${v}" ${al?"":"disabled"}
+              placeholder="${al?fmt(r.cap_kg):"불가"}" title="이 로스터기에서 1배치 투입 kg (비우면 로스터기 기본값 ${fmt(r.cap_kg)}kg)"
+              onchange="setBeanRoaster('${b.name}','${r.id}',this.value);renderBase()"></div></td>`; }).join("")}
         <td class="l fix wrap">${inp("beans",b.id,"color",b.color)}</td>
         <td class="l fix wrap">${inp("beans",b.id,"report_no",b.report_no)}</td>
         <td class="l fix wrap" style="min-width:330px">${inp("beans",b.id,"compose",b.compose)}</td>
@@ -11038,7 +11055,7 @@ function renderBase(){
         <td class="c"><button class="btn ${off?"primary":""}" onclick="toggleBeanOff('${b.id}')"
           title="${off?"종료일을 지우고 다시 씁니다":"마지막 로스팅일을 적고 목록에서 뺍니다 — 기록은 그대로"}">${off?"다시 사용":"종료"}</button></td>
         <td class="c"><button class="btn danger" onclick="delRow('beans','${b.id}')">삭제</button></td></tr>`; }),
-    `<td colspan="11" class="c">${beanView==="off"?"종료":beanView==="all"?"전체":"사용중"} · ${bshow.length}종</td>
+    `<td colspan="${11+rAct.length}" class="c">${beanView==="off"?"종료":beanView==="all"?"전체":"사용중"} · ${bshow.length}종</td>
      <td>${fmt(bshow.reduce((t,b)=>t+DB.mms.filter(m=>m.bean===b.name).reduce((s,m)=>s+Number(m.stock_kg||0),0),0))}</td>
      <td colspan="4"></td>`);
 
@@ -12678,7 +12695,7 @@ async function splitOrder(id){
   if (cut.length < 2) return toast(`${o.order_no} — 수량이 적어서 나눠지지 않습니다`);
 
   if (!(await ask(
-    `${o.product_name || prodById(o.product_id)?.name} · ${o.order_no}\n` +
+    `${o.product_name || prodById(o.product_id)?.name}${o.serial?` · ${o.serial}`:""}\n` +
     `지시 ${fmt(n)}EA 를 배치 ${cut.length}건으로 나눕니다.\n\n` +
     cut.map(x=>`· ${x.text} → ${fmt(x.ea)}EA · 일련번호 ${x.short}`).join("\n") +
     `\n\n현장 카드도 ${cut.length}장으로 갈라집니다.`,
@@ -12703,7 +12720,7 @@ async function splitAllOrders(){
   const mixed = ordsOf(d).filter(o=>isMixedOrder(o) && stIdx(o) < 1);
   if (!mixed.length) return toast("배치가 섞인 대기 지시가 없습니다");
   if (!(await ask(`${d} 지시 중 배치가 섞인 ${mixed.length}건을 배치별로 나눕니다.\n\n` +
-    mixed.slice(0,5).map(o=>`· ${o.order_no} ${o.product_name||prodById(o.product_id)?.name} — 배치 ${batchParts(o.batch_plan).length}개`).join("\n") +
+    mixed.slice(0,5).map(o=>`· ${o.product_name||prodById(o.product_id)?.name} — 배치 ${batchParts(o.batch_plan).length}개`).join("\n") +
     (mixed.length>5?`\n… 외 ${mixed.length-5}건`:""),
     {title:"배치별로 한 번에 나누기", yes:`${mixed.length}건 나누기`}))) return;
   const a0 = window.ask; window.ask = async()=>true;
@@ -12830,7 +12847,7 @@ async function commitOrd(id,k){
 async function delOrder(id){
   const o = ordById(id); if(!o) return;
   if (stIdx(o) >= 2) return toast("생산이 끝난 지시는 지울 수 없습니다 — 생산실적에서 취소하세요");
-  if (!(await ask(`${o.order_no} 작업지시를 지울까요?`, {title:"삭제", yes:"삭제"}))) return;
+  if (!(await ask(`${o.product_name||prodById(o.product_id)?.name||""} ${fmt(o.qty_plan||0)}개 작업지시를 지울까요?`, {title:"삭제", yes:"삭제"}))) return;
   const r = await mesDeleteOrder({ order_id:id, idem:`od-${id}-${uid()}` });
   if (!r || !r.ok) { renderAll(); return toast(r?.message || "지우지 못했습니다"); }
   renderAll(); toast("삭제했습니다");
@@ -13146,6 +13163,17 @@ async function finishWork(id){
   if (o.log_id && DB.logs.some(l=>l.id===o.log_id))
     return toast(`이미 생산실적이 등록된 지시입니다 (일련번호 ${o.serial||"-"}) — 수정은 생산실적 화면에서 하세요`);
   const p = prodById(o.product_id); if(!p) return toast("품목을 찾을 수 없습니다");
+  /* ★ 일련번호 확인 — 자동으로 매긴 번호를 보여 주고, 봉지와 다르면 여기서 고친다 */
+  const sn0 = o.serial || makeSerial(o.work_date);
+  const sn = await askText(`${p.name}\n\n일련번호가 맞는지 확인하세요. 봉지에 적힌 번호와 다르면 고치세요.`, sn0, "일련번호 확인");
+  if (sn === null) return;
+  const serial = String(sn).trim();
+  if (!serial) return toast("일련번호를 비울 수 없습니다");
+  if (serial !== (o.serial||"")) {
+    const er = await mesEditOrder({ order_id:o.id, patch:{ serial }, idem:`sn-${o.id}-${uid()}` });
+    if (!er || !er.ok) return toast(er?.message || "일련번호를 고치지 못했습니다");
+    o.serial = serial;
+  }
   const plan = Math.round(Number(o.qty_plan)||0);
   const g = await askNum("정상품 수량",
     `${p.name} · 지시 ${fmt(plan)}개`,
@@ -13277,7 +13305,7 @@ async function ngWork(id){
   if (!(await requireUser())) return;
   const o = ordById(id); if(!o) return;
   const n = await askNum("부적합 수량",
-    `${o.product_name || prodById(o.product_id)?.name || ""} · ${o.order_no}`, 1,
+    `${o.product_name || prodById(o.product_id)?.name || ""}${o.serial?` · ${o.serial}`:""}`, 1,
     { unit:"개", quick:[ {t:"1", set:1}, {t:"+1", add:1}, {t:"+5", add:5}, {t:"+10", add:10} ] });
   if (n===null) return;
   const qty = Math.max(0, Number(n)||0); if (!qty) return;
@@ -13373,7 +13401,7 @@ async function showQcHistory(id){
   const txt = rows.map(r =>
     `${String(r.at||"").slice(5,16).replace("T"," ")}  ${r.kind}  ${r.what}` +
     (r.note ? `\n    ${r.note}` : "") + (r.who ? `  (${r.who})` : "")).join("\n");
-  await ask(txt, { title:`${o.order_no} 검수 이력`, yes:"닫기" });
+  await ask(txt, { title:`${o.product_name||""} 검수 이력`, yes:"닫기" });
 }
 async function qcReject(id){
   if (!(await requireUser())) return;
@@ -13398,7 +13426,7 @@ async function shipDone(id){
 }
 async function shipBack(id){
   const o = ordById(id); if(!o) return;
-  if (!(await ask(`${o.order_no} 출고를 취소하고 재고를 되돌립니다.\n` +
+  if (!(await ask(`${o.product_name||prodById(o.product_id)?.name||""} ${fmt(o.qty_done||0)}개 출고를 취소하고 재고를 되돌립니다.\n` +
     `출고 기록은 지우지 않고 취소 표시만 남습니다.`, {title:"출고 취소", yes:"취소"}))) return;
   const why = await askText("취소 사유 (비워도 됩니다)", "", "출고 취소");
   if (why === null) return;
@@ -13427,12 +13455,12 @@ function renderOrder(){
   list.sort((a,b)=>String(a.machine||"~").localeCompare(String(b.machine||"~")) || byPriority(a,b));
   if (sortState("woTbl")) list.splice(0, list.length, ...sorted("woTbl", list));
   SHOWN.orders = list.map(o=>o.id);
-  tbl("woTbl", [selAllBox("orders"),"순서","지시번호","품목","출고처","설비","계획","생산","부적합","진행","상태","담당",""],
+  tbl("woTbl", [selAllBox("orders"),"순서","일련번호","품목","출고처","설비","계획","생산","부적합","진행","상태","담당",""],
     list.map((o,oi)=>{
       const p = prodById(o.product_id);
       const lock = stIdx(o) >= 2;
       return `<tr class="${SEL.orders.has(o.id)?"selrow":""}">${selTd("orders",o.id,oi)}<td>${lock?o.priority:`<input type="number" class="num" style="width:52px" value="${o.priority||0}" onchange="setOrd('${o.id}','priority',this.value)">`}</td>
-        <td class="l"><b>${o.order_no}</b>${o.serial?`<br><span class="hint" style="padding:0;font-size:11px">${o.serial}</span>`:""}${
+        <td class="l"><b>${o.serial||"—"}</b>${
           o.batch_of>1?`<br><span class="tag" style="font-size:10px">배치 ${o.batch_seq}/${o.batch_of}</span>`:""}${
           isMixedOrder(o)?`<br><span class="tag bad" style="font-size:10px">배치 ${batchParts(o.batch_plan).length}개 섞임</span>`:""}</td>
         <td class="l" style="white-space:nowrap">${specChip(specOf(o))}${lock ? (p?.name||"—") : `<select style="width:auto;max-width:calc(100% - 56px)" onchange="setOrd('${o.id}','product_id',this.value)">${
@@ -13609,7 +13637,7 @@ function renderWork(){
           can("plan") ? `<span class="prib">
             <button onclick="moveOrd('${o.id}',-1)" title="먼저 하기">▲</button>
             <button onclick="moveOrd('${o.id}',1)" title="나중에 하기">▼</button></span>` : ""}</div>
-        <div class="sub">${o.order_no} · ${o.channel}${
+        <div class="sub">${o.channel}${o.serial?` · 일련번호 ${o.serial}`:""}${
           o.batch_of>1?` · 배치 ${o.batch_seq}/${o.batch_of}`:""}</div>
       </div>
       ${(()=>{ const q = qcState(o); if (!q.rejected) return "";
@@ -13703,7 +13731,7 @@ function renderQc(){
     const l = DB.logs.find(x=>x.id===o.log_id);
     return `<div class="qcc">
       <div class="hd"><div class="nm">${p?.name||""}</div>
-        <div class="sub">${o.channel} · ${o.order_no} · 생산 ${o.done_by||"—"} · ${fmt(o.qty_done)}개</div></div>
+        <div class="sub">${o.channel}${o.serial?` · 일련번호 ${o.serial}`:""} · 생산 ${o.done_by||"—"} · ${fmt(o.qty_done)}개</div></div>
       ${kInfoHTML(p?.bean, o, { mfg: mfgDateOf(o) || serialOfText(l?.batch_codes).full.slice(0,10) })}
       <div class="info">
         <div><span>일련번호</span><b>${o.serial||"—"}</b></div>
@@ -13859,9 +13887,9 @@ function renderTrace(){
 function renderDashWO(){
   if (!$("dashWO")) return;
   const list = ordsOf(today());
-  tbl("dashWO", ["지시번호","품목","출고처","설비","계획","생산","진행","상태","담당"],
+  tbl("dashWO", ["일련번호","품목","출고처","설비","계획","생산","진행","상태","담당"],
     list.map(o=>{ const p = prodById(o.product_id);
-      return `<tr><td class="l">${o.order_no}</td><td class="l"><b>${p?.name||""}</b></td>
+      return `<tr><td class="l">${o.serial||"—"}</td><td class="l"><b>${p?.name||""}</b></td>
         <td class="c"><span class="tag">${o.channel}</span></td><td class="c">${o.machine||"—"}</td>
         <td>${fmt(o.qty_plan)}</td><td><b>${o.qty_done?fmt(o.qty_done):"—"}</b></td>
         <td style="min-width:120px">${barHTML(pctOf(o), pctOf(o)>=100?"ok":"")}
