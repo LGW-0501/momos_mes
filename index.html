@@ -786,6 +786,128 @@
     .subtab{white-space:nowrap; height:36px;}
     .barrow .nm{width:96px; font-size:11.5px;}
   }
+
+  /* ══ 태블릿 · 모바일 보기 (위 휴대폰 규칙과 같음 — 화면 너비와 상관없이 켤 수 있다) ══ */
+
+    /* 내부 스크롤 대신 문서 전체 스크롤 — 모바일 브라우저 주소창 변화에 안전 */
+    body.mobile{font-size:14px; height:auto; display:block;}
+    body.mobile .shell{display:block; overflow:visible; min-height:0;}
+    body.mobile .main{display:block; overflow:visible;}
+    body.mobile .screen{display:none; overflow:visible;}
+    body.mobile .screen.on{display:block;}
+    body.mobile .body{overflow:visible;}
+    body.mobile .topbar{position:sticky; top:0; z-index:46;}
+    body.mobile .cond{position:static;}
+    body.mobile thead th{position:static;}
+    body.mobile .hamb{display:flex; align-items:center; justify-content:center; width:38px; height:38px;
+      background:rgba(255,255,255,.1); border:none; border-radius:9px; color:#fff; font-size:17px; cursor:pointer;}
+    body.mobile .topbar{height:56px; padding:0 12px; gap:10px;}
+    body.mobile .topbar .wordmark{height:27px;}
+    body.mobile .topbar .divider{display:none;}
+    body.mobile .topbar .sysname{display:none;}
+    body.mobile .topbar .right{gap:8px;}
+    body.mobile .topbar .right .st{display:none;}
+    body.mobile #loginIdentity{display:none;}
+    body.mobile .topbar .right select{max-width:108px; height:34px;}
+    /* 역할 선택이 들어오면서 상단이 좁아짐 — 로고는 햄버거로 대신한다 */
+    body.mobile .topbar .wordmark{display:none;}
+    body.mobile .topbar .brand{flex:none;}
+    body.mobile .topbar .right{flex:1; justify-content:flex-end; min-width:0;}
+    body.mobile .topbar .right select{max-width:none; flex:1 1 0; min-width:76px; font-size:12.5px; padding:0 6px;}
+    body.mobile .topbar .right .btn{flex:none; padding:0 10px;}
+    body.mobile .topbar .right .btn{padding:0 10px;}
+    body.mobile .topbar .avatar{width:32px; height:32px; font-size:12px;}
+    /* 사이드바 → 서랍 */
+    body.mobile .gnb{position:fixed; top:56px; height:calc(100vh - 56px); height:calc(100dvh - 56px); left:0; width:196px; z-index:45;
+      transform:translateX(-100%); transition:transform .22s ease; box-shadow:4px 0 24px rgba(11,20,68,.18);
+      padding:10px 0;}
+    body.mobile.navopen .gnb{transform:translateX(0);}
+    body.mobile .gnb .menu button{flex-direction:row; justify-content:flex-start; gap:12px; padding:13px 18px;}
+    body.mobile .gnb .menu button .ico{font-size:17px; width:22px;}
+    body.mobile .gnb .menu button .lb{font-size:14px;}
+    body.mobile .navScrim{display:block; position:fixed; top:56px; left:0; right:0; bottom:0; background:rgba(11,20,68,.4); z-index:44;
+      opacity:0; pointer-events:none; transition:opacity .22s;}
+    body.mobile.navopen .navScrim{opacity:1; pointer-events:auto;}
+    body.mobile .body{padding:14px 12px 72px;}
+    body.mobile .body > h2.page{font-size:18px; margin-bottom:14px; flex-wrap:wrap; gap:4px;}
+    body.mobile .body > h2.page small{margin-left:0; width:100%;}
+    /* 조회 조건 — 세로로 쌓고 터치 크기 확보 */
+    /* 레이블–입력 2열 격자 — 레이블이 뒤로 밀리지 않게 */
+    body.mobile .cond{display:grid; grid-template-columns:74px minmax(0,1fr); gap:8px 10px;
+      padding:12px; align-items:center;}
+    body.mobile .cond label{margin-left:0; font-size:12px; text-align:right; grid-column:1;
+      overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+    body.mobile .cond select, body.mobile .cond input[type=text], body.mobile .cond input[type=date], body.mobile .cond input[type=number]{
+      height:42px; width:100%; min-width:0; font-size:15px; grid-column:2;}
+    body.mobile .cond .btn{height:42px; grid-column:1 / -1; font-size:14px;}
+    body.mobile .cond > span{grid-column:1 / -1;}
+    body.mobile .cond > span[style*="margin-left:auto"]{display:none;}
+    body.mobile .cond > span.hint{padding:0; font-size:11.5px;}
+    body.mobile .cond > div{grid-column:1 / -1;}
+    body.mobile .kpis{grid-template-columns:1fr; gap:10px; margin-bottom:14px;}
+    body.mobile .kpi .top{padding:11px 14px 12px; display:flex; align-items:baseline; gap:10px;}
+    body.mobile .kpi .top .k{margin-bottom:0; font-size:13px; flex:1;}
+    body.mobile .kpi .top .v{font-size:27px; letter-spacing:-1.1px;}
+    body.mobile .kpi .top .v small{font-size:12px;}
+    body.mobile .kpi .sub div{padding:7px 9px;}
+    body.mobile .kpi .sub .k{font-size:9.5px;}
+    body.mobile .kpi .sub .v{font-size:13px; margin-top:1px;}
+    body.mobile #userWarn{padding:9px 14px; font-size:12px; line-height:1.45;}
+    body.mobile .cards{grid-template-columns:1fr; gap:12px;}
+    body.mobile .statbox{grid-template-columns:1fr; padding:14px 14px 2px;}
+    body.mobile .panel{border-radius:9px; margin-bottom:14px;}
+    body.mobile .panel-h{padding:13px 14px; font-size:14.5px;}
+    body.mobile .panel-h .r{width:100%; margin-left:0; margin-top:8px;}
+    body.mobile .panel-h .r .btn{flex:1 1 auto; height:38px;}
+    body.mobile .panel-h .r input[type=text], body.mobile .panel-h .r input[type=date]{height:38px; flex:1 1 120px;}
+    body.mobile .hint{padding:10px 14px; font-size:12px;}
+    /* 표 — 가로 스크롤 + 첫 열 고정 */
+    body.mobile .panel-b{-webkit-overflow-scrolling:touch;}
+    body.mobile th, body.mobile td{height:46px; padding:0 11px;}
+    body.mobile tbody td{font-size:13px;}
+    body.mobile thead th:first-child, body.mobile tbody td:first-child, body.mobile tfoot td:first-child{
+      position:sticky; left:0; z-index:3; background:#fff;
+      box-shadow:6px 0 8px -6px rgba(26,31,51,.14);}
+    body.mobile thead th:first-child{background:#F7F8FB; z-index:5;}
+    body.mobile tfoot td:first-child{background:#F7F8FB;}
+    body.mobile tbody tr:hover td:first-child{background:#F8FAFD;}
+    body.mobile td.fix, body.mobile th.fix, body.mobile td.fixl, body.mobile th.fixl{position:static; box-shadow:none;}
+    body.mobile td.fix .btn{height:32px; padding:0 11px;}
+    /* 게이지 */
+    body.mobile .gauge .big{font-size:36px;}
+    body.mobile .gauge svg{max-width:100%; height:auto;}
+    /* 로스터기 카드 */
+    body.mobile .rc .item .row input{width:84px; height:38px;}
+    body.mobile .rc .item .mv button{height:32px;}
+    body.mobile .rc .add{height:42px;}
+    /* 캘린더 — 가로 스크롤 */
+    body.mobile #calGrid{overflow-x:auto; -webkit-overflow-scrolling:touch;}
+    body.mobile .cal{min-width:620px;}
+    body.mobile .cal .cell{min-height:76px; padding:6px;}
+    body.mobile .cal .ev{font-size:10.5px; padding:2px 5px;}
+    /* 모달 — 전체 화면 */
+    body.mobile #overlay .box, body.mobile #editDlg > div{width:100%; max-width:100%; margin:0; border-radius:0;
+      height:100%; max-height:100%;}
+    body.mobile #editDlg{padding:0;}
+    body.mobile #editDlg > div > div[style*="grid-template-columns:110px"]{grid-template-columns:1fr !important; gap:6px 0 !important;}
+    body.mobile #editDlg label{font-size:12px; color:var(--soft); font-weight:600; margin-top:8px;}
+    body.mobile #editDlg input, body.mobile #editDlg select{height:42px; font-size:15px;}
+    body.mobile #dlg{padding:12px;}
+    body.mobile #dlg > div{width:100%; max-width:100%; margin:0; max-height:calc(100vh - 24px);}
+    body.mobile #dlg input{height:42px; font-size:16px;}
+    body.mobile #dlg button{height:42px; flex:1;}
+    body.mobile #toast{bottom:16px; left:12px; right:12px; transform:none; text-align:center;}
+    body.mobile #toast.show{transform:none;}
+    body.mobile .subtabs{padding:10px 12px; gap:6px; overflow-x:auto; flex-wrap:nowrap;}
+    body.mobile .subtab{white-space:nowrap; height:36px;}
+    body.mobile .barrow .nm{width:96px; font-size:11.5px;}
+  /* 태블릿(700px 이상)에서는 카드를 두 줄로 */
+  @media(min-width:700px){
+    body.mobile .wcards{grid-template-columns:repeat(2,1fr);}
+    body.mobile .kpis{grid-template-columns:repeat(3,1fr);}
+    body.mobile .cards{grid-template-columns:repeat(2,1fr);}
+    body.mobile .board{grid-template-columns:repeat(2,1fr);}
+  }
   @media(max-width:420px){
     .topbar .wordmark{height:23px;}
     .kpi .sub .k{font-size:9px;} .kpi .sub .v{font-size:12.5px;}
@@ -856,6 +978,7 @@
       <option value="qc">검수·출고</option>
     </select>
     <select id="curUser" onchange="setUser(this.value)"></select>
+    <button class="btn" id="mobBtn" onclick="toggleMobile()" title="태블릿·휴대폰에서 보기 편한 배치">📱 모바일</button>
     <button class="btn" id="guideBtn" onclick="toggleGuide()">설명</button>
     <button class="btn" onclick="reloadDB()">새로고침</button>
     <span class="st" id="stDb"></span>
@@ -5712,6 +5835,21 @@ function go(s){
   document.querySelectorAll(".screen").forEach(x=>x.classList.toggle("on", x.id==="s-"+s));
   render(s);
 }
+/* ══ 모바일 보기 — 태블릿·휴대폰 배치. 한 번 켜면 그 기기가 기억한다.
+   처음 열 때 화면이 1100px 보다 좁으면(태블릿) 저절로 켠다. */
+function applyMobile(on){
+  document.body.classList.toggle("mobile", !!on);
+  const b = $("mobBtn"); if (b) { b.classList.toggle("primary", !!on); b.textContent = on ? "📱 모바일 켬" : "📱 모바일"; }
+  if (!on) closeNav();
+}
+function toggleMobile(){
+  const on = !document.body.classList.contains("mobile");
+  try { localStorage.setItem("momos.mobile", on ? "on" : "off"); } catch(_){}
+  applyMobile(on); toast(on ? "모바일 보기 — 왼쪽 ☰ 로 메뉴를 엽니다" : "PC 보기");
+}
+(()=>{ let v = null; try { v = localStorage.getItem("momos.mobile"); } catch(_){}
+  const auto = v == null && window.innerWidth <= 1100 && ("ontouchstart" in window);
+  if (v === "on" || auto) applyMobile(true); })();
 function toggleNav(){ document.body.classList.toggle("navopen"); }
 function closeNav(){ document.body.classList.remove("navopen"); }
 $("menu").addEventListener("click", e=>{ const b=e.target.closest("button"); if(b){ go(b.dataset.s); closeNav(); } });
@@ -13644,7 +13782,7 @@ function renderWork(){
           can("plan") ? `<span class="prib">
             <button onclick="moveOrd('${o.id}',-1)" title="먼저 하기">▲</button>
             <button onclick="moveOrd('${o.id}',1)" title="나중에 하기">▼</button></span>` : ""}</div>
-        <div class="sub">${o.channel}${o.serial?` · 일련번호 ${o.serial}`:""}${
+        <div class="sub">${o.channel||"일반"}${o.serial?` · 일련번호 ${o.serial}`:""}${
           o.batch_of>1?` · 배치 ${o.batch_seq}/${o.batch_of}`:""}</div>
       </div>
       ${(()=>{ const q = qcState(o); if (!q.rejected) return "";
