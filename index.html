@@ -109,6 +109,11 @@
   .ck .cnt.bad{background:var(--bad-soft); color:var(--bad);} .ck .cnt.ok{background:#E6F6EC; color:#1A7F43;}
   .closeBanner{margin:0 0 12px; padding:12px 16px; border-radius:10px; font-weight:700;}
   .closeBanner.ok{background:#E6F6EC; color:#1A7F43;} .closeBanner.warn{background:#FFF4E0; color:#9A5B00;}
+  /* ── 재고 세기 ── */
+  #cntSheet input.cin{width:76px; height:38px; font-size:16px; font-weight:800; text-align:right;}
+  #cntSheet .cwrap{display:inline-flex; align-items:center; gap:4px; white-space:nowrap;}
+  #cntSheet .cwrap small{color:var(--soft); font-weight:700;}
+  #cntSheet tr.diff td{background:#FFF8F0;} #cntSheet tr.same td{background:#F2FBF5;}
   .shell{flex:1; display:flex; overflow:hidden; min-height:0;}
 
   /* ── 아이콘 사이드바 ── */
@@ -1074,6 +1079,7 @@
     <button data-s="work" data-r="admin,floor"><span class="ico">▶</span><span class="lb">현장 작업</span></button>
     <button data-s="qc" data-r="admin,qc"><span class="ico">☑</span><span class="lb">검수</span></button>
     <button data-s="ship" data-r="admin,qc"><span class="ico">▷</span><span class="lb">출고</span></button>
+    <button data-s="count" data-r="admin,lead,floor,qc"><span class="ico">⊞</span><span class="lb">재고 세기</span></button>
     <button data-s="close" data-r="admin,lead,floor,qc"><span class="ico">☾</span><span class="lb">마감</span></button>
     <div class="grp" data-r="admin,qc,floor"></div>
     <button data-s="plan" data-r="admin"><span class="ico">▤</span><span class="lb">생산계획</span></button>
@@ -1260,6 +1266,30 @@
         <b>전체번호(2026-10-28-01)</b>나 <b>로스팅 날짜</b>로 찾아도 됩니다 —
         배치를 찾으면 <b>입고 → 생산사용 → 기타사용 → 실측 → 조정</b>이 날짜와 함께 한 줄씩 나옵니다.</div></div>
     <div id="trOut"></div>
+  </div>
+</section>
+
+<!-- ══════ 재고 세기 — 마감자가 창고에서 센 수량을 그 자리에서 적는다 ══════ -->
+<section class="screen" id="s-count">
+  <div class="cond">
+    <span id="cntTypeBtn"></span>
+    <span id="cntKindBtn" style="margin-left:6px"></span>
+    <input type="text" id="cntFind" placeholder="이름 찾기" style="width:140px;margin-left:6px" oninput="renderCount()">
+    <span style="margin-left:auto"></span>
+    <button class="btn" onclick="cntDraftClear()">입력 지우기</button>
+    <button class="btn primary" id="cntApplyBtn" onclick="cntApplyAll()">차이 전체 반영</button>
+  </div>
+  <div class="body">
+    <h2 class="page">재고 세기<small id="asof-count"></small></h2>
+    <div class="guide"><b>창고에서 센 수량을 그대로 적는 화면입니다.</b>
+      실제 칸에 적으면 차이가 바로 보이고, 적은 값은 이 기기에 남아 있다가 <b>[차이 전체 반영]</b>을 누를 때 한 번에 장부에 들어갑니다 ·
+      라벨처럼 묶음이 있는 자재는 <b>묶음 수 + 낱장</b>으로 적으면 장수가 계산됩니다 ·
+      앱 재고와 같으면 <b>[=]</b>를 누르면 됩니다 · MMS 원두는 배치(봉지)마다 세야 해서 <b>로스팅 › 배치 재고</b>의 [배치별 실측]에서 적습니다.</div>
+    <div class="cards" id="cntCards"></div>
+    <div class="panel">
+      <div class="panel-h" id="cntTitle">부자재 · 라벨</div>
+      <div class="panel-b"><table id="cntSheet"></table></div>
+    </div>
   </div>
 </section>
 
@@ -6115,13 +6145,13 @@ function renderOne(s){
   ({ dash:renderDash, plan:renderPlan, roast:renderRoast, req:renderReq, log:renderLog,
      stock:renderStock, pqc:renderPqc, cal:renderCal, loss:renderLoss, base:renderBase,
      work:renderWork, qc:renderQc, ship:renderShip, order:renderOrder, trace:renderTrace,
-     rw:renderRw, mt:renderMt, close:renderClose })[s]?.();
+     rw:renderRw, mt:renderMt, close:renderClose, count:renderCount })[s]?.();
 }
 function renderAll(){
   migrateMaterials();                   // 옛 라벨 표 → 부자재
   fillBeanList();                       // 원두 이름 자동완성 목록
   ["dash","plan","roast","req","log","stock","pqc","cal","loss","base",
-   "work","qc","ship","order","trace","rw","mt","close"].forEach(renderOne);
+   "work","qc","ship","order","trace","rw","mt","close","count"].forEach(renderOne);
   syncUserUI();
   if (typeof applyRoleLock === "function") applyRoleLock();
 }
@@ -6637,7 +6667,13 @@ async function splitAllByKg(){
   if (!(await requireUser())) return;
   const d = $("wkDate")?.value || $("woDate")?.value || today();
   const list = ordsOf(d).filter(o=>o.status==="대기" && kgCutOf(o));
-  if (!list.length) return toast("1배치보다 큰 대기 지시가 없습니다");
+  if (!list.length) {
+    /* 왜 안 나뉘는지 — 품목마다 이유를 보여준다 */
+    const why = ordsOf(d).filter(o=>o.status==="대기").map(o=>{ const p = prodById(o.product_id); if (!p) return `· ${o.product_name||"?"} — 품목 없음`;
+      const per = virtBatchKg(p.bean), kg = stdKg(p, o.qty_plan);
+      return `· ${p.name} ${fmt(o.qty_plan)}EA = ${fmt(kg)}kg · 1배치 ${fmt(per)}kg` + (batchParts(o.batch_plan).length>1 ? " — 이미 배치가 적혀 있음 ([배치별로 나누기])" : kg <= per ? " — 1배치보다 작아서 그대로" : ""); });
+    return ask(`나눌 대기 지시가 없습니다.\n\n${why.join("\n")}\n\n1배치 kg이 이상하면 생산계획의 [1배치 기본 kg] 또는 기준정보 › 원두·MMS코드의 로스터기 kg을 확인하세요.`, { title:"1배치 kg로 나누기", yes:"확인" });
+  }
   if (!(await ask(`1배치 kg 기준으로 ${list.length}건을 나눕니다:\n` + list.slice(0,6).map(o=>{ const c = kgCutOf(o); return `· ${o.product_name||prodById(o.product_id)?.name} ${fmt(o.qty_plan)}EA → ${c.length}건 (1배치 ${fmt(c[0].per)}kg)`; }).join("\n") + (list.length>6?`\n… 외 ${list.length-6}건`:""),
     { title:"배치로 나누기", yes:`${list.length}건 나누기` }))) return;
   let ok = 0; for (const o of list) if (await splitOrderByKg(o.id, true)) ok++;
@@ -14131,9 +14167,10 @@ function renderWork(){
        title="기계마다 규격순으로 순서를 한 번에 다시 매깁니다">규격순 정렬 (${specDir()==="asc"?"100g→1kg":"1kg→100g"})</button>` : "") +
     (mixedAll.length && can("plan") ? `<button class="btn primary" onclick="splitAllOrders()"
        title="배치가 여러 개 묶인 지시를 배치마다 한 장씩 나눕니다">배치별로 나누기 ${mixedAll.length}건</button>` : "") +
-    (()=>{ const big = can("plan") ? all.filter(o=>o.status==="대기" && kgCutOf(o)) : [];
-      return big.length ? `<button class="btn primary" onclick="splitAllByKg()"
-       title="1배치 kg보다 큰 지시를 배치 단위로 가릅니다 (기본 ${fmt(batchKgDefault())}kg · 생산계획에서 바꿀 수 있음)">1배치 kg로 나누기 ${big.length}건</button>` : ""; })();
+    (()=>{ if (!can("plan") || !all.some(o=>o.status==="대기")) return "";
+      const big = all.filter(o=>o.status==="대기" && kgCutOf(o));
+      return `<button class="btn ${big.length?"primary":""}" onclick="splitAllByKg()"
+       title="1배치 kg보다 큰 지시를 배치 단위로 가릅니다 (기본 ${fmt(batchKgDefault())}kg · 생산계획에서 바꿀 수 있음)">1배치 kg로 나누기${big.length?` ${big.length}건`:""}</button>`; })();
 
   const shown = wkMach ? groups.filter(g=>kindOf(g)===wkMach) : groups;
   const card = o=>{
@@ -14392,6 +14429,89 @@ function renderTrace(){
 }
 
 /* ══════════════════════════════════════════════════════════════
+   재고 세기 — 부자재·라벨 / CFE 완제품을 화면에서 바로 적는다 (엑셀 없이)
+   적은 값은 이 기기에만 임시로 남고, [차이 전체 반영]을 눌러야 장부에 들어간다
+   ══════════════════════════════════════════════════════════════ */
+let cntType = "mat", cntKind = "";
+const CNT_DRAFT_KEY = "momos.count.draft";
+function cntDraft(){ try { const v = JSON.parse(localStorage.getItem(CNT_DRAFT_KEY) || "null"); if (v && v.date === today()) return v; } catch(_){} return { date:today(), mat:{}, cfe:{} }; }
+function cntPut(type, id, v){ const D = cntDraft(); if (v == null || v === "") delete D[type][id]; else D[type][id] = v; try { localStorage.setItem(CNT_DRAFT_KEY, JSON.stringify(D)); } catch(_){} }
+function cntDraftClear(){ try { localStorage.removeItem(CNT_DRAFT_KEY); } catch(_){} renderCount(); toast("입력을 지웠습니다 (장부는 그대로)"); }
+function setCntType(t){ cntType = t; renderCount(); }
+function setCntKind(k){ cntKind = k; renderCount(); }
+function cntRows(){
+  const D = cntDraft(), q = ($("cntFind")?.value || "").trim();
+  if (cntType === "cfe")
+    return PRODS().filter(p=>!q || p.name.includes(q) || (p.code||"").includes(q))
+      .map(p=>({ key:p.id, name:p.name, sub:p.code||"", pack:1, unit:"EA", app:Number(p.cfe||0), act:D.cfe[p.id] ?? null }));
+  return matsOf(cntKind).filter(M=>!q || (M.name||"").includes(q) || (M.code||"").includes(q))
+    .map(M=>({ key:M.id, name:M.name, sub:[M.kind, M.spec].filter(Boolean).join(" · "), pack:Math.max(1, Math.round(Number(M.pack_qty)||1)),
+               unit:unitOf(M), app:Number(M.stock||0), act:D.mat[M.id] ?? null, safety:Number(M.safety||0) }));
+}
+function setCntOne(key, v){ cntPut(cntType, key, v === "" ? null : Math.max(0, Math.round(numOf(v)))); keepFocus(renderCount); }
+function setCntPack(key, b, p){ const n = Math.max(0, Math.round(numOf(b)))*(p||1) + Math.max(0, Math.round(numOf($("cp-"+key)?.value||0)));
+  cntPut(cntType, key, n); keepFocus(renderCount); }
+function setCntPiece(key, p){ const b = Math.max(0, Math.round(numOf($("cb-"+key)?.value||0))), n = b*p + Math.max(0, Math.round(numOf($("cp-"+key)?.value||0)));
+  cntPut(cntType, key, n); keepFocus(renderCount); }
+function renderCount(){
+  if (!$("cntSheet")) return;
+  const rows = cntRows(), ent = rows.filter(r=>r.act != null), diffs = ent.filter(r=>r.act !== r.app);
+  $("cntTypeBtn").innerHTML = [["mat","부자재 · 라벨"],["cfe","CFE 완제품"]].map(([v,t])=>`<button class="btn ${cntType===v?"primary":""}" onclick="setCntType('${v}')">${t}</button>`).join(" ");
+  const kinds = {}; DB.materials.forEach(M=>{ kinds[M.kind]=(kinds[M.kind]||0)+1; });
+  $("cntKindBtn").innerHTML = cntType === "mat" ? [["","전체"],...MAT_KINDS.filter(k=>kinds[k]).map(k=>[k,`${k} ${kinds[k]}`])].map(([v,t])=>`<button class="btn ${cntKind===v?"primary":""}" style="height:28px;padding:0 9px;font-size:12px" onclick="setCntKind('${v}')">${t}</button>`).join(" ") : "";
+  $("cntTitle").textContent = cntType === "cfe" ? "CFE 완제품 (EA)" : `부자재 · 라벨${cntKind?` — ${cntKind}`:""}`;
+  $("cntCards").innerHTML = `
+    <div class="card"><div class="lb">항목</div><div class="vl">${rows.length}</div></div>
+    <div class="card ${ent.length?"green":""}"><div class="lb">입력함</div><div class="vl">${ent.length} <small>/ ${rows.length}</small></div></div>
+    <div class="card ${diffs.length?"red":"green"}"><div class="lb">차이 있음</div><div class="vl">${diffs.length} <small>${diffs.length?`부족 ${fmt(diffs.filter(r=>r.act<r.app).reduce((s,r)=>s+(r.act-r.app),0))} / 초과 +${fmt(diffs.filter(r=>r.act>r.app).reduce((s,r)=>s+(r.act-r.app),0))}`:""}</small></div></div>`;
+  $("cntApplyBtn").style.display = diffs.length ? "" : "none";
+  $("cntApplyBtn").textContent = `차이 전체 반영${diffs.length?` ${diffs.length}건`:""}`;
+  tbl("cntSheet", ["No","품목","앱 재고","실제 (센 수량)","차이","", ""],
+    rows.map((r,i)=>{
+      const has = r.act != null, d = has ? r.act - r.app : 0;
+      const inCell = r.pack > 1
+        ? `<span class="cwrap"><input type="text" inputmode="numeric" class="cin" id="cb-${r.key}" data-f="cb:${r.key}" placeholder="0" value="${has?Math.floor(r.act/r.pack):""}" oninput="setCntPack('${r.key}',this.value,${r.pack})"><small>묶음(${r.pack})</small>
+             + <input type="text" inputmode="numeric" class="cin" id="cp-${r.key}" data-f="cp:${r.key}" placeholder="0" value="${has?r.act%r.pack:""}" oninput="setCntPiece('${r.key}',${r.pack})"><small>${r.unit}</small>
+             ${has?`<b style="margin-left:6px">= ${fmt(r.act)}</b>`:""}</span>`
+        : `<span class="cwrap"><input type="text" inputmode="numeric" class="cin" data-f="c:${r.key}" placeholder="—" value="${has?r.act:""}" oninput="setCntOne('${r.key}',this.value)"><small>${r.unit}</small></span>`;
+      return `<tr class="${has?(d?"diff":"same"):""}"><td class="rowno">${i+1}</td>
+        <td class="l"><b>${r.name}</b>${r.sub?`<br><span class="hint" style="padding:0;font-size:11px">${r.sub}</span>`:""}</td>
+        <td><b>${fmt(r.app)}</b> <span class="hint" style="padding:0">${r.unit}</span>${r.pack>1?`<br><span class="hint" style="padding:0;font-size:11px">${Math.floor(r.app/r.pack)}묶음${r.app%r.pack?` + ${r.app%r.pack}`:""}</span>`:""}${r.safety&&r.app<r.safety?` <span class="tag bad">안전재고 미달</span>`:""}</td>
+        <td>${inCell}</td>
+        <td class="${!has?"":d===0?"ok":d<0?"bad":"warn"}">${has ? (d===0?"일치":(d>0?"+":"")+fmt(d)) : ""}</td>
+        <td class="c"><button class="btn" style="height:34px;min-width:40px;font-size:15px" title="앱 재고와 같음" onclick="setCntOne('${r.key}','${r.app}')">=</button></td>
+        <td class="c">${has && d ? `<button class="btn primary" style="height:34px" onclick="cntApplyOne('${r.key}')">반영</button>` : ""}</td></tr>`; }),
+    rows.length ? `<td colspan="2" class="c">합 계 · ${rows.length}항목</td><td><b>${fmt(rows.reduce((s,r)=>s+r.app,0))}</b></td><td>${ent.length?`<b>${fmt(ent.reduce((s,r)=>s+r.act,0))}</b>`:""}</td><td colspan="3"></td>` : null);
+}
+async function cntApplyRow(r){
+  if (cntType === "cfe")
+    return mesCountProductStock({ product_id:r.key, counted:Number(r.act), date:today(), note:"재고 세기 반영", idem:`cnt-${r.key}-${uid()}` });
+  const d = r.act - r.app; if (!d) return { ok:true };
+  const M = matById(r.key);
+  const res = await mesMoveMaterial({ material_id:r.key, kind:"조정", qty:d, note:`재고 세기 ${fmt(r.act)}${r.unit} (장부 ${fmt(r.app)}${r.unit})`, idem:`cnt-${r.key}-${uid()}` });
+  if (res && res.ok && M) logAudit(`${M.kind} 조정`, M.name, `${d>0?"+":""}${fmt(d)}${r.unit} → ${fmt(r.act)}${r.unit}`);
+  return res;
+}
+async function cntApplyOne(key){
+  if (!(await requireUser())) return;
+  const r = cntRows().find(x=>x.key===key); if (!r || r.act == null) return;
+  const res = await cntApplyRow(r);
+  if (!res || !res.ok) { renderAll(); return toast(res?.message || "반영하지 못했습니다"); }
+  cntPut(cntType, key, null); renderAll(); toast(`${r.name} → ${fmt(r.act)}${r.unit} 반영`);
+}
+async function cntApplyAll(){
+  if (!(await requireUser())) return;
+  const diffs = cntRows().filter(r=>r.act != null && r.act !== r.app);
+  if (!diffs.length) return toast("차이 나는 항목이 없습니다");
+  if (!(await ask(`${diffs.length}건의 장부를 센 수량으로 고칩니다:\n` + diffs.slice(0,8).map(r=>`· ${r.name}  ${fmt(r.app)} → ${fmt(r.act)} (${r.act-r.app>0?"+":""}${fmt(r.act-r.app)})`).join("\n") + (diffs.length>8?`\n… 외 ${diffs.length-8}건`:"") + `\n\n조정 이력에 ${CURRENT_USER} 이름으로 남습니다.`, { title:"차이 전체 반영", yes:`${diffs.length}건 반영` }))) return;
+  let ok = 0, fail = [];
+  for (const r of diffs) { const res = await cntApplyRow(r); if (res && res.ok) { ok++; cntPut(cntType, r.key, null); } else fail.push(r.name); }
+  /* 일치한 것도 입력을 비운다 — 다음 날 헷갈리지 않게 */
+  cntRows().filter(r=>r.act != null && r.act === r.app).forEach(r=>cntPut(cntType, r.key, null));
+  renderAll(); toast(fail.length ? `${ok}건 반영 · 실패 ${fail.length}건 (${fail.slice(0,2).join(", ")})` : `${ok}건 반영했습니다`);
+}
+
+/* ══════════════════════════════════════════════════════════════
    마감 체크리스트 — 공용 설정(momos_settings)에 날짜별로 저장
    close_items : 항목 목록 (관리자가 편집)   close_log : { 날짜: { items:{id:{by,at}}, note, note_by, closed_by, closed_at } }
    ══════════════════════════════════════════════════════════════ */
@@ -14405,11 +14525,11 @@ const CLOSE_AUTO = {
             n:d=>mtOf(d).filter(t=>t.status!=="작업완료").length, lbl:"미완료" },
   qc:     { t:"생산완료 건 검수 · 실적 수령 확인", s:"qc", go:"검수 열기",
             n:d=>ordsOf(d).filter(o=>o.status==="생산완료").length + DB.logs.filter(l=>logLive(l) && l.work_date===d && statusOf(l)==="pending").length, lbl:"대기" },
-  mat:    { t:"부자재 · 라벨 재고 세기 — 남은 장수 입력", s:"base", tab:"label", go:"부자재 재고 입력",
+  mat:    { t:"부자재 · 라벨 재고 세기 — 남은 장수 입력", s:"count", tab:"mat", go:"라벨·부자재 세기",
             n:d=>mtCloseRows(d).filter(r=>r.neg||r.low).length, lbl:"음수·안전재고 미달" },
-  mms:    { t:"MMS 원두 재고 확인 — 배치별 남은 kg 입력", s:"stock", tab:"mms", go:"원두 실재고 입력",
+  mms:    { t:"MMS 원두 재고 확인 — 배치(봉지)별 남은 kg 입력", s:"roast", tab:"stock", go:"배치별 실측",
             n:d=>DB.mms.filter(m=>Number(m.stock_kg)<0).length, lbl:"음수 배치" },
-  cfe:    { t:"CFE 완제품 재고 확인", s:"stock", tab:"cfe", go:"완제품 실재고 입력", n:null },
+  cfe:    { t:"CFE 완제품 재고 세기", s:"count", tab:"cfe", go:"완제품 세기", n:null },
   roast:  { t:"로스팅 입고 · 배치 등록 확인", s:"roast", tab:"stock", go:"배치 재고 열기", n:null },
 };
 const CLOSE_DEFAULT = [
@@ -14425,6 +14545,7 @@ function goTo(s, tab){
   if (s === "roast" && tab) setRoastTab(tab);
   if (s === "base"  && tab) document.querySelector(`#baseTabs [data-p="${tab}"]`)?.click();
   if (s === "stock" && tab && $("stType")) $("stType").value = tab;
+  if (s === "count" && tab) cntType = tab;
   if (s === "work" && typeof wkMach !== "undefined") { wkMach = tab || ""; }
   go(s); closeNav();
 }
@@ -14635,7 +14756,7 @@ const CAP_HELP = {
 /* 화면 → 그 화면을 고치려면 필요한 권한 (null = 누구나 보기만 하는 화면) */
 const SCREEN_CAP = { plan:"plan", order:"plan", work:"work", qc:"qc", ship:"ship",
   log:"log", rw:"log", mt:"work", pqc:"pqc", stock:"stock", roast:"roast", req:"roast", base:"base",
-  dash:null, loss:null, cal:null, trace:null, close:null };
+  dash:null, loss:null, cal:null, trace:null, close:null, count:null };
 /* 내 역할이 주로 쓰는 화면 (메뉴에서 강조만 함 — 나머지도 다 보인다) */
 /* 내가 "쓸 수 있는" 화면인가 — 권한설정을 바꾸면 메뉴 색도 따라 바뀐다.
    SCREEN_CAP 이 null 인 화면(대시보드·캘린더 등)은 누구나 쓰는 화면으로 본다. */
