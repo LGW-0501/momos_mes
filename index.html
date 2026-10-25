@@ -97,6 +97,17 @@
   /* 위쪽 바 정리 — 계정 메뉴(동그라미)로 옮긴 것들은 숨긴다 */
   .topbar .right #roleSel, .topbar .right #mobBtn, .topbar .right #guideBtn, .topbar .right #reloadBtn,
   .topbar .right #personalLogoutBtn, .topbar .right #loginIdentity{display:none !important;}
+  /* ── 마감 체크리스트 ── */
+  .ck{display:flex; align-items:flex-start; gap:12px; padding:12px 18px; border-bottom:1px solid var(--line);}
+  .ck:last-child{border-bottom:0;}
+  .ck input[type=checkbox]{width:22px; height:22px; margin:2px 0 0; flex:none; cursor:pointer;}
+  .ck .t{font-size:14.5px; font-weight:700; line-height:1.4;}
+  .ck.done .t{color:var(--soft); text-decoration:line-through;}
+  .ck .m{font-size:12px; color:var(--soft); margin-top:3px;}
+  .ck .cnt{display:inline-block; padding:2px 9px; border-radius:999px; font-size:12px; font-weight:800; cursor:pointer; margin-left:6px;}
+  .ck .cnt.bad{background:var(--bad-soft); color:var(--bad);} .ck .cnt.ok{background:#E6F6EC; color:#1A7F43;}
+  .closeBanner{margin:0 0 12px; padding:12px 16px; border-radius:10px; font-weight:700;}
+  .closeBanner.ok{background:#E6F6EC; color:#1A7F43;} .closeBanner.warn{background:#FFF4E0; color:#9A5B00;}
   .shell{flex:1; display:flex; overflow:hidden; min-height:0;}
 
   /* ── 아이콘 사이드바 ── */
@@ -1062,6 +1073,7 @@
     <button data-s="work" data-r="admin,floor"><span class="ico">▶</span><span class="lb">현장 작업</span></button>
     <button data-s="qc" data-r="admin,qc"><span class="ico">☑</span><span class="lb">검수</span></button>
     <button data-s="ship" data-r="admin,qc"><span class="ico">▷</span><span class="lb">출고</span></button>
+    <button data-s="close" data-r="admin,lead,floor,qc"><span class="ico">☾</span><span class="lb">마감</span></button>
     <div class="grp" data-r="admin,qc,floor"></div>
     <button data-s="plan" data-r="admin"><span class="ico">▤</span><span class="lb">생산계획</span></button>
     <button data-s="order" data-r="admin"><span class="ico">≡</span><span class="lb">작업지시</span></button>
@@ -1247,6 +1259,42 @@
         <b>전체번호(2026-10-28-01)</b>나 <b>로스팅 날짜</b>로 찾아도 됩니다 —
         배치를 찾으면 <b>입고 → 생산사용 → 기타사용 → 실측 → 조정</b>이 날짜와 함께 한 줄씩 나옵니다.</div></div>
     <div id="trOut"></div>
+  </div>
+</section>
+
+<!-- ══════ 마감 체크리스트 ══════ -->
+<section class="screen" id="s-close">
+  <div class="cond">
+    <label>날짜</label><input type="date" id="closeDate" onchange="renderClose()">
+    <span id="closeSum"></span>
+    <span style="margin-left:auto"></span>
+    <button class="btn" onclick="editCloseItems()" id="closeEditBtn">항목 편집</button>
+    <button class="btn primary" onclick="finishClose()" id="closeDoneBtn">마감 완료</button>
+  </div>
+  <div class="body">
+    <h2 class="page">마감 체크리스트<small id="asof-close"></small></h2>
+    <div class="guide"><b>마감자가 퇴근 전에 하나씩 확인하고 체크합니다.</b>
+      위쪽 항목은 MES 기록을 보고 <b>아직 안 끝난 건수를 저절로</b> 보여줍니다 — 숫자를 누르면 그 화면으로 갑니다 ·
+      체크하면 <b>누가 몇 시에</b> 했는지 남고, 다른 기기에서도 바로 보입니다 ·
+      이상이 있거나 오늘 못 한 일은 <b>비고</b>에 적어 두면 다음 날 마감자·관리자가 맨 위에서 봅니다 ·
+      전부 체크한 뒤 <b>[마감 완료]</b>를 누르면 마감자와 시각이 기록됩니다.</div>
+    <div id="closePrev"></div>
+    <div class="panel">
+      <div class="panel-h">오늘 할 일 <span class="r hint" id="closeWho"></span></div>
+      <div class="panel-b" id="closeList" style="padding:4px 0"></div>
+    </div>
+    <div class="panel">
+      <div class="panel-h">비고 — 이상 · 오늘 못 한 일 <span class="r hint">다음 날 마감자가 맨 위에서 봅니다</span></div>
+      <div style="padding:12px 18px">
+        <textarea id="closeNote" rows="4" style="width:100%;font:inherit;font-size:13px;border:1px solid var(--line-2);border-radius:7px;padding:9px 11px;resize:vertical"
+          placeholder="예) 리팩기 실링 온도 불안정 — 내일 점검 필요 / 하바나 1kg 200개 라벨 부족으로 미완료" onchange="saveCloseNote(this.value)"></textarea>
+        <div class="hint" style="padding:6px 0 0" id="closeNoteWho"></div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-h">최근 마감 기록 <span class="r hint">최근 14일</span></div>
+      <div class="panel-b"><table id="closeHist"></table></div>
+    </div>
   </div>
 </section>
 
@@ -2200,6 +2248,7 @@
     <div id="dlgBody" style="padding:16px 18px;overflow-y:auto;flex:1 1 auto;min-height:0">
       <div id="dlgMsg" style="white-space:pre-line;line-height:1.6;margin-bottom:12px"></div>
       <input type="text" id="dlgInput" style="width:100%;display:none">
+      <textarea id="dlgArea" rows="9" style="width:100%;display:none;font:inherit;font-size:13px;border:1px solid var(--line-2);border-radius:7px;padding:9px 11px"></textarea>
     </div>
     <div style="padding:12px 18px;display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;
          flex:0 0 auto;border-top:1px solid var(--line);background:var(--paper)">
@@ -2604,14 +2653,16 @@ function ask(message, opts={}){
     const box = $("dlg"), inp = $("dlgInput");
     $("dlgTitle").textContent = opts.title || "확인";
     $("dlgMsg").textContent = message;
-    const isPrompt = opts.prompt === true;
-    inp.style.display = isPrompt ? "block" : "none";
-    inp.value = opts.value ?? "";
+    const isPrompt = opts.prompt === true, multi = isPrompt && opts.multi === true, area = $("dlgArea");
+    inp.style.display = isPrompt && !multi ? "block" : "none";
+    area.style.display = multi ? "block" : "none";
+    inp.value = multi ? "" : (opts.value ?? ""); area.value = multi ? (opts.value ?? "") : "";
+    const field = multi ? area : inp;
     $("dlgYes").textContent = opts.yes || "확인";
     $("dlgYes").className = "btn " + (opts.danger ? "primary" : "primary");
     box.style.display = "flex";
     const body = $("dlgBody"); if (body) body.scrollTop = 0;   // 길었던 앞 창의 스크롤이 남지 않게
-    if (isPrompt) setTimeout(()=>{ inp.focus(); inp.select(); }, 30);
+    if (isPrompt) setTimeout(()=>{ field.focus(); if (!multi) field.select(); }, 30);
     const done = v => { box.style.display="none"; cleanup(); res(v); };
     const bar = $("dlgYes").parentElement;
     bar.querySelectorAll(".dlgChoice").forEach(b=>b.remove());
@@ -2626,9 +2677,9 @@ function ask(message, opts={}){
         bar.appendChild(b);
       });
     } else { $("dlgYes").style.display = ""; $("dlgNo").style.display = ""; }
-    const onYes = () => done(isPrompt ? inp.value : true);
+    const onYes = () => done(isPrompt ? field.value : true);
     const onNo  = () => done(isPrompt ? null : false);
-    const onKey = e => { if(e.key==="Enter") onYes(); if(e.key==="Escape") onNo(); };
+    const onKey = e => { if(e.key==="Enter" && !(multi && e.target===area)) onYes(); if(e.key==="Escape") onNo(); };
     function cleanup(){
       $("dlgYes").removeEventListener("click", onYes);
       $("dlgNo").removeEventListener("click", onNo);
@@ -6063,13 +6114,13 @@ function renderOne(s){
   ({ dash:renderDash, plan:renderPlan, roast:renderRoast, req:renderReq, log:renderLog,
      stock:renderStock, pqc:renderPqc, cal:renderCal, loss:renderLoss, base:renderBase,
      work:renderWork, qc:renderQc, ship:renderShip, order:renderOrder, trace:renderTrace,
-     rw:renderRw, mt:renderMt })[s]?.();
+     rw:renderRw, mt:renderMt, close:renderClose })[s]?.();
 }
 function renderAll(){
   migrateMaterials();                   // 옛 라벨 표 → 부자재
   fillBeanList();                       // 원두 이름 자동완성 목록
   ["dash","plan","roast","req","log","stock","pqc","cal","loss","base",
-   "work","qc","ship","order","trace","rw","mt"].forEach(renderOne);
+   "work","qc","ship","order","trace","rw","mt","close"].forEach(renderOne);
   syncUserUI();
   if (typeof applyRoleLock === "function") applyRoleLock();
 }
@@ -6535,9 +6586,67 @@ function allToMach(mid){
   toast(`${rows.length}개 품목을 ${DB.machines.find(m=>m.id===mid)?.name}로 몰았습니다`);
 }
 /* 계획 전체를 선입선출로 가상 배분 — 어느 배치를 몇 kg 쓸지 미리 계산 */
+/* 재고 배치가 모자라면 "로스팅 예정 배치"를 1배치 산출량(기준정보 > 원두·MMS코드의 1배치 kg × 수율)으로 쪼개서 잡는다.
+   428kg 인데 1배치가 57kg 이면 → 예정 배치 8개 (2501·2502·…) 로 나뉘고, 지시도 배치마다 따로 나간다.
+   번호는 작업일 기준으로 그날 이미 등록된 배치 다음 번호부터 — 실제 로스팅 뒤 같은 번호로 배치를 등록하면 그대로 맞는다. */
+const BKG_KEY = "batch_kg_default";
+const batchKgDefault = () => { const v = Number(SETTINGS[BKG_KEY]); return v > 0 ? v : 57; };
+function setBatchKgDefault(v){ const n = Math.max(0, Number(v)||0); SETTINGS[BKG_KEY] = n; renderPlan(); renderWork(); saveSetting(BKG_KEY, n); toast(`1배치 기본 ${n||57}kg`); }
+/* 원두별 1배치 산출 kg — 기준정보에 로스터기별 kg이 있으면 그것(× 수율), 없으면 생산계획의 "1배치 기본 kg" */
+function virtBatchKg(bean){
+  const rs = allowedRoasters(bean);
+  const v = rs.reduce((best, r)=>Math.max(best, Math.round(capFor(bean, r.id) * Number(r.yield_pct||100)/100 * 100)/100), 0);
+  return v > 0 ? v : batchKgDefault();
+}
+/* 그날 그 원두의 다음 배치번호 — 등록된 배치와 이미 지시에 적힌 예정 배치 둘 다 보고 */
+function nextBatchNo(bean, d){
+  let n = DB.mms.filter(m=>m.bean===bean && m.roast_date===d).reduce((mx,m)=>Math.max(mx, Number(m.batch)||0), 0);
+  const key = String(d).replace(/-/g,"").slice(2), code = mmsCodeOf(bean) || bean;
+  DB.orders.filter(o=>o.work_date===d && (prodById(o.product_id)||{}).bean===bean).forEach(o=>{
+    String(o.batch_plan||"").split(/[+,]/).forEach(t=>{ const m = t.match(/(\d{8})/); if (m && m[1].startsWith(key)) n = Math.max(n, Number(m[1].slice(6))||0); }); });
+  return n;
+}
+/* 이미 만들어진 지시(대기)를 1배치 kg 단위로 가른다 — 428kg → 57kg × 7 + 29kg */
+function kgCutOf(o){
+  const p = prodById(o.product_id); if (!p) return null;
+  const per = virtBatchKg(p.bean), kg = stdKg(p, o.qty_plan);
+  if (!(per > 0) || kg <= per + 0.0001 || batchParts(o.batch_plan).length > 1) return null;
+  const d = o.work_date, n = Math.max(0, Math.round(Number(o.qty_plan)||0));
+  const perEa = Math.max(1, Math.floor(per / (Number(p.std_g||0)/1000)));
+  let no = nextBatchNo(p.bean, d), left = n; const cut = [];
+  while (left > 0) { const ea = Math.min(perEa, left); left -= ea; no++;
+    const vb = { bean:p.bean, roast_date:d, batch:no };
+    cut.push({ ea, text:`${batchLabel(vb)} ${fmt(stdKg(p, ea))}kg`, short:batchShort(vb), full:batchFull(vb), per }); }
+  return cut.length > 1 ? cut : null;
+}
+async function splitOrderByKg(id, quiet){
+  const o = ordById(id); if (!o) return false;
+  if (o.status !== "대기") { if (!quiet) toast("이미 시작한 지시는 못 나눕니다"); return false; }
+  const cut = kgCutOf(o); if (!cut) { if (!quiet) toast("1배치보다 작아서 나눌 게 없습니다"); return false; }
+  if (!quiet && !(await ask(`${o.product_name || prodById(o.product_id)?.name} ${fmt(o.qty_plan)}EA (${fmt(stdKg(prodById(o.product_id), o.qty_plan))}kg) 를\n1배치 ${fmt(cut[0].per)}kg 기준 ${cut.length}건으로 나눕니다.\n\n` +
+    cut.map(x=>`· ${x.text} → ${fmt(x.ea)}EA · 일련번호 ${x.short}`).join("\n") + `\n\n현장 카드도 ${cut.length}장으로 갈라집니다.`, { title:"배치로 나누기", yes:`${cut.length}건으로 나누기` }))) return false;
+  const r = await mesSplitOrder({ order_id:id, idem:`osk-${id}-${uid()}`,
+    cut: cut.map(x=>({ ea:x.ea, batch_plan:x.text, serial:x.short, serial_full:x.full,
+      label_packs: labelNeed(prodById(o.product_id), x.ea, ordLabel(o)).bundles })) });
+  if (!r || !r.ok) { if (!quiet) toast(r?.message || "나누지 못했습니다"); return false; }
+  await renumberOrders(o.work_date, o.machine||"");
+  return true;
+}
+async function splitAllByKg(){
+  if (!(await requireUser())) return;
+  const d = $("wkDate")?.value || $("woDate")?.value || today();
+  const list = ordsOf(d).filter(o=>o.status==="대기" && kgCutOf(o));
+  if (!list.length) return toast("1배치보다 큰 대기 지시가 없습니다");
+  if (!(await ask(`1배치 kg 기준으로 ${list.length}건을 나눕니다:\n` + list.slice(0,6).map(o=>{ const c = kgCutOf(o); return `· ${o.product_name||prodById(o.product_id)?.name} ${fmt(o.qty_plan)}EA → ${c.length}건 (1배치 ${fmt(c[0].per)}kg)`; }).join("\n") + (list.length>6?`\n… 외 ${list.length-6}건`:""),
+    { title:"배치로 나누기", yes:`${list.length}건 나누기` }))) return;
+  let ok = 0; for (const o of list) if (await splitOrderByKg(o.id, true)) ok++;
+  renderAll(); toast(`${ok}건을 배치별로 나눴습니다`);
+}
 function planBatches(rows){
   const remain = {};                       // mms.id → 남은 kg (가상)
   DB.mms.forEach(m=>{ if(Number(m.stock_kg)>0 && !isHeld(m)) remain[m.id] = Number(m.stock_kg); });
+  const d = $("woDate")?.value || today();
+  const virt = {};                         // bean → { n: 다음 배치번호, list:[가상 배치] }
   rows.forEach(r=>{
     let need = stdKg(r.p, r.ea);
     r.picks = []; r.lack = 0;
@@ -6549,6 +6658,21 @@ function planBatches(rows){
       r.picks.push({ b, kg: Math.round(take*100)/100 });
     }
     r.lack = Math.max(0, Math.round(need*100)/100);
+    /* 모자란 만큼은 예정 배치로 */
+    const per = r.lack > 0 ? virtBatchKg(r.p.bean) : 0;
+    if (per > 0) {
+      const bean = r.p.bean;
+      if (!virt[bean]) virt[bean] = { n: DB.mms.filter(m=>m.bean===bean && m.roast_date===d).reduce((mx,m)=>Math.max(mx, Number(m.batch)||0), 0), list:[] };
+      const V = virt[bean];
+      while (need > 0.0001) {
+        let vb = V.list.find(x=>remain[x.id] > 0.0001);
+        if (!vb) { V.n++; vb = { id:`v-${bean}-${d}-${V.n}`, bean, roast_date:d, batch:V.n, stock_kg:per, virtual:true }; V.list.push(vb); remain[vb.id] = per; }
+        const take = Math.min(need, remain[vb.id]);
+        remain[vb.id] = Math.round((remain[vb.id]-take)*100)/100;
+        need = Math.round((need-take)*100)/100;
+        r.picks.push({ b:vb, kg: Math.round(take*100)/100, virtual:true });
+      }
+    }
   });
   return remain;
 }
@@ -6687,7 +6811,9 @@ function renderPlan(){
     ` <button class="btn ${planSplit?"primary":""}" style="margin-left:8px"
         onclick="setPlanSplit(${planSplit?"false":"true"})">배치별로 나누기 ${planSplit?"켬":"끔"}</button>` +
     ` <button class="btn ${isCompact()?"primary":""}" style="margin-left:4px" title="칸을 줄여서 옆으로 안 넘기고 봅니다"
-        onclick="setPlanCompact(${isCompact()?"false":"true"})">간단히 보기 ${isCompact()?"켬":"끔"}</button>`;
+        onclick="setPlanCompact(${isCompact()?"false":"true"})">간단히 보기 ${isCompact()?"켬":"끔"}</button>` +
+    ` <label style="margin-left:8px" title="재고 배치가 없을 때 이 kg 단위로 예정 배치를 나눕니다 · 원두별로 기준정보에 1배치 kg이 있으면 그 값이 먼저">1배치 기본
+        <input type="text" inputmode="decimal" class="num" style="width:56px" value="${fmt(batchKgDefault())}" onchange="setBatchKgDefault(this.value)"> kg</label>`;
   const CX = isCompact();
   if (CX) tbl("planMach", ["기계","가용(h)","사용(h)","여유(h)","배정 EA"],
     DB.machines.map(m=>{
@@ -6731,10 +6857,12 @@ function renderPlan(){
         <td class="l" style="white-space:normal;line-height:1.7;padding:7px 14px">${
           r.picks.length
             ? r.picks.map(x=>{ const st=shelfState(x.b.roast_date);
+                if (x.virtual) return `<span class="tag warn" style="border-style:dashed" title="${x.b.bean} · ${x.b.roast_date} ${x.b.batch}번 배치 로스팅 예정 · 1배치 ${fmt(x.b.stock_kg)}kg">
+                  예정 ${batchLabel(x.b)} <b>${fmt(x.kg)}kg</b></span>`;
                 return `<span class="tag ${st==="bad"?"bad":st==="warn"?"warn":"ok"}" title="${x.b.bean} · 로스팅 ${x.b.roast_date} · 잔여 ${fmt(x.b.stock_kg)}kg">
                   ${batchLabel(x.b)} <b>${fmt(x.kg)}kg</b>${st!=="ok"?` ${shelfLabel(x.b.roast_date)}`:""}</span>`; }).join(" ")
             : '<span class="hint" style="padding:0">사용 가능한 배치 없음</span>'
-        }${r.lack>0?` <span class="tag bad">로스팅요청 ${fmt(r.lack)}kg</span>`:""}</td>`}
+        }${r.lack>0?` <span class="tag bad">로스팅요청 ${fmt(r.lack)}kg${r.picks.some(x=>x.virtual)?` · 예정 배치 ${r.picks.filter(x=>x.virtual).length}개`:" — 1배치 kg 미등록"}</span>`:""}</td>`}
         ${DB.machines.map(m=>{
           const v = r.alloc[m.id] || 0, f = r.flag[m.id];
           const ok = canRun(m, r.p);
@@ -14001,7 +14129,10 @@ function renderWork(){
     (canEdit ? `<button class="btn" onclick="sortOrdersBySpec($('wkDate').value||today())"
        title="기계마다 규격순으로 순서를 한 번에 다시 매깁니다">규격순 정렬 (${specDir()==="asc"?"100g→1kg":"1kg→100g"})</button>` : "") +
     (mixedAll.length && can("plan") ? `<button class="btn primary" onclick="splitAllOrders()"
-       title="배치가 여러 개 묶인 지시를 배치마다 한 장씩 나눕니다">배치별로 나누기 ${mixedAll.length}건</button>` : "");
+       title="배치가 여러 개 묶인 지시를 배치마다 한 장씩 나눕니다">배치별로 나누기 ${mixedAll.length}건</button>` : "") +
+    (()=>{ const big = can("plan") ? all.filter(o=>o.status==="대기" && kgCutOf(o)) : [];
+      return big.length ? `<button class="btn primary" onclick="splitAllByKg()"
+       title="1배치 kg보다 큰 지시를 배치 단위로 가릅니다 (기본 ${fmt(batchKgDefault())}kg · 생산계획에서 바꿀 수 있음)">1배치 kg로 나누기 ${big.length}건</button>` : ""; })();
 
   const shown = wkMach ? groups.filter(g=>kindOf(g)===wkMach) : groups;
   const card = o=>{
@@ -14259,6 +14390,118 @@ function renderTrace(){
   }).join("");
 }
 
+/* ══════════════════════════════════════════════════════════════
+   마감 체크리스트 — 공용 설정(momos_settings)에 날짜별로 저장
+   close_items : 항목 목록 (관리자가 편집)   close_log : { 날짜: { items:{id:{by,at}}, note, note_by, closed_by, closed_at } }
+   ══════════════════════════════════════════════════════════════ */
+const CLOSE_ITEMS_KEY = "close_items", CLOSE_LOG_KEY = "close_log";
+/* 저절로 세는 항목 — MES 기록에서 "아직 안 끝난 것"을 센다 */
+const CLOSE_AUTO = {
+  orders: { t:"오늘 작업지시 전부 생산 완료", s:"work",
+            n:d=>ordsOf(d).filter(o=>stIdx(o)<2).length, lbl:"미완료" },
+  labels: { t:"오늘 라벨 작업 전부 완료", s:"mt",
+            n:d=>mtOf(d).filter(t=>t.status!=="작업완료").length, lbl:"미완료" },
+  qc:     { t:"생산완료 건 검수 · 실적 수령 확인", s:"qc",
+            n:d=>ordsOf(d).filter(o=>o.status==="생산완료").length + DB.logs.filter(l=>logLive(l) && l.work_date===d && statusOf(l)==="pending").length, lbl:"대기" },
+  mat:    { t:"부자재 마감 현황 확인 — 음수 재고 · 안전재고 미달", s:"mt",
+            n:d=>mtCloseRows(d).filter(r=>r.neg||r.low).length, lbl:"확인 필요" },
+  roast:  { t:"로스팅 입고 · 배치 재고 확인", s:"roast", n:null },
+};
+const CLOSE_DEFAULT = [
+  { id:"orders", auto:"orders" }, { id:"labels", auto:"labels" }, { id:"qc", auto:"qc" },
+  { id:"mat", auto:"mat" }, { id:"roast", auto:"roast" },
+  { id:"m1", t:"기계 전원 끄기 · 작업장 정리·청소" },
+  { id:"m2", t:"남은 원두 · 반제품 밀봉 보관" },
+  { id:"m3", t:"내일 생산계획 · 라벨 작업 확인" },
+];
+const closeItems = () => { const v = SETTINGS[CLOSE_ITEMS_KEY]; return Array.isArray(v) && v.length ? v : CLOSE_DEFAULT; };
+const closeLog = () => { const v = SETTINGS[CLOSE_LOG_KEY]; return (v && typeof v === "object") ? v : {}; };
+const closeDay = () => $("closeDate")?.value || today();
+function closeRec(d){ const L = closeLog(); return L[d] || { items:{} }; }
+async function saveCloseRec(d, rec){
+  const L = { ...closeLog() }; L[d] = rec;
+  Object.keys(L).sort().slice(0, -60).forEach(k=>delete L[k]);       // 60일만 둔다
+  SETTINGS[CLOSE_LOG_KEY] = L; renderClose();
+  const r = await saveSetting(CLOSE_LOG_KEY, L);
+  if (r && r.ok === false) toast("저장 실패 — 서버 연결을 확인하세요");
+}
+function closeItemText(it){ return it.t || CLOSE_AUTO[it.auto]?.t || ""; }
+function renderClose(){
+  if (!$("closeList")) return;
+  if ($("closeDate") && !$("closeDate").value) $("closeDate").value = today();
+  const d = closeDay(), rec = closeRec(d), items = closeItems();
+  const who = CURRENT_USER || LOGIN_USER?.name || "";
+  $("closeWho").textContent = who ? `체크하는 사람: ${who}` : "상단에서 본인 이름을 고르세요";
+  const doneN = items.filter(it=>rec.items[it.id]).length;
+  $("closeSum").innerHTML = ` <span class="tag ${doneN===items.length?"ok":"warn"}">${doneN} / ${items.length} 완료</span>` +
+    (rec.closed_at ? ` <span class="tag ok">마감 완료 · ${rec.closed_by} · ${fmtTime(rec.closed_at)}</span>` : "");
+  $("closeDoneBtn").textContent = rec.closed_at ? "마감 완료 취소" : "마감 완료";
+  $("closeEditBtn").style.display = isSystemAdmin() || loginRole()==="admin" ? "" : "none";
+  /* 어제(가장 최근 이전 날) 비고 — 못 한 일을 이어받는다 */
+  const L = closeLog(), prevD = Object.keys(L).filter(k=>k<d && (L[k].note||"").trim()).sort().pop();
+  $("closePrev").innerHTML = prevD
+    ? `<div class="closeBanner warn">📌 ${prevD} 비고 (${L[prevD].note_by||"—"})<div style="font-weight:600;white-space:pre-line;margin-top:4px">${L[prevD].note}</div></div>` : "";
+  $("closeList").innerHTML = items.map(it=>{
+    const a = it.auto ? CLOSE_AUTO[it.auto] : null, ck = rec.items[it.id];
+    const n = a && a.n ? a.n(d) : null;
+    const cnt = a ? (n === null ? `<span class="cnt" style="background:var(--blue-50);color:var(--blue-600)" onclick="go('${a.s}')">화면 열기 ›</span>`
+                 : n > 0 ? `<span class="cnt bad" onclick="go('${a.s}')">${a.lbl} ${n}건 ›</span>` : `<span class="cnt ok">이상 없음</span>`) : "";
+    return `<label class="ck${ck?" done":""}">
+      <input type="checkbox" ${ck?"checked":""} onchange="setCloseItem('${it.id}',this.checked)">
+      <div style="flex:1;min-width:0"><div class="t">${closeItemText(it)}${cnt}</div>
+        <div class="m">${ck ? `✓ ${ck.by||"—"} · ${fmtTime(ck.at)}` : (a && n > 0 ? "아직 남은 것이 있습니다 — 끝내고 체크하세요" : "")}</div></div>
+    </label>`; }).join("");
+  const ta = $("closeNote"); if (ta && document.activeElement !== ta) ta.value = rec.note || "";
+  $("closeNoteWho").textContent = rec.note ? `${rec.note_by||"—"} · ${fmtTime(rec.note_at)}` : "";
+  /* 최근 14일 */
+  const days = Array.from({length:14}, (_,i)=>dayAfter(-i)).filter(k=>L[k]);
+  tbl("closeHist", ["날짜","체크","마감자","마감 시각","비고"],
+    days.map(k=>{ const r = L[k], n = Object.keys(r.items||{}).length;
+      return `<tr><td class="c"><a href="#" onclick="$('closeDate').value='${k}';renderClose();return false">${k}</a></td>
+        <td class="c">${n} / ${items.length}</td>
+        <td class="c">${r.closed_by || '<span class="hint" style="padding:0">미완료</span>'}</td>
+        <td class="c">${r.closed_at ? fmtTime(r.closed_at) : "—"}</td>
+        <td class="l" style="white-space:pre-line">${r.note || ""}</td></tr>`; }));
+}
+function setCloseItem(id, on){
+  const who = CURRENT_USER || LOGIN_USER?.name || "";
+  if (!who) { renderClose(); return toast("상단에서 본인 이름을 먼저 고르세요"); }
+  const d = closeDay(), rec = closeRec(d); rec.items = { ...(rec.items||{}) };
+  if (on) rec.items[id] = { by:who, at:nowISO() }; else delete rec.items[id];
+  saveCloseRec(d, rec);
+}
+function saveCloseNote(v){
+  const d = closeDay(), rec = closeRec(d);
+  rec.note = v.trim(); rec.note_by = CURRENT_USER || LOGIN_USER?.name || ""; rec.note_at = nowISO();
+  saveCloseRec(d, rec); toast("비고를 저장했습니다");
+}
+async function finishClose(){
+  const d = closeDay(), rec = closeRec(d), items = closeItems();
+  const who = CURRENT_USER || LOGIN_USER?.name || "";
+  if (!who) return toast("상단에서 본인 이름을 먼저 고르세요");
+  if (rec.closed_at) { if (await ask(`${d} 마감 완료를 취소할까요?`, { title:"마감 취소" })) { delete rec.closed_at; delete rec.closed_by; saveCloseRec(d, rec); } return; }
+  const left = items.filter(it=>!rec.items[it.id]);
+  if (left.length && !(await ask(`아직 체크 안 한 항목이 ${left.length}개 있습니다:\n${left.map(it=>"· "+closeItemText(it)).join("\n")}\n\n그래도 마감 완료로 기록할까요? (못 한 일은 비고에 적어 두세요)`, { title:"마감 완료", yes:"완료로 기록" }))) return;
+  rec.closed_by = who; rec.closed_at = nowISO();
+  saveCloseRec(d, rec); toast(`${d} 마감 완료 — ${who}`);
+}
+/* 관리자 — 항목 편집 (한 줄에 하나) */
+async function editCloseItems(){
+  const items = closeItems();
+  const txt = items.map(it=>it.auto ? `[${it.auto}]` : closeItemText(it)).join("\n");
+  const v = await ask(`한 줄에 한 항목씩 적습니다. 대괄호 항목은 MES가 저절로 세는 것입니다 (${Object.keys(CLOSE_AUTO).map(k=>`[${k}] ${CLOSE_AUTO[k].t}`).join(" · ")}). 지우면 빠지고, 순서를 바꾸면 그대로 보입니다.`,
+    { prompt:true, multi:true, value:txt, title:"마감 항목 편집" });
+  if (v == null) return;
+  const out = []; let n = 0;
+  v.split("\n").map(x=>x.trim()).filter(Boolean).forEach(line=>{
+    const m = line.match(/^\[(\w+)\]$/);
+    if (m && CLOSE_AUTO[m[1]]) out.push({ id:m[1], auto:m[1] });
+    else { const old = items.find(it=>!it.auto && closeItemText(it)===line); out.push({ id: old?.id || ("m"+Date.now().toString(36)+(n++)), t:line }); }
+  });
+  if (!out.length) return toast("항목이 비어 있습니다");
+  SETTINGS[CLOSE_ITEMS_KEY] = out; renderClose(); saveSetting(CLOSE_ITEMS_KEY, out); toast(`마감 항목 ${out.length}개로 저장했습니다`);
+}
+
 /* ── 대시보드: 오늘 작업지시 + 설비 상태 ── */
 function renderDashWO(){
   if (!$("dashWO")) return;
@@ -14377,7 +14620,7 @@ const CAP_HELP = {
 /* 화면 → 그 화면을 고치려면 필요한 권한 (null = 누구나 보기만 하는 화면) */
 const SCREEN_CAP = { plan:"plan", order:"plan", work:"work", qc:"qc", ship:"ship",
   log:"log", rw:"log", mt:"work", pqc:"pqc", stock:"stock", roast:"roast", req:"roast", base:"base",
-  dash:null, loss:null, cal:null, trace:null };
+  dash:null, loss:null, cal:null, trace:null, close:null };
 /* 내 역할이 주로 쓰는 화면 (메뉴에서 강조만 함 — 나머지도 다 보인다) */
 /* 내가 "쓸 수 있는" 화면인가 — 권한설정을 바꾸면 메뉴 색도 따라 바뀐다.
    SCREEN_CAP 이 null 인 화면(대시보드·캘린더 등)은 누구나 쓰는 화면으로 본다. */
