@@ -364,6 +364,11 @@
   .wc .hd .nm .pri{flex:none; min-width:27px; height:27px; border-radius:7px;
     background:rgba(255,255,255,.17); color:#fff; font-size:14px; font-weight:800;
     display:inline-flex; align-items:center; justify-content:center; font-variant-numeric:tabular-nums;}
+  /* 머리글 눌러 정렬 */
+  th.sortable{cursor:pointer; user-select:none;}
+  th.sortable:hover{color:var(--ink);}
+  th.sortable .sortmark{margin-left:4px; font-size:10px; opacity:.45;}
+  th.sortable.on{color:var(--blue-600);} th.sortable.on .sortmark{opacity:1;}
   /* 여유분 표시 */
   .tag.buf{background:#efe7ff; color:#5b34b5; border:1px solid #d9c9fb;}
   td.bufc{color:#5b34b5; font-weight:700;}
@@ -1055,8 +1060,15 @@
     <button class="btn" onclick="csvPlan()">엑셀 다운로드</button>
     <button class="btn primary" onclick="printWorkOrder()">작업지시서 출력</button>
   </div>
+  <div class="subtabs" id="planTabs">
+    <button class="subtab on" data-p="tally">집계</button>
+    <button class="subtab" data-p="grid">생산계획 · 기계 배분</button>
+    <button class="subtab" data-p="order">기계별 작업 순서</button>
+    <button class="subtab" data-p="mat">부자재 · 라벨</button>
+  </div>
   <div class="body">
     <h2 class="page">생산계획<small id="asof-plan"></small></h2>
+    <div class="subpane on" id="pp-tally">
     <div class="panel">
       <div class="panel-h">집계 — 당일 1차 · 2차 <span id="tallySum"></span>
         <span class="r">
@@ -1082,6 +1094,8 @@
       <div class="selbar" id="selBar-tallies"></div>
       <div class="panel-b"><table id="tallyLog"></table></div>
     </div>
+    </div>
+    <div class="subpane" id="pp-grid">
     <div class="panel">
       <div class="panel-h">기계 능력 현황 (오늘)</div>
       <div class="hint"><b>최소 투입</b> = 이 수량보다 적으면 그 기계에 넣지 않습니다 (소량을 기계로 돌리면 손해) ·
@@ -1089,6 +1103,25 @@
         둘 다 <b>기준정보 &gt; 기계</b>에서 바꿀 수 있고, 비우면 제한 없음입니다.</div>
       <div class="panel-b"><table id="planMach"></table></div>
     </div>
+    <div class="panel">
+      <div class="panel-h">생산계획 · 기계 배분표</div>
+      <div class="hint">계획EA는 직접 수정 가능 · <b>사용할 배치</b>는 오래된 순서(선입선출)로 계획 전체를 나눠 계산한 결과입니다 — 위 품목부터 차례로 소진됩니다 ·
+        <span class="warn">주황</span>은 상미기간 임박, <span class="bad">빨강</span>은 초과 배치 · 규격별 속도 0인 기계에는 배정되지 않음 · 이카전용 품목은 이카에만 · 분쇄 품목은 분쇄가능 기계에만 ·
+        <b>기계 칸의 체크를 눌러 고릅니다</b> — 체크한 기계들끼리 똑같이 나눠 가집니다
+        (예: 300개를 수동 2구·1구 체크 → 150 / 150) ·
+        <b>[전량]</b>을 누르면 다른 기계를 비우고 <b>그 기계가 전부</b> 맡습니다 (나눠 놓은 것을 한 대로 몰 때) ·
+        숫자를 직접 적어 미세조정할 수도 있습니다 ·
+        <b>표 머리글의 기계 이름</b>을 누르면 만들 수 있는 품목을 전부 그 기계로 몰아줍니다 ·
+        체크를 전부 풀면 자동배분으로 돌아갑니다 ·
+        한 번 고친 품목은 <span class="tag warn">수동</span>으로 바뀌어 자동배분이 건드리지 않고, [자동으로]를 누르면 되돌아갑니다 ·
+        그 기계로 만들 수 없는 품목 칸은 회색이고 적으면 <span class="tag bad">불가</span>로 표시됩니다 ·
+        <b>수량에 맞는 기계로 자동 배분</b>합니다 — 소량은 수동, 대량은 기계로 가고,
+        배정 칸의 <span class="tag warn">소량</span>은 최소 투입에 못 미치는데 다른 기계가 없어 넣은 것,
+        <span class="tag warn">최대초과</span>는 1품목 최대를 넘겨 넣은 것입니다 (그만큼 손이 더 갑니다)</div>
+      <div class="panel-b"><table id="planGrid"></table></div>
+    </div>
+    </div>
+    <div class="subpane" id="pp-order">
     <div class="panel" style="background:transparent;border:0;box-shadow:none;padding:0">
       <div class="panel" style="margin-bottom:12px">
         <div class="panel-h">기계별 작업 순서 <span class="r hint">이대로 작업지시가 나갑니다</span></div>
@@ -1097,6 +1130,10 @@
           라벨은 <b>기준정보 &gt; 라벨 재고</b>의 묶음 장수로 계산합니다.</div>
       </div>
       <div id="planByMach"></div>
+    </div>
+    </div>
+    <div class="subpane" id="pp-mat">
+    <div class="panel" style="background:transparent;border:0;box-shadow:none;padding:0">
       <div id="mtLink"></div>
       <div id="altBox"></div>
       <div class="panel">
@@ -1123,22 +1160,6 @@
         <div class="panel-b"><table id="labNeedTbl"></table></div>
       </div>
     </div>
-    <div class="panel">
-      <div class="panel-h">생산계획 · 기계 배분표</div>
-      <div class="hint">계획EA는 직접 수정 가능 · <b>사용할 배치</b>는 오래된 순서(선입선출)로 계획 전체를 나눠 계산한 결과입니다 — 위 품목부터 차례로 소진됩니다 ·
-        <span class="warn">주황</span>은 상미기간 임박, <span class="bad">빨강</span>은 초과 배치 · 규격별 속도 0인 기계에는 배정되지 않음 · 이카전용 품목은 이카에만 · 분쇄 품목은 분쇄가능 기계에만 ·
-        <b>기계 칸의 체크를 눌러 고릅니다</b> — 체크한 기계들끼리 똑같이 나눠 가집니다
-        (예: 300개를 수동 2구·1구 체크 → 150 / 150) ·
-        <b>[전량]</b>을 누르면 다른 기계를 비우고 <b>그 기계가 전부</b> 맡습니다 (나눠 놓은 것을 한 대로 몰 때) ·
-        숫자를 직접 적어 미세조정할 수도 있습니다 ·
-        <b>표 머리글의 기계 이름</b>을 누르면 만들 수 있는 품목을 전부 그 기계로 몰아줍니다 ·
-        체크를 전부 풀면 자동배분으로 돌아갑니다 ·
-        한 번 고친 품목은 <span class="tag warn">수동</span>으로 바뀌어 자동배분이 건드리지 않고, [자동으로]를 누르면 되돌아갑니다 ·
-        그 기계로 만들 수 없는 품목 칸은 회색이고 적으면 <span class="tag bad">불가</span>로 표시됩니다 ·
-        <b>수량에 맞는 기계로 자동 배분</b>합니다 — 소량은 수동, 대량은 기계로 가고,
-        배정 칸의 <span class="tag warn">소량</span>은 최소 투입에 못 미치는데 다른 기계가 없어 넣은 것,
-        <span class="tag warn">최대초과</span>는 1품목 최대를 넘겨 넣은 것입니다 (그만큼 손이 더 갑니다)</div>
-      <div class="panel-b"><table id="planGrid"></table></div>
     </div>
   </div>
 </section>
@@ -2597,6 +2618,53 @@ function setColWidth(id, i, px){
 function resetCols(id){
   try { localStorage.removeItem(colKey(id)); } catch(e){}
   renderAll(); toast("칸 너비를 처음으로 되돌렸습니다");
+}
+/* ══ 머리글을 누르면 정렬 — 한 번 오름차순 · 두 번 내림차순 · 세 번 원래 순서 ══
+   표마다 [칸 번호 → 값을 꺼내는 함수] 를 정해 둔다. 기억은 이 기기에만. */
+const SORT_COLS = {
+  tProd:  { 1:p=>p.code, 2:p=>p.category, 3:p=>p.channel||"일반", 4:p=>p.bean, 5:p=>p.name,
+            6:p=>Number(p.spec_g)||0, 7:p=>p.grind||"홀빈", 8:p=>Number(p.std_g)||0,
+            9:p=>Number(p.safety)||0, 10:p=>Number(p.cfe)||0, 15:p=>p.off?1:0 },
+  tBeans: { 1:b=>beanOff(b)?1:0, 2:b=>b.mms_code, 3:b=>b.machine, 4:b=>b.name, 5:b=>b.color,
+            6:b=>b.report_no, 7:b=>b.compose, 8:b=>b.note, 9:b=>b.launch, 10:b=>b.end_date,
+            11:b=>DB.mms.filter(m=>m.bean===b.name && Number(m.stock_kg)>0).reduce((t,m)=>t+Number(m.stock_kg||0),0) },
+  tMms:   { 1:m=>batchLabel(m), 2:m=>m.bean, 3:m=>m.roast_date, 4:m=>Number(m.batch)||0, 5:m=>Number(m.stock_kg)||0 },
+  tMat:   { 1:M=>M.kind, 2:M=>M.name, 3:M=>M.code, 4:M=>M.spec, 7:M=>Number(M.stock)||0, 9:M=>Number(M.safety)||0 },
+};
+const SORT_NAME = { tProd:"품목", tBeans:"원두", tMms:"배치", tMat:"부자재" };
+const sortKey = id => "momos.sort." + id;
+function sortState(id){ try { return JSON.parse(localStorage.getItem(sortKey(id)) || "null"); } catch(_){ return null; } }
+function setSort(id, col){
+  const cur = sortState(id);
+  const next = (!cur || cur.col !== col) ? { col, dir:1 } : cur.dir === 1 ? { col, dir:-1 } : null;
+  try { next ? localStorage.setItem(sortKey(id), JSON.stringify(next)) : localStorage.removeItem(sortKey(id)); } catch(_){}
+  keepFocus(renderBase);
+  toast(next ? `${SORT_NAME[id]||""} ${next.dir===1?"오름차순":"내림차순"} 정렬` : "원래 순서로");
+}
+/* 목록을 정렬해서 돌려준다 — 정렬이 없으면 그대로 */
+function sorted(id, list){
+  const st = sortState(id), get = st && SORT_COLS[id]?.[st.col];
+  if (!get) return list;
+  const cmp = (a,b) => { const x = get(a), y = get(b);
+    if (typeof x === "number" || typeof y === "number") return (Number(x)||0) - (Number(y)||0);
+    return String(x??"").localeCompare(String(y??""), "ko", { numeric:true }); };
+  return [...list].sort((a,b)=>cmp(a,b)*st.dir);
+}
+/* 머리글에 정렬 표시와 클릭을 붙인다 (tbl 뒤에 호출) */
+function sortHeads(id){
+  const t = $(id), cols = SORT_COLS[id]; if (!t || !cols) return;
+  const st = sortState(id);
+  [...t.querySelectorAll("thead tr th")].forEach((th,i)=>{
+    if (!cols[i] || th.dataset.sortable) return;
+    th.dataset.sortable = "1"; th.classList.add("sortable");
+    const on = st && st.col === i;
+    if (on) th.classList.add("on");
+    const m = document.createElement("span"); m.className = "sortmark";
+    m.textContent = on ? (st.dir===1 ? "▲" : "▼") : "⇅";
+    th.appendChild(m);
+    th.title = "눌러서 정렬 (한 번 오름 · 두 번 내림 · 세 번 원래대로)";
+    th.addEventListener("click", e=>{ if (e.target.closest(".grip, input, select, button")) return; setSort(id, i); });
+  });
 }
 function sizeCols(id){
   const t = $(id); if (!t) return;
@@ -5578,6 +5646,17 @@ function toggleNav(){ document.body.classList.toggle("navopen"); }
 function closeNav(){ document.body.classList.remove("navopen"); }
 $("menu").addEventListener("click", e=>{ const b=e.target.closest("button"); if(b){ go(b.dataset.s); closeNav(); } });
 document.addEventListener("keydown", e=>{ if(e.key==="Escape") closeNav(); });
+$("planTabs").addEventListener("click", e=>{
+  const b = e.target.closest(".subtab"); if(!b) return;
+  setPlanTab(b.dataset.p);
+});
+let planTab = "tally";
+try { planTab = localStorage.getItem("momos.planTab") || "tally"; } catch(_){}
+function setPlanTab(t){
+  planTab = t; try { localStorage.setItem("momos.planTab", t); } catch(_){}
+  document.querySelectorAll("#planTabs .subtab").forEach(x=>x.classList.toggle("on", x.dataset.p===t));
+  document.querySelectorAll("#s-plan .subpane").forEach(x=>x.classList.toggle("on", x.id==="pp-"+t));
+}
 $("baseTabs").addEventListener("click", e=>{
   const b = e.target.closest(".subtab"); if(!b) return;
   document.querySelectorAll(".subtab").forEach(x=>x.classList.toggle("on",x===b));
@@ -6158,11 +6237,19 @@ function csvTally(){
       tallyQty(p.id,undefined,d), madeQty(p.id,d), tallyLeft(p.id,d)]));
 }
 function renderPlan(){
+  if (!document.querySelector("#s-plan .subpane.on") || document.querySelector("#s-plan .subpane.on").id !== "pp-"+planTab) setPlanTab(planTab);
   renderTally();
   const rows = planRows(), pool = allocate(rows);
   lastPlanRows = rows;
   planBatches(rows);
   const manN = rows.filter(r=>r.manual).length;
+  (()=>{ const tb = $("planTabs"); if (!tb) return;
+    const un = rows.reduce((s,r)=>s+(r.unalloc||0),0);
+    const set = (k, txt) => { const b = tb.querySelector(`[data-p="${k}"]`); if (b) b.innerHTML = txt; };
+    set("tally", `집계 ${tallyProds(tallyDay()).length ? `<span style="opacity:.8">· ${tallyProds(tallyDay()).length}품목</span>` : ""}`);
+    set("grid", `생산계획 · 기계 배분 <span style="opacity:.8">· ${rows.length}품목</span>${un>0?` <span class="tag bad" style="font-size:10px">미배정 ${fmt(un)}</span>`:""}`);
+    set("order", `기계별 작업 순서`);
+  })();
   if ($("planMode")) $("planMode").innerHTML = (manN
     ? `<span class="tag warn">손으로 고친 품목 ${manN}건</span>`
     : `<span class="tag ok">전체 자동배분</span>`) +
@@ -10538,9 +10625,10 @@ async function offSelected(){
   SEL.products.clear(); renderAll(); toast(`${rows.length}개 사용중지 (이력은 그대로)`);
 }
 function renderBase(){
-  SHOWN.products = DB.products.map(p=>p.id);
+  const prodList = sorted("tProd", DB.products);
+  SHOWN.products = prodList.map(p=>p.id);
   tbl("tProd", [selAllBox("products"),"CFE 코드","구분","채널","원두","제품명","규격(g)","분쇄도","표준투입(g)","안전재고","CFE현재고","풀패키지","기본 라벨","묶음","이카전용","사용",""],
-    DB.products.map((p,i)=>`<tr class="${p.off?"offrow":""}${SEL.products.has(p.id)?" selrow":""}"><td class="rowno">${selBox("products",p.id,i)}${i+1}</td>
+    prodList.map((p,i)=>`<tr class="${p.off?"offrow":""}${SEL.products.has(p.id)?" selrow":""}"><td class="rowno">${selBox("products",p.id,i)}${i+1}</td>
       <td class="l">${inp("products",p.id,"code",p.code)}</td>
       <td class="c">${inp("products",p.id,"category",p.category)}</td>
       <td class="c"><select data-t="products" data-id="${p.id}" data-k="channel">${CHANNELS.map(c=>`<option ${c===(p.channel||"일반")?"selected":""}>${c}</option>`).join("")}</select></td>
@@ -10582,7 +10670,7 @@ function renderBase(){
   if ($("beanTab")) $("beanTab").innerHTML =
     [["live",`사용중 ${liveB.length}`],["off",`종료 ${offB.length}`],["all",`전체 ${DB.beans.length}`]]
       .map(([v,t])=>`<button class="btn ${beanView===v?"primary":""}" onclick="setBeanView('${v}')">${t}</button>`).join(" ");
-  const bshow = beanView==="off" ? offB : beanView==="all" ? DB.beans : liveB;
+  const bshow = sorted("tBeans", beanView==="off" ? offB : beanView==="all" ? DB.beans : liveB);
   SHOWN.beans = bshow.map(b=>b.id);
   tbl("tBeans", [selAllBox("beans"),"상태","MMS 코드","머신 종류","원두명",
       '<span class="fix">컬러</span>','<span class="fix">품목보고번호</span>','<span class="fix">원산지</span>',
@@ -10614,10 +10702,11 @@ function renderBase(){
 
   selBar("products"); selBar("beans");
   setTimeout(()=>{ selBar("materials"); selBar("mms"); });
+  ["tProd","tBeans","tMms","tMat"].forEach(sortHeads);
   renderBufPanel();
 
   // ── 부자재 재고 ──
-  const mats = matKindFilter ? matsOf(matKindFilter) : DB.materials;
+  const mats = sorted("tMat", matKindFilter ? matsOf(matKindFilter) : DB.materials);
   const msum = {}; DB.materials.forEach(M=>{ msum[M.kind]=(msum[M.kind]||0)+1; });
   const mlow = DB.materials.filter(M=>Number(M.stock||0) < Number(M.safety||0));
   if ($("matSum")) $("matSum").innerHTML =
@@ -10735,9 +10824,10 @@ function renderBase(){
       : `<div class="hint" style="padding:14px 2px">품목을 먼저 등록하세요.</div>`;
   }
 
-  SHOWN.mms = DB.mms.map(m=>m.id);
+  const mmsList = sorted("tMms", DB.mms);
+  SHOWN.mms = mmsList.map(m=>m.id);
   tbl("tMms", [selAllBox("mms"),"배치","원두","로스팅일","그날 몇 번째","재고(kg)","상미 잔여",""],
-    DB.mms.map((m,i)=>{ const st=shelfState(m.roast_date), live=Number(m.stock_kg)>0;
+    mmsList.map((m,i)=>{ const st=shelfState(m.roast_date), live=Number(m.stock_kg)>0;
       return `<tr class="${SEL.mms.has(m.id)?"selrow":""}"><td class="rowno" style="white-space:nowrap">${selBox("mms",m.id,i)}${i+1}</td><td class="l"><b>${batchLabel(m)}</b></td>
         <td class="l">${inp("mms",m.id,"bean",m.bean,"text",'list="beanDL" data-bean="1"')}</td>
         <td class="c">${inp("mms",m.id,"roast_date",m.roast_date,"date")}</td>
