@@ -669,7 +669,7 @@
   .cal .cell.off{background:transparent; border-color:transparent;}
   .cal .cell.today{border-color:var(--blue-600); box-shadow:0 0 0 2px var(--blue-50);}
   .cal .dnum{font-weight:800; font-size:13px; margin-bottom:5px;}
-  .cal .cell.sun .dnum{color:var(--bad);} .cal .cell.sat .dnum{color:var(--blue-600);}
+  .cal .cell.sun .dnum, .cal .dow.sun{color:var(--bad);} .cal .cell.sat .dnum, .cal .dow.sat{color:var(--blue-600);}
   .cal .ev{font-size:11.5px; font-weight:700; border-radius:5px; padding:3px 7px; margin-bottom:4px;
     background:var(--blue-50); color:var(--blue-600); cursor:pointer; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
   .cal .ev.prod{background:var(--ok-soft); color:#107A51;}
@@ -11019,7 +11019,7 @@ function renderCal(){
   $("calTitle").textContent = `${Y}년 ${Mo}월`;
 
   const first = new Date(Y, Mo-1, 1), last = new Date(Y, Mo, 0);
-  const lead = (first.getDay()+6)%7;                 // 월요일 시작
+  const lead = first.getDay();                       // 일요일 시작 (일 월 화 수 목 금 토)
   const cells = [];
   for (let i=0;i<lead;i++) cells.push(null);
   for (let d=1; d<=last.getDate(); d++) cells.push(`${ym}-${String(d).padStart(2,"0")}`);
@@ -11034,16 +11034,16 @@ function renderCal(){
   const monthEv = DB.events.filter(e=>monthKey(e.date)===ym).length;
   $("calHead").innerHTML = `${Y}년 ${Mo}월 · 생산 <b>${fmt(monthEA)}</b> EA · 일정 <b>${monthEv}</b>건 · 품질 <b>${fmt(monthPqc)}</b>건`;
 
-  const DOW = ["월","화","수","목","금","토","일"];
+  const DOW = ["일","월","화","수","목","금","토"];
   $("calGrid").innerHTML = `<div class="cal">` +
-    DOW.map(d=>`<div class="dow">${d}</div>`).join("") +
+    DOW.map((d,i)=>`<div class="dow ${i===0?"sun":i===6?"sat":""}">${d}</div>`).join("") +
     cells.map((d,i)=>{
       if (!d) return `<div class="cell off"></div>`;
       const dow = i%7;
       const evs = (evByDay[d]||[]).map(e=>`<div class="ev" title="${e.title}" onclick="delEvent('${e.id}')">${e.type==="이벤트"?"":"["+e.type+"] "}${e.title}</div>`).join("");
       const prod = prodByDay[d] ? `<div class="ev prod">생산 ${fmt(prodByDay[d])}EA</div>` : "";
       const pq = pqcByDay[d] ? `<div class="ev pqc">품질 ${fmt(pqcByDay[d])}건</div>` : "";
-      return `<div class="cell ${d===today()?"today":""} ${dow===6?"sun":dow===5?"sat":""}">
+      return `<div class="cell ${d===today()?"today":""} ${dow===0?"sun":dow===6?"sat":""}">
         <div class="dnum">${Number(d.slice(8))}</div>${evs}${prod}${pq}</div>`;
     }).join("") + `</div>`;
 
