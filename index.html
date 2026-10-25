@@ -1076,19 +1076,6 @@
         (생산계획표에서 손으로 고치면 <span class="tag warn">수동</span>이 되고, 되돌리려면 [집계 기준으로]).</div>
       <div class="panel-b"><table id="tallyTbl"></table></div>
     </div>
-    <div class="panel" id="bufPanel">
-      <div class="panel-h">여유분 — 품목별 · 요일별 수량 <span class="r hint" id="bufState"></span></div>
-      <div class="hint">품목마다 <b>그 요일에 더 만들 개수(EA)</b>를 적습니다 — 칸 아래에 <b>kg</b>, 원두별 <b>합계 kg</b>이 나옵니다.
-        왼쪽 <b>[적용]</b> 네모로 켜고 끕니다 (수량을 넣으면 저절로 켜짐). 오늘 요일 칸의 수량이 생산계획에 <b>여유분</b>으로 더해집니다.<br>
-        요일 머리의 네모 = <b>생산하는 날</b> · 아래 숫자 = 그날 만들면 상미기간 <b id="bufShelf"></b>일 안에 나갈 수 있는 날
-        (월 5일 · 수 수·목·금 3일 …) — 많이 잡아도 그 안에 다 나가는지 보고 정하세요.
-        <b>원두가 종료되거나 없어지면</b> 그 품목은 저절로 빠집니다.</div>
-      <div id="bufDead"></div>
-      <div class="panel-b" style="overflow-x:auto"><table id="bufTbl"></table></div>
-      <div class="panel-h" style="border-top:1px solid var(--line)">남은 원두 확인 — 오늘
-        <span class="r hint">여유분은 그날 다 포장 못 할 수도 있습니다 — 못 만들면 남는 원두까지 같이 봅니다</span></div>
-      <div class="panel-b"><table id="bufBeanTbl"></table></div>
-    </div>
     <div class="panel">
       <div class="panel-h">집계 입력 내역 <span class="r hint">넣은 순서대로 · 지우면 계획이 바로 줄어듭니다</span></div>
       <div class="selbar" id="selBar-tallies"></div>
@@ -1613,6 +1600,7 @@
     <button class="subtab" data-p="beans">원두 · MMS코드</button>
     <button class="subtab" data-p="label">부자재 재고</button>
     <button class="subtab" data-p="bom">제품별 BOM</button>
+    <button class="subtab" data-p="buf">여유분</button>
     <button class="subtab" data-p="mms">MMS 원두재고</button>
     <button class="subtab" data-p="mach">기계</button>
     <button class="subtab" data-p="work">생산자</button>
@@ -1784,6 +1772,19 @@
       </div>
     </div>
 
+    <div class="subpane" id="p-buf">
+      <div class="panel" id="bufPanel">
+        <div class="panel-h">여유분 — 품목별 · 요일별 수량 <span class="r hint" id="bufState"></span></div>
+        <div class="hint">예) 에스쇼콜라 1kg — <b>월 100 · 수 50</b> 이라고 적으면, 월요일 생산계획에 100개 · 수요일 생산계획에 50개가 여유분으로 더해집니다.<br>
+          품목마다 <b>그 요일에 더 만들 개수(EA)</b>를 적습니다 — 칸 아래에 <b>kg</b>, 원두별 <b>합계 kg</b>이 나옵니다.
+          왼쪽 <b>[적용]</b> 네모로 켜고 끕니다 (수량을 넣으면 저절로 켜짐). 오늘 요일 칸의 수량이 생산계획에 <b>여유분</b>으로 더해집니다.<br>
+          요일 머리의 네모 = <b>생산하는 날</b> · 아래 숫자 = 그날 만들면 상미기간 <b id="bufShelf"></b>일 안에 나갈 수 있는 날
+          (월 5일 · 수 수·목·금 3일 …) — 많이 잡아도 그 안에 다 나가는지 보고 정하세요.
+          <b>원두가 종료되거나 없어지면</b> 그 품목은 저절로 빠집니다. 남는 원두는 <b>재고확인 > MMS 원두</b>에서 봅니다.</div>
+        <div id="bufDead"></div>
+        <div class="panel-b" style="overflow-x:auto"><table id="bufTbl"></table></div>
+      </div>
+    </div>
     <div class="subpane" id="p-init">
       <div class="panel">
         <div class="panel-h">개통 전 초기화 <span class="r" id="seedState"></span></div>
@@ -6122,7 +6123,6 @@ function renderTally(){
       ${rounds.map(r=>`<td class="fix"><b>${fmt(ps.reduce((t,p)=>t+tallyQty(p.id,r,d),0))}</b></td>`).join("")}
       <td class="fix"><b>${fmt(sum)}</b></td><td>${fmt(made)}</td><td class="bufc">${(()=>{ const t = ps.reduce((a,p)=>a+planCalc(p, d).buf,0); return t?`+${fmt(t)}`:"—"; })()}</td>
       <td class="fix"><b>${fmt(left)}</b></td><td></td>` : null);
-  renderBufPanel();
 
   /* 집계 입력 내역 */
   const log = [...talliesOf(d)].sort((a,b)=>
@@ -8959,22 +8959,22 @@ function renderReq(){
 }
 /* 카드 안의 원두 한 건 */
 function gotoBuf(){
-  go("plan");
+  go("base");
+  const b = document.querySelector('#baseTabs .subtab[data-p="buf"]'); if (b) b.click();
   setTimeout(()=>{ const el = $("bufPanel"); if (!el) return;
-    el.scrollIntoView({ behavior:"smooth", block:"start" });
     el.classList.add("justadded"); setTimeout(()=>el.classList.remove("justadded"), 1800); }, 50);
 }
-let bufShowAll = false;                 // 적용 안 한 품목까지 보기
+let bufShowAll = true;                  // 기본: 전체 품목이 보인다 (끄면 적용한 품목만)
 function setBufShowAll(v){ bufShowAll = v; renderBufPanel(); }
 function renderBufPanel(){
   if (!$("bufTbl")) return;
-  const c = bufCfg(), edit = can("plan") || can("base"), d = tallyDay(), today = dowOf(d);
+  const c = bufCfg(), edit = can("base"), d = tallyDay(), today = dowOf(d);
   if ($("bufShelf")) $("bufShelf").textContent = SHELF_LIFE_DAYS;
   if ($("bufState")) $("bufState").innerHTML = (!sb ? "로컬 모드"
     : SETTINGS_SERVER ? '<span class="tag ok">모든 PC 공용</span>'
     : '<span class="tag warn">이 PC에만 저장됨 — 031_settings.sql 실행 필요</span>') +
     ` <label style="font-size:12px;margin-left:8px;cursor:pointer"><input type="checkbox" ${bufShowAll?"checked":""}
-       onchange="setBufShowAll(this.checked)" style="width:auto;height:auto"> 적용 안 한 품목도 보기</label>`;
+       onchange="setBufShowAll(this.checked)" style="width:auto;height:auto"> 전체 품목 보기</label>`;
 
   /* 요일 머리 — 생산하는 날 체크 + 상미기간 안에 나갈 수 있는 날 */
   const head = WD_ORDER.map(w=>{
@@ -9014,7 +9014,7 @@ function renderBufPanel(){
   });
   tbl("bufTbl", ["적용","원두(MMS)","품목", ...head, `오늘(${WD[today]}) 여유`],
     rows.length ? rows : [`<tr><td colspan="11" class="c hint" style="height:52px">${
-      bufShowAll ? "품목이 없습니다" : "여유분을 적용한 품목이 없습니다 — 오른쪽 위 [적용 안 한 품목도 보기]를 켜고 품목 왼쪽 네모를 체크하세요"}</td></tr>`]);
+      bufShowAll ? "품목이 없습니다 — 기준정보 > 품목에서 먼저 등록하세요" : "여유분을 적용한 품목이 없습니다 — 오른쪽 위 [전체 품목 보기]를 켜고 수량을 적으세요"}</td></tr>`]);
 
   /* 원두가 없어진 품목 */
   if ($("bufDead")) $("bufDead").innerHTML = dead.length
@@ -9022,30 +9022,11 @@ function renderBufPanel(){
         ${dead.map(p=>`${p.name} <span class="hint" style="padding:0">(${p.bean||"원두 없음"})</span>`).join(" · ")}
         <br>원두를 다시 쓰면 저절로 다시 적용됩니다. 더 안 쓸 품목이면 체크를 끄세요.</div>` : "";
 
-  /* 남은 원두 확인 — 여유분은 그날 다 포장 못 할 수 있다 */
-  const rowsPlan = planRows();
-  const bset = [...new Set(rowsPlan.map(r=>r.p.bean).filter(beanLive))];
-  if ($("bufBeanTbl")) tbl("bufBeanTbl", ["원두(MMS)","쓸 수 있는 재고(kg)","가장 오래된 배치","오늘 주문·안전재고분(kg)",'<span class="tag buf">오늘 여유분(kg)</span>',"다 만들면 남는 원두(kg)","여유분을 못 만들면 남는 원두(kg)"],
-    bset.map(bn=>{
-      const stock = mmsByBean(bn);
-      const live = sortBatches(DB.mms.filter(m=>m.bean===bn && !isHeld(m) && Number(m.stock_kg)>0));
-      const old = live[0];
-      const rs = rowsPlan.filter(r=>r.p.bean===bn);
-      const needKg = rs.reduce((s,r)=>s+stdKg(r.p, planCalc(r.p, d).need),0);
-      const bufKg  = rs.reduce((s,r)=>s+stdKg(r.p, planCalc(r.p, d).buf),0);
-      const left = stock - needKg - bufKg, left2 = stock - needKg;
-      return `<tr><td class="l"><b>${bn}</b> <span class="hint" style="padding:0">${mmsCodeOf(bn)||""}</span></td>
-        <td>${fmt(stock)}</td>
-        <td class="c ${old?shelfState(old.roast_date):""}">${old?`${batchLabel(old)} · ${shelfLabel(old.roast_date)}`:'<span class="bad">재고 없음</span>'}</td>
-        <td>${fmt(needKg)}</td><td class="bufc">${bufKg?`+${fmt(bufKg)}`:"—"}</td>
-        <td class="${left<0?"bad":""}"><b>${left<0?`부족 ${fmt(-left)}`:fmt(left)}</b></td>
-        <td class="${left2<0?"bad":""}">${left2<0?`부족 ${fmt(-left2)}`:fmt(left2)}</td></tr>`;
-    }));
 }
 let bufSaveT = null;
 function bufSave(c, msg){
   SETTINGS[BUF_KEY] = c;                                   // 화면은 바로 바꾸고
-  keepFocus(renderAll);
+  keepFocus(()=>{ renderBufPanel(); renderPlan(); });
   clearTimeout(bufSaveT);                                  // 서버에는 잇따른 입력을 한 번으로 묶어 보낸다
   bufSaveT = setTimeout(async ()=>{
     const r = await saveSetting(BUF_KEY, c);
@@ -9836,19 +9817,32 @@ function renderStock(){
 
   const sorted = [...rows].sort((a,b)=>{
     const da = a.act!=null?Math.abs(a.act-a.app):-1, db = b.act!=null?Math.abs(b.act-b.app):-1; return db-da; });
-  tbl("stTbl", [isCfe?"CFE코드":"MMS코드", isCfe?"품목명":"원두", `앱 재고(${unit})`, `실제 재고(${unit})`, "차이", "차이율", "상태", ""],
+  /* 원두: 오늘 계획(주문·안전재고분 + 여유분)을 다 만들면 남는 원두 — 여유분은 그날 다 포장 못 할 수 있어 둘 다 보여준다 */
+  const planToday = isCfe ? [] : planRows(), dd = tallyDay();
+  const beanLeft = bn => {
+    const rs = planToday.filter(x=>x.p.bean===bn);
+    const needKg = rs.reduce((t,x)=>t+stdKg(x.p, planCalc(x.p, dd).need),0);
+    const bufKg  = rs.reduce((t,x)=>t+stdKg(x.p, planCalc(x.p, dd).buf),0);
+    const stock = mmsByBean(bn);
+    return { needKg, bufKg, all: stock-needKg-bufKg, noBuf: stock-needKg };
+  };
+  const leftCell = v => `<td class="${v<0?"bad":""}">${v<0?`부족 ${fmt(-v)}`:fmt(v)}</td>`;
+  const extraH = isCfe ? [] : ['<span class="tag buf">오늘 여유분(kg)</span>', "다 만들면 남는 원두", "여유분 못 만들면 남는 원두"];
+  const extraC = r => { if (isCfe) return ""; const L = beanLeft(r.name);
+    return `<td class="bufc">${L.bufKg?`+${fmt(L.bufKg)}`:"—"}${L.needKg?`<br><span class="hint" style="padding:0;font-size:10.5px">주문분 ${fmt(L.needKg)}</span>`:""}</td>${leftCell(L.all)}${leftCell(L.noBuf)}`; };
+  tbl("stTbl", [isCfe?"CFE코드":"MMS코드", isCfe?"품목명":"원두", `앱 재고(${unit})`, ...extraH, `실제 재고(${unit})`, "차이", "차이율", "상태", ""],
     sorted.map(r=>{
       if (r.act==null) return `<tr><td class="l">${r.code||"—"}</td><td class="l">${r.name}${r.sub?` <span class="tag warn">${r.sub}</span>`:""}</td>
-        <td>${fmt(r.app)}</td><td colspan="4" class="c hint" style="padding:0">엑셀 미입력</td><td></td></tr>`;
+        <td>${fmt(r.app)}</td>${extraC(r)}<td colspan="4" class="c hint" style="padding:0">엑셀 미입력</td><td></td></tr>`;
       const d = r.act-r.app, same = Math.abs(d)<=.005;
       return `<tr><td class="l">${r.code||"—"}</td><td class="l">${r.name}${r.sub?` <span class="tag warn">${r.sub}</span>`:""}</td>
-        <td>${fmt(r.app)}</td><td><b>${fmt(r.act)}</b></td>
+        <td>${fmt(r.app)}</td>${extraC(r)}<td><b>${fmt(r.act)}</b></td>
         <td class="${same?'ok':(d<0?'bad':'warn')}">${same?"0":(d>0?"+":"")+fmt(d)}</td>
         <td>${r.app?fmt(d/r.app*100)+"%":"—"}</td>
         <td class="c">${same?'<span class="tag ok">일치</span>':d<0?'<span class="tag bad">실제 부족</span>':'<span class="tag warn">실제 초과</span>'}</td>
         <td class="c">${same?"":`<button class="btn primary" onclick="applyStock('${r.key}')">반영</button>`}</td></tr>`;
     }),
-    `<td colspan="2" class="c">합 계 · ${rows.length}항목</td><td>${fmt(totApp)}</td><td>${entered.length?fmt(totAct):"—"}</td>
+    `<td colspan="2" class="c">합 계 · ${rows.length}항목</td><td>${fmt(totApp)}</td>${isCfe?"":'<td colspan="3"></td>'}<td>${entered.length?fmt(totAct):"—"}</td>
      <td class="${Math.abs(totDiff)>.005?(totDiff<0?'bad':'warn'):'ok'}">${entered.length?(totDiff>0?"+":"")+fmt(totDiff):"—"}</td>
      <td>${totApp&&entered.length?fmt(totDiff/totApp*100)+"%":"—"}</td><td colspan="2" class="c">${entered.length?`실제 입력 ${entered.length}항목`:"엑셀 미입력"}</td>`);
 }
@@ -10619,6 +10613,7 @@ function renderBase(){
 
   selBar("products"); selBar("beans");
   setTimeout(()=>{ selBar("materials"); selBar("mms"); });
+  renderBufPanel();
 
   // ── 부자재 재고 ──
   const mats = matKindFilter ? matsOf(matKindFilter) : DB.materials;
