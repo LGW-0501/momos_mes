@@ -14075,7 +14075,12 @@ function sortBarHTML(){
       title="기계마다 규격순으로 순서를 한 번에 다시 매깁니다 (생산중인 지시는 맨 위에 둡니다)">규격순 정렬</button>
     <button class="btn" onclick="setSpecDir()" title="큰 것부터 / 작은 것부터">${asc?"100g → 1kg":"1kg → 100g"} ⇅</button>
     <label title="생산계획에서 작업지시를 만들 때 바로 규격순으로 정렬"><input type="checkbox" ${specAuto()?"checked":""}
-      onchange="setSpecAuto(this.checked)"> 새 지시 자동 정렬</label>`;
+      onchange="setSpecAuto(this.checked)"> 새 지시 자동 정렬</label>` +
+    (()=>{ const d = $("woDate")?.value || today(), wait = ordsOf(d).filter(o=>o.status==="대기");
+      if (!wait.length) return "";
+      const big = wait.filter(o=>kgCutOf(o)).length;
+      return ` <button class="btn ${big?"primary":""}" onclick="splitAllByKg()" style="margin-left:6px"
+        title="1배치 kg보다 큰 대기 지시를 배치 단위로 가릅니다 (기본 ${fmt(batchKgDefault())}kg)">1배치 kg로 나누기${big?` ${big}건`:""}</button>`; })();
 }
 async function sortOrdersBySpec(d, opt = {}){
   if (!opt.silent && !(await requireUser())) return;
