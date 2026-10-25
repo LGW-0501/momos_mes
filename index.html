@@ -6663,21 +6663,80 @@ async function splitOrderByKg(id, quiet){
   await renumberOrders(o.work_date, o.machine||"");
   return true;
 }
+/* 중복 지시 — 같은 날 · 같은 품목 · 같은 기계 · 같은 배치로 대기 중인 게 둘 이상이면 뒤의 것을 지운다 */
+function dupOrdersOf(d){
+  const seen = {}, dups = [];
+  ordsOf(d).filter(o=>o.status==="대기" && !(Number(o.qty_done)>0)).forEach(o=>{
+    const k = `${o.product_id}|${o.machine||""}|${o.batch_plan||""}`;
+    if (seen[k]) dups.push({ o, first:seen[k] }); else seen[k] = o; });
+  return dups;
+}
+async function cleanDupOrders(){
+  if (!(await requireUser())) return;
+  const d = $("woDate")?.value || $("wkDate")?.value || today();
+  const dups = dupOrdersOf(d);
+  if (!dups.length) return toast("중복된 지시가 없습니다");
+  if (!(await ask(`같은 품목·기계·배치로 두 번 들어간 대기 지시 ${dups.length}건을 지웁니다 (앞의 것은 남깁니다):\n` +
+    dups.slice(0,10).map(x=>`· ${x.o.product_name||prodById(x.o.product_id)?.name} ${fmt(x.o.qty_plan)}EA (${x.o.serial||"—"}) — 남는 것 ${fmt(x.first.qty_plan)}EA`).join("\n") + (dups.length>10?`\n… 외 ${dups.length-10}건`:""),
+    { title:"중복 지시 정리", yes:`${dups.length}건 지우기`, danger:true }))) return;
+  let ok = 0;
+  for (const x of dups) { const r = await mesDeleteOrder({ order_id:x.o.id, idem:`od-${x.o.id}-${uid()}` }); if (r && r.ok) ok++; }
+  for (const m of [...new Set(dups.map(x=>x.o.machine||""))]) await renumberOrders(d, m);
+  renderAll(); toast(`중복 지시 ${ok}건을 지웠습니다`);
+}
+/* 그날 대기 지시 전부에 배치 번호를 매긴다 — 품목이 아니라 "원두 배치" 기준.
+   같은 원두는 우선순위 순서대로 한 배치(57kg)를 채워 가며 번호를 붙이고,
+   한 배치를 넘는 지시는 쪼갠다. 배치가 이미 적힌 지시는 건드리지 않는다. */
+function batchPlanOf(d){
+  const wait = ordsOf(d).filter(o=>o.status==="대기" && !batchParts(o.batch_plan).length);
+  const byBean = {};
+  wait.forEach(o=>{ const p = prodById(o.product_id); if (!p || !(Number(p.std_g)>0)) return; (byBean[p.bean] = byBean[p.bean]||[]).push({ o, p }); });
+  const plan = [];     // { o, parts:[{ea,text,short,full}] }
+  Object.keys(byBean).forEach(bean=>{
+    const per = virtBatchKg(bean); if (!(per>0)) return;
+    let no = nextBatchNo(bean, d), remain = 0, cur = null;
+    byBean[bean].forEach(({o,p})=>{
+      const g = Number(p.std_g)/1000; let left = Math.max(0, Math.round(Number(o.qty_plan)||0)); const parts = [];
+      let guard = 0;
+      while (left > 0 && guard++ < 500) {
+        if (remain < g - 0.0001) { no++; cur = { bean, roast_date:d, batch:no }; remain = per; }
+        const ea = Math.min(left, Math.max(1, Math.floor((remain + 0.0001) / g)));
+        const last = parts[parts.length-1];
+        if (last && last.b === cur) { last.ea += ea; } else parts.push({ b:cur, ea });
+        remain = Math.round((remain - ea*g)*1000)/1000; left -= ea;
+      }
+      parts.forEach(x=>{ x.text = `${batchLabel(x.b)} ${fmt(stdKg(p, x.ea))}kg`; x.short = batchShort(x.b); x.full = batchFull(x.b); });
+      if (parts.length) plan.push({ o, p, parts, per });
+    });
+  });
+  return plan;
+}
 async function splitAllByKg(){
   if (!(await requireUser())) return;
   const d = $("wkDate")?.value || $("woDate")?.value || today();
-  const list = ordsOf(d).filter(o=>o.status==="대기" && kgCutOf(o));
-  if (!list.length) {
-    /* 왜 안 나뉘는지 — 품목마다 이유를 보여준다 */
-    const why = ordsOf(d).filter(o=>o.status==="대기").map(o=>{ const p = prodById(o.product_id); if (!p) return `· ${o.product_name||"?"} — 품목 없음`;
-      const per = virtBatchKg(p.bean), kg = stdKg(p, o.qty_plan);
-      return `· ${p.name} ${fmt(o.qty_plan)}EA = ${fmt(kg)}kg · 1배치 ${fmt(per)}kg` + (batchParts(o.batch_plan).length>1 ? " — 이미 배치가 적혀 있음 ([배치별로 나누기])" : kg <= per ? " — 1배치보다 작아서 그대로" : ""); });
-    return ask(`나눌 대기 지시가 없습니다.\n\n${why.join("\n")}\n\n1배치 kg이 이상하면 생산계획의 [1배치 기본 kg] 또는 기준정보 › 원두·MMS코드의 로스터기 kg을 확인하세요.`, { title:"1배치 kg로 나누기", yes:"확인" });
+  const plan = batchPlanOf(d);
+  if (!plan.length) {
+    const wait = ordsOf(d).filter(o=>o.status==="대기");
+    return ask(wait.length ? `대기 지시 ${wait.length}건에 전부 배치 번호가 이미 적혀 있습니다.\n(품목에 표준투입 g 이 없으면 매기지 못합니다)` : "대기 중인 지시가 없습니다", { title:"배치 번호 매기기", yes:"확인" });
   }
-  if (!(await ask(`1배치 kg 기준으로 ${list.length}건을 나눕니다:\n` + list.slice(0,6).map(o=>{ const c = kgCutOf(o); return `· ${o.product_name||prodById(o.product_id)?.name} ${fmt(o.qty_plan)}EA → ${c.length}건 (1배치 ${fmt(c[0].per)}kg)`; }).join("\n") + (list.length>6?`\n… 외 ${list.length-6}건`:""),
-    { title:"배치로 나누기", yes:`${list.length}건 나누기` }))) return;
-  let ok = 0; for (const o of list) if (await splitOrderByKg(o.id, true)) ok++;
-  renderAll(); toast(`${ok}건을 배치별로 나눴습니다`);
+  const nSplit = plan.filter(x=>x.parts.length>1).length;
+  if (!(await ask(`대기 지시 ${plan.length}건에 배치 번호를 매깁니다 (같은 원두는 한 배치를 채워 가며 · 1배치 기본 ${fmt(batchKgDefault())}kg):\n` +
+    plan.slice(0,10).map(x=>`· ${x.p.name} ${fmt(x.o.qty_plan)}EA → ${x.parts.map(y=>`${y.short}(${fmt(y.ea)})`).join(" + ")}`).join("\n") + (plan.length>10?`\n… 외 ${plan.length-10}건`:"") +
+    (nSplit?`\n\n한 배치를 넘는 ${nSplit}건은 카드가 갈라집니다.`:""), { title:"배치 번호 매기기", yes:"매기기" }))) return;
+  let ok = 0, fail = [];
+  for (const x of plan) {
+    let r;
+    if (x.parts.length > 1)
+      r = await mesSplitOrder({ order_id:x.o.id, idem:`osk-${x.o.id}-${uid()}`,
+        cut: x.parts.map(y=>({ ea:y.ea, batch_plan:y.text, serial:y.short, serial_full:y.full, label_packs: labelNeed(x.p, y.ea, ordLabel(x.o)).bundles })) });
+    else
+      r = await mesEditOrder({ order_id:x.o.id, patch:{ batch_plan:x.parts[0].text, serial:x.parts[0].short, serial_full:x.parts[0].full }, idem:`oe-${x.o.id}-bp-${uid()}` });
+    if (r && r.ok) ok++; else fail.push(`${x.p.name}: ${r?.message||"?"}`);
+  }
+  const machines = [...new Set(plan.map(x=>x.o.machine||""))];
+  for (const m of machines) await renumberOrders(d, m);
+  renderAll();
+  toast(fail.length ? `${ok}건 매김 · 실패 ${fail.length}건 — ${fail[0]}` : `${ok}건에 배치 번호를 매겼습니다`);
 }
 function planBatches(rows){
   const remain = {};                       // mms.id → 남은 kg (가상)
@@ -13325,6 +13384,16 @@ async function makeOrders(){
     toast(`라벨 ${made.length}개를 새로 만들어 붙였습니다 — ${made.slice(0,2).map(p=>p.name).join(", ")}${made.length>2?` 외 ${made.length-2}개`:""}`);
   }
 
+  /* 이미 오늘 대기 중인 품목이 있으면 — 빼고 만들지, 추가로 낼지 먼저 묻는다 (중복 지시 방지) */
+  const waiting = new Set(ordsOf(d).filter(o=>o.status!=="출고완료").map(o=>o.product_id));
+  const dupP = [...new Map(draft.filter(x=>waiting.has(x.p.id)).map(x=>[x.p.id, x.p])).values()];
+  if (dupP.length) {
+    const c = await ask(`${dupP.length}품목은 오늘 이미 지시가 있습니다:\n${dupP.slice(0,8).map(p=>"· "+p.name).join("\n")}${dupP.length>8?`\n… 외 ${dupP.length-8}품목`:""}\n\n2차 집계처럼 더 만드는 게 맞으면 [추가로 생성], 아니면 [빼고 생성]`,
+      { title:"이미 있는 지시", choices:[ { label:"빼고 생성", v:"skip", cls:"primary" }, { label:"추가로 생성", v:"add" }, { label:"취소", v:null } ] });
+    if (!c) return;
+    if (c === "skip") { const keep = draft.filter(x=>!waiting.has(x.p.id)); draft.length = 0; draft.push(...keep); }
+    if (!draft.length) return toast("새로 만들 지시가 없습니다 — 전부 이미 있습니다");
+  }
   if (!(await ask(`${d} 작업지시 ${draft.length}건을 만듭니다.\n품목·수량·설비는 생산계획 그대로 들어갑니다.\n` +
     `일련번호도 지금 매겨집니다 — 생산실적이 그 번호를 그대로 씁니다.`,
     {title:"작업지시 생성", yes:"생성"}))) return;
@@ -13333,12 +13402,14 @@ async function makeOrders(){
      ★ 같은 품목으로 지시를 또 내는 것 자체는 막지 않는다 —
        2차 집계가 들어와 추가로 내는 것은 정상 업무다.
        이미 대기 중인 지시가 있으면 건수만 알려 준다. */
+  const usedSn = new Set();
+  const fallbackSn = () => { let sr = makeSerial(d), n = 1; while (usedSn.has(sr)) { sr = sr.replace(/-(\d{3})$/, (_,k)=>"-"+String(Number(k)+n++).padStart(3,"0")); } usedSn.add(sr); return sr; };
   const payload = draft.map(x => ({
     product_id:x.p.id, product_name:x.p.name, product_code:x.p.code || "",
     product_spec:x.p.spec_g ?? null,
     qty:x.qty, channel:x.p.channel || "일반",
     machine:x.machine, machine_id:DB.machines.find(m=>m.name===x.machine)?.id || null,
-    serial: x.sn?.short || makeSerial(d), serial_full: x.sn?.full || "",
+    serial: x.sn?.short || fallbackSn(), serial_full: x.sn?.full || "",
     batch_plan:x.batches || "", label_packs:x.packs ?? null,
     label_id:x.label_id ?? "", batch_seq:x.seq ?? null, batch_of:x.of ?? null,
     pack_type: isFullPack(x.p) ? PACK_FULL : PACK_LABEL }));
@@ -14076,11 +14147,12 @@ function sortBarHTML(){
     <button class="btn" onclick="setSpecDir()" title="큰 것부터 / 작은 것부터">${asc?"100g → 1kg":"1kg → 100g"} ⇅</button>
     <label title="생산계획에서 작업지시를 만들 때 바로 규격순으로 정렬"><input type="checkbox" ${specAuto()?"checked":""}
       onchange="setSpecAuto(this.checked)"> 새 지시 자동 정렬</label>` +
-    (()=>{ const d = $("woDate")?.value || today(), wait = ordsOf(d).filter(o=>o.status==="대기");
-      if (!wait.length) return "";
-      const big = wait.filter(o=>kgCutOf(o)).length;
-      return ` <button class="btn ${big?"primary":""}" onclick="splitAllByKg()" style="margin-left:6px"
-        title="1배치 kg보다 큰 대기 지시를 배치 단위로 가릅니다 (기본 ${fmt(batchKgDefault())}kg)">1배치 kg로 나누기${big?` ${big}건`:""}</button>`; })();
+    (()=>{ const d = $("woDate")?.value || today();
+      const nb = ordsOf(d).filter(o=>o.status==="대기" && !batchParts(o.batch_plan).length).length;
+      const nd = dupOrdersOf(d).length;
+      return (nb ? ` <button class="btn primary" onclick="splitAllByKg()" style="margin-left:6px"
+        title="배치가 안 적힌 대기 지시에 원두 배치 번호(일련번호)를 매기고, 1배치 kg를 넘는 건 가릅니다">배치 번호 매기기 ${nb}건</button>` : "") +
+        (nd ? ` <button class="btn" style="color:var(--bad);margin-left:6px" onclick="cleanDupOrders()" title="같은 품목·기계·배치로 두 번 들어간 대기 지시를 지웁니다">중복 지시 정리 ${nd}건</button>` : ""); })();
 }
 async function sortOrdersBySpec(d, opt = {}){
   if (!opt.silent && !(await requireUser())) return;
@@ -14172,10 +14244,12 @@ function renderWork(){
        title="기계마다 규격순으로 순서를 한 번에 다시 매깁니다">규격순 정렬 (${specDir()==="asc"?"100g→1kg":"1kg→100g"})</button>` : "") +
     (mixedAll.length && can("plan") ? `<button class="btn primary" onclick="splitAllOrders()"
        title="배치가 여러 개 묶인 지시를 배치마다 한 장씩 나눕니다">배치별로 나누기 ${mixedAll.length}건</button>` : "") +
-    (()=>{ if (!can("plan") || !all.some(o=>o.status==="대기")) return "";
-      const big = all.filter(o=>o.status==="대기" && kgCutOf(o));
-      return `<button class="btn ${big.length?"primary":""}" onclick="splitAllByKg()"
-       title="1배치 kg보다 큰 지시를 배치 단위로 가릅니다 (기본 ${fmt(batchKgDefault())}kg · 생산계획에서 바꿀 수 있음)">1배치 kg로 나누기${big.length?` ${big.length}건`:""}</button>`; })();
+    (()=>{ if (!can("plan")) return "";
+      const nb = all.filter(o=>o.status==="대기" && !batchParts(o.batch_plan).length).length;
+      const nd = dupOrdersOf($("wkDate")?.value || today()).length;
+      return (nb ? `<button class="btn primary" onclick="splitAllByKg()"
+       title="배치가 안 적힌 대기 지시에 원두 배치 번호(일련번호)를 매기고, 1배치 kg를 넘는 건 가릅니다">배치 번호 매기기 ${nb}건</button>` : "") +
+       (nd ? `<button class="btn" style="color:var(--bad)" onclick="cleanDupOrders()">중복 지시 정리 ${nd}건</button>` : ""); })();
 
   const shown = wkMach ? groups.filter(g=>kindOf(g)===wkMach) : groups;
   const card = o=>{
