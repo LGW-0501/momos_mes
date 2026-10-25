@@ -1067,6 +1067,7 @@
     <button class="subtab" data-p="grid">생산계획 · 기계 배분</button>
     <button class="subtab" data-p="order">기계별 작업 순서</button>
     <button class="subtab" data-p="mat">부자재 · 라벨</button>
+    <button class="subtab" data-p="buf">여유분</button>
   </div>
   <div class="body">
     <h2 class="page">생산계획<small id="asof-plan"></small></h2>
@@ -1133,6 +1134,20 @@
       </div>
       <div id="planByMach"></div>
     </div>
+    </div>
+    <div class="subpane" id="pp-buf">
+      <div class="panel" id="bufPanel">
+        <div class="panel-h">여유분 — 품목별 · 요일별 수량 <span class="r hint" id="bufState"></span></div>
+        <div class="hint">예) 에스쇼콜라 1kg — <b>월 100 · 수 50</b> 이라고 적으면, 월요일 생산계획에 100개 · 수요일 생산계획에 50개가 여유분으로 더해집니다.<br>
+          품목마다 <b>그 요일에 더 만들 개수(EA)</b>를 적습니다 — 칸 아래에 <b>kg</b>, 원두별 <b>합계 kg</b>이 나옵니다.
+          왼쪽 <b>[적용]</b> 네모로 켜고 끕니다 (수량을 넣으면 저절로 켜짐). 오늘 요일 칸의 수량이 생산계획에 <b>여유분</b>으로 더해집니다.<br>
+          요일 머리의 네모 = <b>생산하는 날</b> · 아래 숫자 = 그날 만들면 상미기한 <b id="bufShelf"></b>일 안에 나갈 수 있는 날
+          (월 5일 · 수 수·목·금·일 4일 …) — 많이 잡아도 그 안에 다 나가는지 보고 정하세요.
+          <b>원두가 종료되거나 없어지면</b> 그 품목은 저절로 빠집니다. 남는 원두는 <b>재고확인 > MMS 원두</b>에서 봅니다.<br>
+          여기 값은 <b>요일별 기본값</b>입니다 — 그날 원두 상태에 따라 다르게 하려면 <b>[집계]</b> 탭 표의 여유분 칸에서 오늘 것만 고치세요.</div>
+        <div id="bufDead"></div>
+        <div class="panel-b" style="overflow-x:auto"><table id="bufTbl"></table></div>
+      </div>
     </div>
     <div class="subpane" id="pp-mat">
     <div class="panel" style="background:transparent;border:0;box-shadow:none;padding:0">
@@ -1643,7 +1658,6 @@
     <button class="subtab" data-p="beans">원두 · MMS코드</button>
     <button class="subtab" data-p="label">부자재 재고</button>
     <button class="subtab" data-p="bom">제품별 BOM</button>
-    <button class="subtab" data-p="buf">여유분</button>
     <button class="subtab" data-p="mms">MMS 원두재고</button>
     <button class="subtab" data-p="mach">기계</button>
     <button class="subtab" data-p="work">생산자</button>
@@ -1815,20 +1829,6 @@
       </div>
     </div>
 
-    <div class="subpane" id="p-buf">
-      <div class="panel" id="bufPanel">
-        <div class="panel-h">여유분 — 품목별 · 요일별 수량 <span class="r hint" id="bufState"></span></div>
-        <div class="hint">예) 에스쇼콜라 1kg — <b>월 100 · 수 50</b> 이라고 적으면, 월요일 생산계획에 100개 · 수요일 생산계획에 50개가 여유분으로 더해집니다.<br>
-          품목마다 <b>그 요일에 더 만들 개수(EA)</b>를 적습니다 — 칸 아래에 <b>kg</b>, 원두별 <b>합계 kg</b>이 나옵니다.
-          왼쪽 <b>[적용]</b> 네모로 켜고 끕니다 (수량을 넣으면 저절로 켜짐). 오늘 요일 칸의 수량이 생산계획에 <b>여유분</b>으로 더해집니다.<br>
-          요일 머리의 네모 = <b>생산하는 날</b> · 아래 숫자 = 그날 만들면 상미기한 <b id="bufShelf"></b>일 안에 나갈 수 있는 날
-          (월 5일 · 수 수·목·금·일 4일 …) — 많이 잡아도 그 안에 다 나가는지 보고 정하세요.
-          <b>원두가 종료되거나 없어지면</b> 그 품목은 저절로 빠집니다. 남는 원두는 <b>재고확인 > MMS 원두</b>에서 봅니다.<br>
-          여기 값은 <b>요일별 기본값</b>입니다 — 그날 원두 상태에 따라 다르게 하려면 <b>생산계획 > 집계</b> 표의 여유분 칸에서 오늘 것만 고치세요.</div>
-        <div id="bufDead"></div>
-        <div class="panel-b" style="overflow-x:auto"><table id="bufTbl"></table></div>
-      </div>
-    </div>
     <div class="subpane" id="p-init">
       <div class="panel">
         <div class="panel-h">개통 전 초기화 <span class="r" id="seedState"></span></div>
@@ -6304,7 +6304,7 @@ function csvTally(){
 }
 function renderPlan(){
   if (!document.querySelector("#s-plan .subpane.on") || document.querySelector("#s-plan .subpane.on").id !== "pp-"+planTab) setPlanTab(planTab);
-  renderTally();
+  renderTally(); renderBufPanel();
   const rows = planRows(), pool = allocate(rows);
   lastPlanRows = rows;
   planBatches(rows);
@@ -6315,6 +6315,8 @@ function renderPlan(){
     set("tally", `집계 ${tallyProds(tallyDay()).length ? `<span style="opacity:.8">· ${tallyProds(tallyDay()).length}품목</span>` : ""}`);
     set("grid", `생산계획 · 기계 배분 <span style="opacity:.8">· ${rows.length}품목</span>${un>0?` <span class="tag bad" style="font-size:10px">미배정 ${fmt(un)}</span>`:""}`);
     set("order", `기계별 작업 순서`);
+    const bt = PRODS().reduce((t,p)=>t+planCalc(p, tallyDay()).buf, 0);
+    set("buf", `여유분${bt ? ` <span style="opacity:.8">· 오늘 +${fmt(bt)}EA</span>` : ""}`);
   })();
   if ($("planMode")) $("planMode").innerHTML = (manN
     ? `<span class="tag warn">손으로 고친 품목 ${manN}건</span>`
@@ -6713,13 +6715,32 @@ async function mtDone(id){
   const t = DB.material_tasks.find(x=>x.id===id); if(!t) return;
   const M = matById(t.material_id);
   const ord = Math.round(Number(t.order_qty)||0);
-  const g = await askNum("실제로 붙인 수량",
-    `${t.product_name} · ${t.material_name}<br>지시 <b>${fmt(ord)}${t.unit}</b> (${packText(ord,t.pack_qty,t.unit)})`,
-    ord,
-    { unit:t.unit||"장", quick:[ {t:`전부 ${fmt(ord)}`, set:ord}, {t:"+10", add:10},
-                                 {t:"+25", add:25}, {t:"+100", add:100} ] });
-  if (g===null) return;
-  const done = Math.max(0, Math.round(numOf(g)));
+  const pack = Math.max(1, Math.round(Number(t.pack_qty)||1));
+  let done;
+  if (pack > 1) {
+    /* ★ 묶음 단위로 적는다 — 현장은 장을 세지 않고 묶음을 뜯는다. 남는 낱장만 따로 */
+    const bOrd = Math.floor(ord/pack), rOrd = ord - bOrd*pack;
+    const b = await askNum("붙인 묶음 수",
+      `${t.product_name} · ${t.material_name}<br>1묶음 = <b>${fmt(pack)}${t.unit}</b> · 지시 <b>${packText(ord,pack,t.unit)}</b> (${fmt(ord)}${t.unit})`,
+      bOrd,
+      { unit:"묶음", quick:[ {t:`지시대로 ${bOrd}묶음`, set:bOrd}, {t:"+1", add:1}, {t:"+5", add:5}, {t:"+10", add:10} ] });
+    if (b===null) return;
+    const bundles = Math.max(0, Math.round(numOf(b)));
+    const l = await askNum("묶음 외 낱장",
+      `${bundles}묶음 = <b>${fmt(bundles*pack)}${t.unit}</b> · 뜯어서 낱장으로 쓴 것이 있으면 적으세요<br>없으면 <b>[없음 0]</b>`,
+      bundles===bOrd ? rOrd : 0,
+      { unit:t.unit||"장", quick:[ {t:"없음 0", set:0}, {t:`지시 나머지 ${fmt(rOrd)}`, set:rOrd}, {t:"+10", add:10}, {t:"+50", add:50} ], max:pack-1 });
+    if (l===null) return;
+    done = bundles*pack + Math.max(0, Math.round(numOf(l)));
+  } else {
+    const g = await askNum("실제로 붙인 수량",
+      `${t.product_name} · ${t.material_name}<br>지시 <b>${fmt(ord)}${t.unit}</b>`,
+      ord,
+      { unit:t.unit||"장", quick:[ {t:`전부 ${fmt(ord)}`, set:ord}, {t:"+10", add:10},
+                                   {t:"+25", add:25}, {t:"+100", add:100} ] });
+    if (g===null) return;
+    done = Math.max(0, Math.round(numOf(g)));
+  }
   const n = await askNum("버린 수량",
     `찢어짐 · 인쇄오류 등으로 못 쓴 것<br>없으면 <b>[없음 0]</b> 을 누르고 확인하세요`,
     t.ng_qty||0,
@@ -6746,7 +6767,7 @@ async function mtDone(id){
   const endAt = DB.material_tasks.find(x=>x.id===id)?.end_at || nowISO();
   const mins = minsSince(startAt, endAt);
   renderAll();
-  toast(`${t.material_name} 작업 완료 — ${fmt(use)}${t.unit} 차감 (폐기 ${fmt(ng)})` +
+  toast(`${t.material_name} 작업 완료 — ${packText(done,pack,t.unit)} 붙임 · ${fmt(use)}${t.unit} 차감 (폐기 ${fmt(ng)})` +
     (startAt ? ` · ${fmtTime(startAt)} → ${fmtTime(endAt)} ${durText(mins)} 걸림`
              : ` · ${fmtTime(endAt)} — 시작을 안 눌러서 걸린 시간은 안 남았습니다`));
 }
@@ -9224,8 +9245,7 @@ function renderReq(){
 }
 /* 카드 안의 원두 한 건 */
 function gotoBuf(){
-  go("base");
-  const b = document.querySelector('#baseTabs .subtab[data-p="buf"]'); if (b) b.click();
+  go("plan"); setPlanTab("buf");
   setTimeout(()=>{ const el = $("bufPanel"); if (!el) return;
     el.classList.add("justadded"); setTimeout(()=>el.classList.remove("justadded"), 1800); }, 50);
 }
@@ -9233,7 +9253,7 @@ let bufShowAll = true;                  // 기본: 전체 품목이 보인다 (�
 function setBufShowAll(v){ bufShowAll = v; renderBufPanel(); }
 function renderBufPanel(){
   if (!$("bufTbl")) return;
-  const c = bufCfg(), edit = can("base"), d = tallyDay(), today = dowOf(d);
+  const c = bufCfg(), edit = can("plan") || can("base"), d = tallyDay(), today = dowOf(d);
   if ($("bufShelf")) $("bufShelf").textContent = SHELF_LIFE_DAYS;
   if ($("bufState")) $("bufState").innerHTML = (!sb ? "로컬 모드"
     : SETTINGS_SERVER ? '<span class="tag ok">모든 PC 공용</span>'
@@ -9291,7 +9311,7 @@ function renderBufPanel(){
 let bufSaveT = null;
 function bufSave(c, msg){
   SETTINGS[BUF_KEY] = c;                                   // 화면은 바로 바꾸고
-  keepFocus(()=>{ renderBufPanel(); renderPlan(); });
+  keepFocus(renderPlan);
   clearTimeout(bufSaveT);                                  // 서버에는 잇따른 입력을 한 번으로 묶어 보낸다
   bufSaveT = setTimeout(async ()=>{
     const r = await saveSetting(BUF_KEY, c);
@@ -10880,7 +10900,6 @@ function renderBase(){
 
   selBar("products"); selBar("beans");
   setTimeout(()=>{ selBar("materials"); selBar("mms"); });
-  renderBufPanel();
 
   // ── 부자재 재고 ──
   const mats = sorted("tMat", matKindFilter ? matsOf(matKindFilter) : DB.materials);
