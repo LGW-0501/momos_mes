@@ -1420,6 +1420,11 @@
       안 뜨면 <b>[생산계획에서 불러오기]</b>를 누르세요 — 왜 안 생기는지 알려줍니다.
       BOM 을 아직 안 짰어도 <b>품목에 붙여 둔 기본 라벨</b>로 만들어집니다.
     </div>
+    <div class="panel" style="margin-bottom:12px">
+      <div class="panel-h" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">지시 단위
+        <span class="sortbar" id="lrBar"></span></div>
+      <div class="hint" id="lrHint"></div>
+    </div>
     <div id="mtSum" class="kpis"></div>
     <div id="mtDiff"></div>
     <div class="panel">
@@ -3658,14 +3663,14 @@ async function mesSyncMt(a){
             t = { id:uid(), key, round:1, date:a.date, product_id:r.product_id,
               product_name:r.product_name, spec_g:r.spec_g, material_id:r.material_id,
               material_name:r.material_name, kind:r.kind, pack_qty:r.pack_qty, unit:r.unit,
-              plan_ea:r.plan_ea, need_qty:r.need_qty, order_qty:r.need_qty,
+              plan_ea:r.plan_ea, need_qty:r.need_qty, order_qty:r.order_qty ?? r.need_qty,
               done_qty:null, ng_qty:0, status:"대기", worker:"", start_at:null, end_at:null,
               note:"", auto:1, mix:r.mix, created_by_name:CURRENT_USER, created_at:nowISO() };
             T.add("material_tasks", t); save("material_tasks", t); made++;
           } else {
             T.upd(t, { plan_ea:r.plan_ea, need_qty:r.need_qty, mix:r.mix,
               material_name:r.material_name, pack_qty:r.pack_qty, unit:r.unit,
-              order_qty: (t.status==="대기" && Number(t.auto||1)===1) ? r.need_qty : t.order_qty });
+              order_qty: (t.status==="대기" && Number(t.auto||1)===1) ? (r.order_qty ?? r.need_qty) : t.order_qty });
             save("material_tasks", t); upd++;
           }
         });
@@ -6586,6 +6591,24 @@ const mtBooked = (d, mid, exceptId) => DB.material_tasks
 /* 생산계획 → 부자재 작업지시 자동 생성·갱신
    대기 건은 계획을 따라가고, 손 댄 건(작업중·완료)은 건드리지 않는다. */
 /* 계획 한 벌에서 "이 날 만들어야 할 라벨작업 1회차" 목록을 뽑는다 (순수 계산) */
+/* ── 라벨 지시 수량 올림 — 16장 필요해도 25장 묶음으로 지시 (제외 품목은 그대로) ── */
+const LR_KEY = "label_round";
+const lrCfg = () => { const c = SETTINGS[LR_KEY] || {}; return { on: c.on !== false, unit: Math.max(1, Math.round(Number(c.unit)||25)), exclude: c.exclude || {} }; };
+function roundLabelQty(p, need, pack){
+  const c = lrCfg(), n = Math.round(Number(need)||0);
+  if (!c.on || !n || c.exclude[p.id]) return n;
+  const u = c.unit;                                  // 묶음 장수와 상관없이 "지시 단위" 로 올린다
+  return Math.ceil(n / u) * u;
+}
+let lrSaveT = null;
+function setLabelRound(patch){
+  const c = lrCfg(); Object.assign(c, patch);
+  SETTINGS[LR_KEY] = c;
+  renderMt(); if (typeof lastPlanRows !== "undefined" && lastPlanRows) syncMatTasksSoon(lastPlanRows, today());
+  clearTimeout(lrSaveT); lrSaveT = setTimeout(async ()=>{ const r = await saveSetting(LR_KEY, c);
+    if (!r.ok) toast("이 PC에만 저장됐습니다 — 031_settings.sql 실행 필요"); }, 400);
+}
+function toggleLrExclude(pid){ const c = lrCfg(); if (c.exclude[pid]) delete c.exclude[pid]; else c.exclude[pid] = true; setLabelRound({ exclude:c.exclude }); }
 function mtRowsFrom(rows, d){
   const out = [];
   (rows||[]).forEach(r=>{
@@ -6596,6 +6619,7 @@ function mtRowsFrom(rows, d){
       out.push({ product_id:r.p.id, product_name:r.p.name, spec_g:r.p.spec_g,
         material_id:x.M.id, material_name:x.M.name, kind:x.M.kind,
         pack_qty:x.pack, unit:x.unit, plan_ea:r.ea, need_qty:x.need,
+        order_qty: roundLabelQty(r.p, x.need, x.pack),
         mix: mixText(r.p, r.ea) });
     });
   });
@@ -6803,6 +6827,19 @@ function renderMt(){
   const d = $("mtDate").value;
   const list = mtOf(d);
 
+  // ── 지시 단위 설정 (묶음 올림) ──
+  (()=>{ const c = lrCfg(), edit = can("plan");
+    const exList = Object.keys(c.exclude).map(prodById).filter(Boolean);
+    $("lrBar").innerHTML =
+      `<label style="font-weight:700;cursor:pointer"><input type="checkbox" ${c.on?"checked":""} ${edit?"":"disabled"} onchange="setLabelRound({on:this.checked})"> 묶음 단위로 올려서 지시</label>
+       <span>단위 <input type="text" inputmode="numeric" class="num" style="width:54px" value="${c.unit}" ${edit?"":"disabled"} onchange="setLabelRound({unit:Math.max(1,Math.round(numOf(this.value)||25))})"> 장</span>
+       <span style="margin-left:8px">제외 품목:</span>
+       ${exList.map(p=>`<span class="tag warn" style="cursor:pointer" title="눌러서 제외 해제" onclick="toggleLrExclude('${p.id}')">${p.name} ✕</span>`).join(" ") || '<span class="hint" style="padding:0">없음</span>'}
+       <select ${edit?"":"disabled"} onchange="if(this.value){toggleLrExclude(this.value);this.value='';}" style="height:28px"><option value="">+ 제외 품목 추가</option>${
+         PRODS().filter(p=>!c.exclude[p.id]).map(p=>`<option value="${p.id}">${p.name}</option>`).join("")}</select>`;
+    $("lrHint").innerHTML = c.on
+      ? `필요 라벨이 16장이어도 <b>${c.unit}장</b> 단위로 올려 지시합니다 (16 → ${Math.ceil(16/c.unit)*c.unit}) · 제외 품목은 필요한 만큼만 · 이미 시작했거나 손으로 고친 지시는 그대로`
+      : `필요한 장수 그대로 지시합니다`; })();
   // ── 오늘 라벨 작업 요약 ──
   const by = st => list.filter(t=>t.status===st);
   const sum = a => a.reduce((s,t)=>s+Number(t.status==="작업완료" ? (t.done_qty??t.order_qty) : t.order_qty || 0),0);
@@ -6840,6 +6877,7 @@ function renderMt(){
       </div>
       <div class="big"><b>${packText(t.order_qty, t.pack_qty, t.unit)}</b></div>
       <div class="meta">라벨 작업 <b>${fmt(t.order_qty)}${t.unit}</b>
+        ${Number(t.need_qty)!==Number(t.order_qty)?` · 필요 ${fmt(t.need_qty)}${t.unit} <span class="hint" style="padding:0">(${lrCfg().unit}장 단위 올림)</span>`:""}
         ${Number(t.plan_ea)!==Number(t.order_qty)?` · 생산예정 ${fmt(t.plan_ea)}EA`:""}</div>
       <div class="wspec">
         <div><span>생산예정</span><b>${fmt(t.plan_ea)} EA</b></div>
