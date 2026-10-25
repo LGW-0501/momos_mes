@@ -738,7 +738,8 @@
     #editDlg > div > div[style*="grid-template-columns:110px"]{grid-template-columns:1fr !important; gap:6px 0 !important;}
     #editDlg label{font-size:12px; color:var(--soft); font-weight:600; margin-top:8px;}
     #editDlg input, #editDlg select{height:42px; font-size:15px;}
-    #dlg > div{width:100%; max-width:calc(100% - 24px); margin:14vh auto;}
+    #dlg{padding:12px;}
+    #dlg > div{width:100%; max-width:100%; margin:0; max-height:calc(100vh - 24px);}
     #dlg input{height:42px; font-size:16px;}
     #dlg button{height:42px; flex:1;}
     #toast{bottom:16px; left:12px; right:12px; transform:none; text-align:center;}
@@ -753,9 +754,50 @@
     .kpi .sub .k{font-size:9px;} .kpi .sub .v{font-size:12.5px;}
     .kpi .sub div{padding:6px 7px;}
   }
+
+/* v60 개인계정 로그인 */
+#personalLoginGate{position:fixed;inset:0;z-index:2147483647;background:#F2F3F7;display:flex;
+ align-items:center;justify-content:center;padding:20px}
+#personalLoginGate.hidden{display:none!important}
+#personalLoginGate .pl-card{width:430px;max-width:100%;background:#fff;border-radius:16px;overflow:hidden;
+ box-shadow:0 24px 70px rgba(11,20,68,.20);border:1px solid #E4E7EE}
+#personalLoginGate .pl-head{background:#0B1444;color:#fff;padding:29px 29px 25px}
+#personalLoginGate .pl-head h1{font-size:23px;margin:0 0 6px;font-weight:800}
+#personalLoginGate .pl-head p{font-size:13px;margin:0;color:#B9C4E2}
+#personalLoginGate .pl-body{padding:24px 29px 28px}
+#personalLoginGate label{display:block;margin:12px 0 6px;font-size:12px;font-weight:800;color:#6E7585}
+#personalLoginGate input{width:100%;height:46px;border:1px solid #D3D8E3;border-radius:8px;padding:0 12px;font:inherit}
+#personalLoginGate .pl-btn{width:100%;height:48px;margin-top:18px;border:0;border-radius:9px;background:#1B4FD8;
+ color:#fff;font:inherit;font-size:15px;font-weight:800;cursor:pointer}
+#personalLoginGate .pl-btn:disabled{opacity:.55}
+#personalLoginGate .pl-msg{min-height:20px;margin-top:11px;color:#D93B4C;font-size:12.5px;line-height:1.55}
+#personalLoginGate .pl-note{margin-top:13px;padding-top:13px;border-top:1px solid #E4E7EE;color:#6E7585;
+ font-size:11.5px;line-height:1.6}
+
 </style>
 </head>
 <body>
+
+<div id="personalLoginGate">
+ <div class="pl-card">
+  <div class="pl-head">
+   <h1>모모스커피 생산관리 MES</h1>
+   <p>개인 아이디로 로그인해 주세요.</p>
+  </div>
+  <div class="pl-body">
+   <label for="personalLoginId">아이디</label>
+   <input id="personalLoginId" type="text" autocomplete="username" placeholder="아이디를 입력하세요">
+   <label for="personalLoginPw">비밀번호</label>
+   <input id="personalLoginPw" type="password" autocomplete="current-password" placeholder="비밀번호"
+    onkeydown="if(event.key==='Enter') personalLogin()">
+   <button id="personalLoginBtn" class="pl-btn" onclick="personalLogin()">로그인</button>
+   <div id="personalLoginMsg" class="pl-msg"></div>
+   <div class="pl-note"><b>개인 로그인</b>은 접근 권한과 책임자를 기록합니다.<br>
+   로그인 계정에 연결된 본인이 실제 작업자로 자동 선택됩니다.<br>다른 작업자로 변경하는 기능은 <b>시스템 관리자 계정</b>만 사용할 수 있습니다.</div>
+  </div>
+ </div>
+</div>
+
 
 <div class="topbar">
   <button class="hamb" onclick="toggleNav()" aria-label="메뉴">☰</button>
@@ -1265,7 +1307,7 @@
     <span id="mtInfo" class="hint" style="padding:0"></span>
     <span style="margin-left:auto"></span>
     <button class="btn primary" onclick="mtAuto()">생산계획에서 불러오기</button>
-    <button class="btn" onclick="addMt()">직접 추가</button>
+    <button class="btn" onclick="addMt()">1차 직접 추가</button>
     <button class="btn" onclick="csvMt()">엑셀 다운로드</button>
     <button class="btn primary" onclick="printMt()">작업지시서 출력</button>
   </div>
@@ -1639,6 +1681,32 @@
         <div class="hint" id="workHint"></div>
         <div class="panel-b"><table id="tWork"></table></div>
       </div>
+
+      <div class="panel">
+        <div class="panel-h">로그인 계정 관리</div>
+        <div class="hint">
+          <b>시스템 관리자만 신규 로그인 계정을 만들 수 있습니다.</b>
+          생산자와 로그인 계정은 1:1로 연결됩니다 · 신규 계정의 초기 비밀번호는 <b>0000</b>입니다 ·
+          로그인 계정의 권한과 실제 작업자 선택은 서로 분리됩니다.
+        </div>
+        <div class="panel-b"><table id="tAccounts"></table></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-h">내 계정 · 비밀번호 변경</div>
+        <div class="hint">현재 로그인한 본인의 비밀번호만 변경합니다. 다른 사람의 비밀번호는 여기서 볼 수 없습니다.</div>
+        <div style="padding:16px 18px;display:flex;gap:8px;align-items:end;flex-wrap:wrap">
+          <div><label style="display:block;font-size:12px;font-weight:700;color:var(--soft);margin-bottom:5px">로그인 ID</label>
+            <input id="myLoginId" type="text" readonly style="width:180px;background:#F5F6F8"></div>
+          <div><label style="display:block;font-size:12px;font-weight:700;color:var(--soft);margin-bottom:5px">현재 비밀번호</label>
+            <input id="myPwCurrent" type="password" autocomplete="current-password" style="width:180px"></div>
+          <div><label style="display:block;font-size:12px;font-weight:700;color:var(--soft);margin-bottom:5px">새 비밀번호</label>
+            <input id="myPwNew" type="password" autocomplete="new-password" style="width:180px"></div>
+          <div><label style="display:block;font-size:12px;font-weight:700;color:var(--soft);margin-bottom:5px">새 비밀번호 확인</label>
+            <input id="myPwNew2" type="password" autocomplete="new-password" style="width:180px"></div>
+          <button class="btn primary" onclick="changeMyPassword()">비밀번호 변경</button>
+        </div>
+      </div>
     </div>
     <div class="subpane" id="p-perm">
       <div class="panel">
@@ -1805,14 +1873,20 @@
 
 <div id="printArea"></div>
 
-<div id="dlg" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:80;">
-  <div style="background:var(--paper);width:430px;max-width:92vw;margin:16vh auto;border-radius:12px;overflow:hidden;box-shadow:0 20px 50px rgba(0,0,0,.3)">
-    <div class="panel-h" id="dlgTitle">확인</div>
-    <div style="padding:16px 18px">
+<!-- ★ 내용이 길어도 버튼이 화면 밖으로 나가지 않습니다 —
+        제목·버튼은 고정하고, 가운데 글만 스크롤됩니다. -->
+<div id="dlg" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:80;
+     align-items:center;justify-content:center;padding:16px">
+  <div style="background:var(--paper);width:430px;max-width:92vw;
+       max-height:calc(100vh - 32px);border-radius:12px;overflow:hidden;
+       box-shadow:0 20px 50px rgba(0,0,0,.3);display:flex;flex-direction:column">
+    <div class="panel-h" id="dlgTitle" style="flex:0 0 auto">확인</div>
+    <div id="dlgBody" style="padding:16px 18px;overflow-y:auto;flex:1 1 auto;min-height:0">
       <div id="dlgMsg" style="white-space:pre-line;line-height:1.6;margin-bottom:12px"></div>
       <input type="text" id="dlgInput" style="width:100%;display:none">
     </div>
-    <div style="padding:0 18px 16px;display:flex;gap:8px;justify-content:flex-end">
+    <div style="padding:12px 18px;display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;
+         flex:0 0 auto;border-top:1px solid var(--line);background:var(--paper)">
       <button class="btn" id="dlgNo">취소</button>
       <button class="btn primary" id="dlgYes">확인</button>
     </div>
@@ -2042,16 +2116,62 @@ async function connClear(){
       { title:"연결 끊기", yes:"끊기", danger:true }))) return;
   clearConf(); location.reload();
 }
+
+const MES_LOGIN_DOMAIN = "mes.momos.local";
+const MES_LOGIN_OK_KEY = "momos_mes_login_verified_v61";
+function markMesLoginVerified(){ try{ sessionStorage.setItem(MES_LOGIN_OK_KEY,"1"); }catch(_){} }
+function hasMesLoginVerified(){ try{ return sessionStorage.getItem(MES_LOGIN_OK_KEY)==="1"; }catch(_){ return false; } }
+function clearMesLoginVerified(){ try{ sessionStorage.removeItem(MES_LOGIN_OK_KEY); }catch(_){} }
+let LOGIN_USER = null;
+function isSystemAdmin(){ return !!(LOGIN_USER && LOGIN_USER.system_admin === true); }
+function loginWorker(){ return LOGIN_USER ? DB.workers.find(w=>w.id===LOGIN_USER.worker_id) : null; }
+function loginRole(){ return (LOGIN_USER && ROLES[LOGIN_USER.role]) ? LOGIN_USER.role : "floor"; }
+function loginEmailOf(id){
+  id=String(id||"").trim().toLowerCase();
+  if(!/^[a-z0-9._-]{3,40}$/.test(id)) return "";
+  return `${id}@${MES_LOGIN_DOMAIN}`;
+}
+async function personalLogin(){
+  const msg=$("personalLoginMsg"), btn=$("personalLoginBtn");
+  const loginId=($("personalLoginId")?.value||"").trim().toLowerCase();
+  const pw=$("personalLoginPw")?.value||"";
+  const email=loginEmailOf(loginId);
+  if(!email){ msg.textContent="아이디는 영문 소문자·숫자·._- 조합 3~40자로 입력해 주세요."; return; }
+  if(!pw){ msg.textContent="비밀번호를 입력해 주세요."; return; }
+  if(!sb){ msg.textContent="Supabase 연결이 초기화되지 않았습니다. 연결 설정을 확인해 주세요."; return; }
+  btn.disabled=true; msg.textContent="로그인 확인 중…";
+  try{
+    const {data,error}=await sb.auth.signInWithPassword({email,password:pw});
+    if(error) throw error;
+    if(!data?.session) throw new Error("로그인 세션이 생성되지 않았습니다.");
+    markMesLoginVerified();
+    location.reload();
+  }catch(e){ msg.textContent="로그인하지 못했습니다 — 아이디 또는 비밀번호를 확인해 주세요."; }
+  finally{ btn.disabled=false; }
+}
+function showPersonalLogin(message){
+  $("personalLoginGate")?.classList.remove("hidden");
+  if(message && $("personalLoginMsg")) $("personalLoginMsg").textContent=message;
+}
+function hidePersonalLogin(){ $("personalLoginGate")?.classList.add("hidden"); }
+function currentWorkerId(){
+  const w=workerByName(CURRENT_USER);
+  return w?.id || null;
+}
+
 async function connLogin(){
   if (!sb) return toast("먼저 연결 설정을 저장하고 새로고침하세요");
-  const id = ($("loginId").value||"").trim(), pw = $("loginPw").value||"";
-  if (!id || !pw) return toast("이메일과 비밀번호를 넣어 주세요");
-  const { error } = await sb.auth.signInWithPassword({ email:id, password:pw });
+  const id = ($("loginId").value||"").trim().toLowerCase(), pw = $("loginPw").value||"";
+  if (!id || !pw) return toast("아이디와 비밀번호를 넣어 주세요");
+  const email = id.includes("@") ? id : loginEmailOf(id);
+  const { error } = await sb.auth.signInWithPassword({ email, password:pw });
   if (error) { $("loginMsg").textContent = `로그인하지 못했습니다 — ${error.message}`; return; }
+  markMesLoginVerified();
   location.reload();
 }
 async function connLogout(){
-  if (!sb) return;
+  clearMesLoginVerified();
+  if (!sb) { location.reload(); return; }
   await sb.auth.signOut(); location.reload();
 }
 async function devSave(){
@@ -2120,7 +2240,8 @@ function ask(message, opts={}){
     inp.value = opts.value ?? "";
     $("dlgYes").textContent = opts.yes || "확인";
     $("dlgYes").className = "btn " + (opts.danger ? "primary" : "primary");
-    box.style.display = "block";
+    box.style.display = "flex";
+    const body = $("dlgBody"); if (body) body.scrollTop = 0;   // 길었던 앞 창의 스크롤이 남지 않게
     if (isPrompt) setTimeout(()=>{ inp.focus(); inp.select(); }, 30);
     const done = v => { box.style.display="none"; cleanup(); res(v); };
     const bar = $("dlgYes").parentElement;
@@ -2738,7 +2859,7 @@ function effSpeed(m, p){
    ⑤ 저장소 (Supabase / 로컬)
    ══════════════════════════════════════════════════════════════ */
 const TABLES = ["products","beans","bom","mms","machines","workers","roasters","bean_roasters","roasting","roast_lines","holds","materials","material_moves","material_tasks","bom_sets","labels","label_moves","orders","logs","consumptions","pqc","events","counts","usages","adjust","audit","perms","rework","rework_in","tallies","stock_moves","idempotency_keys","order_events","shipments","qc_rejections","migration_checks","ng_adjustments","material_task_reverts",
-   "log_amendments","search_aliases"];
+   "log_amendments","search_aliases","app_users"];
 let sb = null, dbMode = "local";
 let DEV_OK = false, DEV_NAME = "", IS_ADMIN_SESSION = false, CONN_ERR = "";
 async function initDB(){
@@ -2767,11 +2888,15 @@ async function initDB(){
               if (data && data.ok) { DEV_OK = true; DEV_NAME = data.name || "현장 기기"; } }
         catch(_) {}
       }
-      if (!(sess && sess.session) && !DEV_OK) {
-        dbMode = DEV_TOKEN ? "bad_device" : "need_login";
-        throw new Error(DEV_TOKEN ? "등록되지 않았거나 사용중지된 기기입니다" : "로그인이 필요합니다");
+      if (!(sess && sess.session) || !hasMesLoginVerified()) {
+        if (sess && sess.session) {
+          try { await sb.auth.signOut(); } catch(_) {}
+        }
+        clearMesLoginVerified();
+        dbMode = "need_login";
+        throw new Error("아이디와 비밀번호로 개인 로그인이 필요합니다");
       }
-      IS_ADMIN_SESSION = !!(sess && sess.session);
+      IS_ADMIN_SESSION = true;
 
       /* ★ 한 번에 1000행만 옵니다 — 끝까지 나눠서 받습니다.
            전에는 그냥 select("*") 라, 실적·수불이 1000행을 넘으면
@@ -2796,7 +2921,27 @@ async function initDB(){
            시연 데이터가 운영 DB 에 들어가거나 같은 것이 또 쌓였습니다.
            이제는 서버에 있는 것만 씁니다. 기준정보는 SQL 로 넣습니다. */
       TABLES.forEach(t => DB[t] = loaded[t] || []);
+
+      /* v66 — 운영 DB의 roasters 표가 비어 있어도 로스팅 요청서 카드가 사라지지 않게 한다.
+         v51 기본 로스터기(S35/S70/P60)를 화면 기준정보로 복원한다.
+         고정 UUID를 써서 새로고침 때 ID가 바뀌거나 중복 생성되지 않는다. */
+      if (!Array.isArray(DB.roasters) || DB.roasters.length === 0) {
+        DB.roasters = [
+          { id:"35111111-0000-4000-8000-000000000035", name:"S35", cap_kg:35, yield_pct:84, day_batch:0, day_kg:0, active:true },
+          { id:"70111111-0000-4000-8000-000000000070", name:"S70", cap_kg:70, yield_pct:84, day_batch:0, day_kg:0, active:true },
+          { id:"60111111-0000-4000-8000-000000000060", name:"P60", cap_kg:60, yield_pct:84, day_batch:0, day_kg:0, active:true }
+        ];
+      }
+
+      const authUser = (await sb.auth.getUser())?.data?.user || null;
+      LOGIN_USER = authUser ? DB.app_users.find(u=>u.id===authUser.id && u.active!==false) : null;
+      if (!LOGIN_USER) {
+        await sb.auth.signOut();
+        dbMode = "need_login";
+        throw new Error("MES 사용자 등록이 없거나 사용중지된 계정입니다");
+      }
       dbMode = "supabase";
+      hidePersonalLogin();
     } catch(e){
       console.warn("Supabase 연결 실패:", e);
       /* ★ 로그인 전 · 등록 안 된 기기는 "로컬 모드" 로 덮어쓰지 않는다.
@@ -2812,7 +2957,7 @@ async function initDB(){
     }
   }
   const who = dbMode === "supabase"
-    ? (IS_ADMIN_SESSION ? "관리자 계정" : `현장 기기 · ${DEV_NAME}`) : "";
+    ? (LOGIN_USER ? (isSystemAdmin() ? "시스템 관리자 계정" : "개인 계정") : (IS_ADMIN_SESSION ? "개인 계정" : `현장 기기 · ${DEV_NAME}`)) : "";
   const DBST = {
     supabase:   [`<span class="dot g"></span>연결됨 · ${who}`, `연결됨 · ${who}`],
     need_login: ['<span class="dot o"></span>로그인 필요', "연결됨 · 로그인 필요"],
@@ -2842,6 +2987,9 @@ async function initDB(){
     $("loginMsg").textContent =
       "Supabase 에 닿지 못했습니다 — " + CONN_ERR +
       " · 인터넷을 확인하고 새로고침하세요. 지금 입력하면 저장되지 않습니다.";
+  if (dbMode === "need_login") showPersonalLogin("개인 아이디로 로그인해 주세요.");
+  else if (dbMode === "conn_fail") showPersonalLogin("데이터베이스 연결에 실패했습니다 — " + CONN_ERR);
+
   if (dbMode === "need_login" || dbMode === "bad_device" || dbMode === "conn_fail") {
     /* 저장은 되지 않는 상태 — 화면이 로컬 데이터로 돌아가지 않게 비워 둔다 */
     TABLES.forEach(t => DB[t] = []);
@@ -2921,7 +3069,7 @@ function pushEvent(T, o, from, to, event, note){
 /* ── 1. 작업 중단 ──────────────────────────────────────────── */
 async function mesStopWork(a){
   return rpc("stop_work",
-    { p_order_id:a.order_id, p_reason:a.reason, p_worker_id:null, p_idempotency:a.idem },
+    { p_order_id:a.order_id, p_reason:a.reason, p_worker_id:currentWorkerId(), p_idempotency:a.idem },
     () => {
       const hit = idemHit(a.idem); if (hit) return hit;
       const o = ordById(a.order_id);
@@ -2940,7 +3088,7 @@ async function mesStopWork(a){
 /* ── 2. 생산 중 부적합 ─────────────────────────────────────── */
 async function mesRegisterNg(a){
   return rpc("register_ng",
-    { p_order_id:a.order_id, p_qty:a.qty, p_type:a.type, p_worker_id:null, p_idempotency:a.idem },
+    { p_order_id:a.order_id, p_qty:a.qty, p_type:a.type, p_worker_id:currentWorkerId(), p_idempotency:a.idem },
     () => {
       const hit = idemHit(a.idem); if (hit) return hit;
       if (!(Number(a.qty) > 0)) return MES_ERR("bad_qty","수량을 넣어 주세요");
@@ -2969,7 +3117,7 @@ async function mesRegisterNg(a){
 /* ── 3. 생산 중 수량 ───────────────────────────────────────── */
 async function mesCountWork(a){
   return rpc("count_work",
-    { p_order_id:a.order_id, p_qty:a.qty, p_worker_id:null, p_idempotency:a.idem },
+    { p_order_id:a.order_id, p_qty:a.qty, p_worker_id:currentWorkerId(), p_idempotency:a.idem },
     () => {
       const hit = idemHit(a.idem); if (hit) return hit;
       const o = ordById(a.order_id);
@@ -3144,7 +3292,7 @@ async function mesUnshipOrder(a){
      같은 자재가 두 경로에서 빠지는 구조를 만들지 않는다. */
 async function mesStartMt(a){
   return rpc("start_material_task",
-    { p_task_id:a.task_id, p_worker_id:null, p_idempotency:a.idem },
+    { p_task_id:a.task_id, p_worker_id:currentWorkerId(), p_idempotency:a.idem },
     () => {
       const hit = idemHit(a.idem); if (hit) return hit;
       const t = DB.material_tasks.find(x => x.id === a.task_id);
@@ -3164,7 +3312,7 @@ async function mesStartMt(a){
 
 async function mesFinishMt(a){
   return rpc("finish_material_task",
-    { p_task_id:a.task_id, p_done:a.done, p_ng:a.ng||0, p_worker_id:null, p_idempotency:a.idem },
+    { p_task_id:a.task_id, p_done:a.done, p_ng:a.ng||0, p_worker_id:currentWorkerId(), p_idempotency:a.idem },
     () => {
       const hit = idemHit(a.idem); if (hit) return hit;
       const t = DB.material_tasks.find(x => x.id === a.task_id);
@@ -3217,7 +3365,7 @@ async function mesFinishMt(a){
 
 async function mesRevertMt(a){
   return rpc("revert_material_task",
-    { p_task_id:a.task_id, p_worker_id:null, p_idempotency:a.idem },
+    { p_task_id:a.task_id, p_worker_id:currentWorkerId(), p_idempotency:a.idem },
     () => {
       const hit = idemHit(a.idem); if (hit) return hit;
       const t = DB.material_tasks.find(x => x.id === a.task_id);
@@ -5223,6 +5371,12 @@ function seedDerived(){
 let CURRENT_USER = "";
 try { CURRENT_USER = localStorage.getItem("momos_user") || ""; } catch(e){}
 function setUser(n){
+  const own = loginWorker();
+  if (LOGIN_USER && !isSystemAdmin() && own && n !== own.name) {
+    toast("일반 계정은 본인 작업자만 사용할 수 있습니다");
+    syncUserUI();
+    return;
+  }
   const w = workerByName(n);
   if (n && !w && DB.workers.length) {
     toast(`"${n}" 은(는) 생산자 목록에 없습니다 — 기준정보 > 생산자에서 먼저 등록하세요`);
@@ -5230,9 +5384,9 @@ function setUser(n){
   }
   CURRENT_USER = n;
   try{ n ? localStorage.setItem("momos_user", n) : localStorage.removeItem("momos_user"); }catch(e){}
-  if (w) setRole(permOf(w), true);          // 이름에 지정된 권한을 그대로 적용
+  // v60: 작업자 선택은 "실제 작업자" 기록용이며 로그인 권한을 바꾸지 않는다.
   renderAll();
-  if (w) toast(`${n} · ${ROLES[permOf(w)]}로 들어왔습니다`);
+  if (w) toast(`실제 작업자: ${n}`);
 }
 const nowISO = () => new Date().toISOString();
 const fmtDT = iso => { if(!iso) return "—"; const t=new Date(iso); if(isNaN(t)) return "—";
@@ -5370,18 +5524,22 @@ function syncUserUI(){
   const av = $("avatar");
   if (av) av.textContent = CURRENT_USER ? CURRENT_USER.slice(-2) : "—";
   const cu = $("curUser");
-  if (cu) cu.innerHTML = `<option value="">작업자 선택</option>` +
-    DB.workers.map(w=>`<option ${w.name===CURRENT_USER?"selected":""}>${w.name}</option>`).join("");
+  if (cu) {
+    const own = loginWorker();
+    const list = isSystemAdmin() ? DB.workers : (own ? [own] : []);
+    cu.innerHTML = (isSystemAdmin() ? `<option value="">작업자 선택</option>` : ``) +
+      list.map(w=>`<option ${w.name===CURRENT_USER?"selected":""}>${w.name}</option>`).join("");
+    cu.disabled = !!LOGIN_USER && !isSystemAdmin();
+    cu.title = isSystemAdmin() ? "시스템 관리자 계정 — 실제 작업자를 변경할 수 있습니다" : "일반 계정 — 본인 작업자로 고정됩니다";
+  }
   const warn = $("userWarn");
   if (warn) warn.style.display = CURRENT_USER ? "none" : "block";
   const rs = $("roleSel");
   if (rs) {
-    const p = myPerm();
-    rs.value = ROLE;
-    rs.disabled = !!p;                       // 이름이 정해지면 권한은 그 사람 것으로 고정
-    rs.title = p ? `${CURRENT_USER}의 권한입니다 — 기준정보 > 생산자 에서 관리자가 바꿀 수 있습니다`
-                 : "이름을 고르면 그 사람 권한으로 바뀝니다";
-    rs.classList.toggle("lock", !!p);
+    rs.value = loginRole();
+    rs.disabled = true;
+    rs.title = "업무 권한은 로그인 계정에 연결되어 있으며 작업자 선택으로 바뀌지 않습니다";
+    rs.classList.add("lock");
   }
 }
 
@@ -6416,6 +6574,7 @@ function renderMt(){
       <div class="btns sm">
         ${t.status==="대기" ? `<button onclick="mtDone('${t.id}')">시작 안 누르고 바로 완료</button>`
                             : `<button onclick="mtBack('${t.id}')">대기로</button>`}
+        <button onclick="addRound('${t.product_id}','${t.material_id}')">추가 라벨작업</button>
       </div>
     </div>`;
   };
@@ -6522,6 +6681,7 @@ function renderMt(){
             ? `<button class="btn primary" onclick="mtDone('${t.id}')">완료</button>
                <button class="btn" onclick="mtBack('${t.id}')">대기로</button>`
             : `<button class="btn" onclick="mtBack('${t.id}')">되돌리기</button>`}
+          <button class="btn" onclick="addRound('${t.product_id}','${t.material_id}')">추가 작업</button>
           <button class="btn danger" onclick="delRow('material_tasks','${t.id}')">삭제</button></td></tr>`;
     }),
     list.length ? `<td colspan="3" class="c">합 계 · ${list.length}건</td>
@@ -8512,6 +8672,7 @@ function renderReq(){
   $("reqPending").innerHTML = pend.length ? `<div class="panel"><div class="panel-h" style="color:var(--bad)">로스터기 미지정 ${pend.length}건</div>
     <div class="items" style="padding:10px">${pend.map(r=>itemCard(r)).join("")}</div></div>` : "";
 
+  // v65: v51 로스터기 카드(S35/S70/P60) 복원 유지
   // 로스터기별 카드
   const act = DB.roasters.filter(r=>r.active!==false);
   const LD = reqLoad();
@@ -9728,6 +9889,7 @@ document.addEventListener("change", e=>{
   const el = e.target, { t, id, k } = el.dataset || {};
   if (!t || !id || !k) return;
   const need = TCAP[t] || "base";
+  if (t === "workers" && !isSystemAdmin()) { toast("생산자 정보 변경은 시스템 관리자 계정만 가능합니다"); renderAll(); return; }
   if (!can(need)) { deny(need); renderAll(); return; }
   const row = DB[t]?.find(r=>r.id===id); if(!row) return;
   if (el.dataset.bean) {                            // "쇼콜라" 처럼 짧게 친 원두명을 전체 이름으로
@@ -9837,6 +9999,7 @@ async function toggleProdOff(id){
   renderAll(); toast(p.off ? `${p.name} — 사용중지 (이력은 그대로)` : `${p.name} — 다시 사용합니다`);
 }
 async function delRow(t,id){
+  if (t === "workers" && !isSystemAdmin()) return toast("생산자 삭제는 시스템 관리자 계정만 가능합니다");
   const row = DB[t].find(r=>r.id===id);
   const nm = row?.name || row?.bean || row?.material || row?.title || id;
 
@@ -10084,25 +10247,28 @@ function renderBase(){
       <td class="c">${chk("machines",m.id,"ica_only",m.ica_only)}</td>
       <td class="c"><button class="btn danger" onclick="delRow('machines','${m.id}')">삭제</button></td></tr>`));
 
-  renderPerm(); renderAudit(); seedBadge();
+  renderPerm();
+  if (!isSystemAdmin()) {
+    document.querySelectorAll("#tPerm input, #tPerm button, #tPerm select").forEach(el=>{
+      el.disabled=true; el.title="시스템 관리자 계정만 권한설정을 변경할 수 있습니다";
+    });
+  }
+  renderAudit(); seedBadge();
 
   const adminN = DB.workers.filter(w=>permOf(w)==="admin").length;
   const rankIdx = w => { const i = RANKS.indexOf(w.role); return i<0 ? RANKS.length : i; };
   const wlist = [...DB.workers].sort((a,b)=> rankIdx(a)-rankIdx(b) || String(a.name).localeCompare(String(b.name)));
   if ($("workHint")) $("workHint").innerHTML =
-    `<b>여기서 사람마다 권한을 정합니다.</b> 화면 위에서 본인 이름을 고르면 그 권한이 자동으로 적용됩니다 ·
-     <b>직급</b>(부서장 · 팀장 · 매니저 · 파트장 · 사원)은 표시용이고, 실제로 무엇을 고칠 수 있는지는 <b>권한</b>이 정합니다 ·
-     <b>관리자</b> = 전부 · <b>현장 작업자</b> = 생산·부적합 · <b>검수·출고</b> = 검수·출고·부적합 ·
-     권한과 상관없이 <b>모든 화면은 누구나 볼 수 있습니다</b> (고치는 것만 다름) ·
-     관리자는 최소 한 명 있어야 해서 마지막 관리자는 바꾸거나 지울 수 없습니다.`;
-  tbl("tWork", ["No","이름","직급","권한","고칠 수 있는 것",""],
+    `<b>생산자와 로그인 계정은 서로 다른 정보입니다.</b> 직급·업무 역할은 현장 운영용이며,
+     <b>시스템 관리자</b>만 생산자 수정·계정 생성을 할 수 있습니다 · 실제 작업자를 바꿔도 로그인 권한은 바뀌지 않습니다.`;
+  tbl("tWork", ["No","이름","직급","업무 역할","고칠 수 있는 것",""],
     wlist.map((w,i)=>{
       const pm = permOf(w);
       const last = pm==="admin" && adminN<=1;
       return `<tr><td class="rowno">${i+1}</td>
       <td class="l">${inp("workers",w.id,"name",w.name)}</td>
       <td class="c">${sel("workers",w.id,"role",w.role,RANKS)}</td>
-      <td class="c"><select onchange="setPerm('${w.id}',this.value)" style="font-weight:800" ${last?"disabled title='마지막 관리자입니다 — 다른 사람을 관리자로 지정한 뒤 바꾸세요'":""}>
+      <td class="c"><select onchange="setPerm('${w.id}',this.value)" style="font-weight:800" ${last?"disabled title='마지막 관리자입니다 — 다른 사람을 먼저 관리자로 지정하세요'":""}>
         ${Object.entries(ROLES).map(([k,v])=>`<option value="${k}" ${k===pm?"selected":""}>${v}</option>`).join("")}
       </select>${last?'<br><span class="tag warn" style="margin-top:4px;display:inline-block">마지막 관리자</span>':''}</td>
       <td class="l" style="font-size:12px;color:var(--soft);white-space:normal;line-height:1.6;max-width:420px">${
@@ -10114,7 +10280,104 @@ function renderBase(){
         return n?`${r} ${n}`:null; }).filter(Boolean).join(" · ") || "—"}</td>
      <td class="c">${Object.entries(ROLES).map(([k,v])=>`${v} ${DB.workers.filter(w=>permOf(w)===k).length}`).join(" · ")}</td>
      <td colspan="2"></td>`);
+  if (!isSystemAdmin()) {
+    document.querySelectorAll("#tWork input, #tWork select, #tWork button").forEach(el=>{ el.disabled=true; el.title="시스템 관리자 계정만 변경할 수 있습니다"; });
+    const addBtn = document.querySelector('#p-work .panel-h button[onclick="addWorker()"]');
+    if (addBtn) { addBtn.disabled=true; addBtn.title="시스템 관리자 계정만 변경할 수 있습니다"; }
+  }
+
+  renderAccountManagement();
+
 }
+
+function accountForWorker(workerId){
+  return (DB.app_users||[]).find(u=>u.worker_id===workerId && u.active!==false) || null;
+}
+function renderAccountManagement(){
+  if (!$("tAccounts")) return;
+  const rankIdx = w => { const i=RANKS.indexOf(w.role); return i<0?RANKS.length:i; };
+  const rows=[...DB.workers].sort((a,b)=>rankIdx(a)-rankIdx(b)||String(a.name).localeCompare(String(b.name)));
+  tbl("tAccounts", ["이름","직급","업무 역할","로그인 ID","계정 상태","관리"],
+    rows.map(w=>{
+      const a=accountForWorker(w.id);
+      const role=ROLES[permOf(w)]||permOf(w);
+      const login=a?.login_id||"";
+      const status=a ? `<span class="tag ok">사용중</span>` : `<span class="tag warn">미생성</span>`;
+      const manage=a
+        ? `<span style="font-size:12px;color:var(--soft)">연결 완료</span>`
+        : (isSystemAdmin()
+            ? `<span style="display:inline-flex;gap:6px;align-items:center">
+                 <input id="login-${w.id}" type="text" placeholder="로그인 ID" style="width:150px"
+                   onkeydown="if(event.key==='Enter') createMesAccount('${w.id}')">
+                 <button class="btn primary" onclick="createMesAccount('${w.id}')">계정 생성</button>
+               </span>`
+            : `<span style="font-size:12px;color:var(--soft)">시스템 관리자만 가능</span>`);
+      return `<tr>
+        <td class="l"><b>${w.name||"—"}</b></td>
+        <td class="c">${w.role||"—"}</td>
+        <td class="c">${role}</td>
+        <td class="c">${login ? `<b>${login}</b>` : "—"}</td>
+        <td class="c">${status}</td>
+        <td class="c">${manage}</td>
+      </tr>`;
+    }),
+    `<td colspan="6" class="c">신규 계정 초기 비밀번호: <b>0000</b> · 생성 후 본인이 비밀번호를 변경하세요</td>`);
+  if ($("myLoginId")) $("myLoginId").value = LOGIN_USER?.login_id || "";
+}
+async function reloadAppUsers(){
+  if(!sb) return;
+  const {data,error}=await sb.from(tb("app_users")).select("*");
+  if(error) throw error;
+  DB.app_users=data||[];
+  LOGIN_USER = LOGIN_USER ? DB.app_users.find(u=>u.id===LOGIN_USER.id && u.active!==false) || LOGIN_USER : LOGIN_USER;
+}
+async function createMesAccount(workerId){
+  if(!isSystemAdmin()) return toast("시스템 관리자 계정만 로그인 계정을 생성할 수 있습니다");
+  if(!sb) return toast("Supabase 연결이 필요합니다");
+  const w=DB.workers.find(x=>x.id===workerId);
+  if(!w) return toast("생산자를 찾을 수 없습니다");
+  const el=$(`login-${workerId}`);
+  const loginId=String(el?.value||"").trim().toLowerCase();
+  if(!/^[a-z0-9._-]{3,40}$/.test(loginId))
+    return toast("로그인 ID는 영문 소문자·숫자·._- 조합 3~40자로 입력해 주세요");
+  if(!(await ask(`${w.name}님의 로그인 계정을 생성합니다.\n\n로그인 ID: ${loginId}\n초기 비밀번호: 0000\n\n계속할까요?`,
+    {title:"MES 계정 생성",yes:"계정 생성"}))) return;
+  try{
+    const {data:ses}=await sb.auth.getSession();
+    if(!ses?.session) throw new Error("로그인 세션이 없습니다");
+    const {data,error}=await sb.functions.invoke("create-mes-user",{
+      body:{login_id:loginId,worker_id:workerId}
+    });
+    if(error) throw error;
+    if(!data?.ok) throw new Error(data?.error||"계정을 생성하지 못했습니다");
+    await reloadAppUsers();
+    renderAll();
+    toast(`${w.name} 계정 생성 완료 · ID ${loginId} · 초기 비밀번호 0000`);
+  }catch(e){
+    console.error("createMesAccount",e);
+    toast(`계정 생성 실패 — ${e?.message||e}`);
+  }
+}
+async function changeMyPassword(){
+  if(!sb || !LOGIN_USER) return toast("개인 로그인이 필요합니다");
+  const cur=$("myPwCurrent")?.value||"";
+  const n1=$("myPwNew")?.value||"";
+  const n2=$("myPwNew2")?.value||"";
+  if(!cur) return toast("현재 비밀번호를 입력해 주세요");
+  if(n1.length<4) return toast("새 비밀번호는 4자 이상 입력해 주세요");
+  if(n1!==n2) return toast("새 비밀번호 확인이 일치하지 않습니다");
+  if(cur===n1) return toast("현재 비밀번호와 다른 비밀번호를 입력해 주세요");
+  try{
+    const email=LOGIN_USER.email || loginEmailOf(LOGIN_USER.login_id);
+    const {error:reauthErr}=await sb.auth.signInWithPassword({email,password:cur});
+    if(reauthErr) throw new Error("현재 비밀번호가 맞지 않습니다");
+    const {error}=await sb.auth.updateUser({password:n1});
+    if(error) throw error;
+    $("myPwCurrent").value=""; $("myPwNew").value=""; $("myPwNew2").value="";
+    toast("비밀번호를 변경했습니다");
+  }catch(e){ toast(`비밀번호 변경 실패 — ${e?.message||e}`); }
+}
+
 /* ── 역할별 권한 설정 ── */
 function renderPerm(){
   if (!$("tPerm")) return;
@@ -10391,7 +10654,7 @@ async function addMms(){
   renderAll(); focusNewRow("tMms", 'input[data-k="bean"]');
 }
 function addMachine(){ const r={id:uid(),name:"신규기계",workers:1,hours:7,per_person:true,s1000:360,s500:540,s200:630,s100:630,ica_only:false,can_grind:true,label_sec:3,min_ea:0,max_ea:0}; DB.machines.push(r); save("machines",r); renderAll(); }
-function addWorker(){ const r={id:uid(),name:"이름",role:"사원",perm:"floor"}; DB.workers.push(r); save("workers",r); renderAll(); focusNewRow("tWork", 'input[data-k="name"]'); }
+function addWorker(){ if(!isSystemAdmin()) return toast("생산자 추가는 시스템 관리자 계정만 가능합니다"); const r={id:uid(),name:"이름",role:"사원",perm:"floor"}; DB.workers.push(r); save("workers",r); renderAll(); focusNewRow("tWork", 'input[data-k="name"]'); }
 function fillCodes(){
   let n=0; DB.products.forEach(p=>{ if(!p.code){ p.code=makeCode(p); save("products",p); n++; } });
   renderBase(); toast(n?`${n}개 CFE 코드 생성`:"빈 코드가 없습니다");
@@ -11315,7 +11578,7 @@ async function startWork(id){
   if (!(await requireUser())) return;
   const o = ordById(id); if(!o) return;
   /* 같은 지시를 두 사람이 동시에 시작하지 못하게 — 처리는 엔진이 한다 */
-  const r = await mesStartWork({ order_id:id, worker:CURRENT_USER, idem:`sw-${id}-${uid()}` });
+  const r = await mesStartWork({ order_id:id, worker:CURRENT_USER, worker_id:currentWorkerId(), idem:`sw-${id}-${uid()}` });
   if (!r || !r.ok) { renderAll(); return toast(r?.message || "시작하지 못했습니다"); }
   renderWork(); renderDash(); toast(`${prodById(o.product_id)?.name} 생산 시작`);
 }
@@ -11555,7 +11818,7 @@ async function mesFinishWork(args){
         p_order_id: args.order_id, p_good: args.good, p_ng: args.ng || 0,
         p_ng_type: args.ng_type || null,
         p_input_kg: (args.input_kg === "" || args.input_kg === undefined) ? null : args.input_kg,
-        p_worker_id: args.worker_id || null, p_idempotency: args.idem || null });
+        p_worker_id: args.worker_id || currentWorkerId(), p_idempotency: args.idem || null });
       if (error) return MES_ERR("server", error.message || String(error));
       return data;
     } catch(e){ return MES_ERR("network", String(e?.message || e)); }
@@ -12303,6 +12566,7 @@ function capOf(role){
 }
 /* 권한 하나를 켜고 끈다 */
 function setCap(role, cap, on){
+  if (!isSystemAdmin()) { renderBase(); return toast("권한설정 변경은 시스템 관리자 계정만 가능합니다"); }
   if (!can("base")) { renderBase(); return deny("base"); }
   if (role === "admin") return toast("관리자는 전부 가능하도록 고정되어 있습니다");
   DB.perms = DB.perms || [];
@@ -12323,6 +12587,7 @@ function setCap(role, cap, on){
 }
 /* 기본값으로 되돌리기 */
 function resetCaps(){
+  if (!isSystemAdmin()) return toast("권한설정 초기화는 시스템 관리자 계정만 가능합니다");
   if (!can("base")) return deny("base");
   (DB.perms||[]).forEach(p=>del("perms", p.id));
   DB.perms = [];
@@ -12419,6 +12684,7 @@ const workerByName = n => DB.workers.find(w=>w.name===n);
 const myPerm = () => { const w = workerByName(CURRENT_USER); return w ? permOf(w) : null; };
 /* 권한 바꾸기 — 관리자만, 마지막 관리자는 내릴 수 없다 */
 function setPerm(id, v){
+  if (!isSystemAdmin()) { renderBase(); return toast("생산자 권한 변경은 시스템 관리자 계정만 가능합니다"); }
   if (!can("base")) { renderBase(); return deny("base"); }
   const w = DB.workers.find(x=>x.id===id); if(!w) return;
   const was = permOf(w);
@@ -12426,7 +12692,7 @@ function setPerm(id, v){
     { renderBase(); return toast("마지막 관리자입니다 — 다른 사람을 먼저 관리자로 지정하세요"); }
   w.perm = ROLES[v] ? v : "floor"; save("workers", w);
   logAudit("권한 변경", w.name, `${ROLES[was]} → ${ROLES[w.perm]}`);
-  if (w.name === CURRENT_USER) setRole(w.perm, true);
+  // 생산자의 업무 역할을 바꿔도 현재 로그인 계정 권한은 바뀌지 않는다.
   renderAll();
   toast(`${w.name} → ${ROLES[w.perm]}`);
 }
@@ -12439,13 +12705,22 @@ function setRole(r, quiet){
 }
 /* 처음 열었을 때 — 역할부터 고르게 */
 async function firstRun(){
-  const w = workerByName(CURRENT_USER);
-  if (w) { setRole(permOf(w), true); return; }      // 이름이 기억돼 있으면 그 권한으로
-  let saved = null;
-  try { saved = localStorage.getItem("momos_role"); } catch(e){}
-  if (saved && ROLES[saved]) { setRole(saved, true); return; }
-  setRole("admin", true);
-  const box = $("welcome"); if (box) box.style.display = "flex";
+  if (LOGIN_USER) {
+    const own = loginWorker();
+    // 로그인할 때는 이전 브라우저의 작업자 선택값을 재사용하지 않는다.
+    // 시스템 관리자도 항상 자신의 연결된 생산자로 시작한다.
+    if (own) {
+      CURRENT_USER = own.name;
+      try { localStorage.setItem("momos_user", CURRENT_USER); } catch(e){}
+    } else {
+      CURRENT_USER = "";
+      try { localStorage.removeItem("momos_user"); } catch(e){}
+    }
+    setRole(loginRole(), true);
+    renderAll();
+    return;
+  }
+  setRole("floor", true);
 }
 function pickRole(r){
   const box = $("welcome"); if (box) box.style.display = "none";
@@ -12522,6 +12797,7 @@ Object.assign(window, {
   toggleNav, closeNav,
   setUser, pickUser, sign, unsign, receiveCheck, fixLog,
   openEdit, closeEdit, saveEdit, editPreview, revertLog, applyLog, renderAudit, csvAudit, backupAll, wipe, reloadDB, printLabel, printWorkOrder,
+  createMesAccount, changeMyPassword, renderAccountManagement,
   shiftAsOf, toToday, csvFlow, csvAsOf, csvUse, stockAsOf, dayFlow,
   setCount, assignUse, delUse,
   loadNeed, addReq, setReq, delReq, clearManual, addRoaster, sendToPlan, csvReq, setBeanRoaster, csvBeanRoaster });
@@ -12584,5 +12860,29 @@ $("woDate").value = today();
 applyGuide();
 initDB().then(firstRun);
 </script>
+
+<script>
+window.addEventListener("load",()=>{
+  // Gate is intentionally visible in HTML/CSS before JS. initDB hides it only after auth + app_users validation.
+  setTimeout(()=>{
+    if(dbMode==="supabase" && LOGIN_USER){
+      hidePersonalLogin();
+      const r=document.querySelector(".topbar .right");
+      if(r && !document.getElementById("loginIdentity")){
+        const x=document.createElement("span"); x.id="loginIdentity";
+        x.textContent=`로그인: ${LOGIN_USER.name} · ${isSystemAdmin()?"시스템 관리자":"일반 계정"} · ${ROLES[loginRole()]||loginRole()}`;
+        r.prepend(x);
+      }
+      if(r && !document.getElementById("personalLogoutBtn")){
+        const b=document.createElement("button");
+        b.id="personalLogoutBtn"; b.className="btn"; b.textContent="로그아웃";
+        b.onclick=connLogout;
+        r.appendChild(b);
+      }
+    } else if(dbMode!=="supabase") showPersonalLogin();
+  },150);
+});
+</script>
+
 </body>
 </html>
