@@ -530,6 +530,11 @@
     border-radius:8px; padding:10px; min-height:140px; background:#fff;}
 
   td.fix, th.fix{position:sticky; right:0; z-index:3; background:#fff; box-shadow:-8px 0 10px -8px rgba(26,31,51,.12);}
+  /* 왼쪽 고정 — 표를 옆으로 밀어도 이름 칸은 남는다 */
+  td.fixl, th.fixl{position:sticky; left:0; z-index:3; background:#fff; box-shadow:8px 0 10px -8px rgba(26,31,51,.14);}
+  thead th.fixl{background:#F7F8FB; z-index:4;}
+  tbody tr:hover td.fixl{background:#F8FAFD;}
+  tr.heldrow td.fixl{background:#FFF4F2;}
   thead th.fix{background:#F7F8FB; z-index:4;}
   tbody tr:hover td.fix{background:#F8FAFD;}
   td.fix .btn{height:27px; padding:0 10px; font-size:12px;}
@@ -745,7 +750,7 @@
     thead th:first-child{background:#F7F8FB; z-index:5;}
     tfoot td:first-child{background:#F7F8FB;}
     tbody tr:hover td:first-child{background:#F8FAFD;}
-    td.fix, th.fix{position:static; box-shadow:none;}
+    td.fix, th.fix, td.fixl, th.fixl{position:static; box-shadow:none;}
     td.fix .btn{height:32px; padding:0 11px;}
 
     /* 게이지 */
@@ -2635,7 +2640,9 @@ function csv(name, head, rows){
   a.download = `${name}_${today()}.csv`; a.click();
 }
 function tbl(id, head, rows, foot){
-  $(id).innerHTML = `<thead><tr>${head.map(h=>`<th>${h}</th>`).join("")}</tr></thead>` +
+  /* 머리글 글자에 fix / fixl 표시가 있으면 그 칸(th)을 오른쪽/왼쪽에 고정한다 */
+  const thCls = h => /class="fixl"/.test(String(h)) ? ' class="fixl"' : /class="fix"/.test(String(h)) ? ' class="fix"' : "";
+  $(id).innerHTML = `<thead><tr>${head.map(h=>`<th${thCls(h)}>${h}</th>`).join("")}</tr></thead>` +
     `<tbody>${rows.length ? rows.join("") : `<tr><td colspan="${head.length}" class="c" style="height:52px;color:#999">데이터 없음</td></tr>`}</tbody>` +
     (foot ? `<tfoot><tr>${foot}</tr></tfoot>` : "");
   sizeCols(id);
@@ -10970,13 +10977,13 @@ async function offSelected(){
 function renderBase(){
   const prodList = sorted("tProd", DB.products);
   SHOWN.products = prodList.map(p=>p.id);
-  tbl("tProd", [selAllBox("products"),"CFE 코드","구분","채널","원두","제품명","규격(g)","분쇄도","표준투입(g)","안전재고","CFE현재고","풀패키지","기본 라벨","묶음","이카전용","사용",""],
+  tbl("tProd", [selAllBox("products"),"CFE 코드","구분","채널","원두",'<span class="fixl">제품명</span>',"규격(g)","분쇄도","표준투입(g)","안전재고","CFE현재고","풀패키지","기본 라벨","묶음","이카전용","사용",""],
     prodList.map((p,i)=>`<tr class="${p.off?"offrow":""}${SEL.products.has(p.id)?" selrow":""}"><td class="rowno">${selBox("products",p.id,i)}${i+1}</td>
       <td class="l">${inp("products",p.id,"code",p.code)}</td>
       <td class="c">${inp("products",p.id,"category",p.category)}</td>
       <td class="c"><select data-t="products" data-id="${p.id}" data-k="channel">${CHANNELS.map(c=>`<option ${c===(p.channel||"일반")?"selected":""}>${c}</option>`).join("")}</select></td>
       <td class="l">${inp("products",p.id,"bean",p.bean,"text",'list="beanDL" data-bean="1"')}</td>
-      <td class="l">${inp("products",p.id,"name",p.name)}</td>
+      <td class="l fixl">${inp("products",p.id,"name",p.name)}</td>
       <td>${inp("products",p.id,"spec_g",p.spec_g,"number")}</td>
       <td><select data-t="products" data-id="${p.id}" data-k="grind">${GRINDS.map(g=>`<option ${g===(p.grind||"홀빈")?"selected":""}>${g}</option>`).join("")}</select></td>
       <td>${inp("products",p.id,"std_g",p.std_g,"number")}</td>
@@ -11023,9 +11030,9 @@ function renderBase(){
     Object.keys(tail).forEach(k=>{ base[Number(k)+n] = tail[k]; });
     SORT_COLS.tBeans = base; }
   COL_DEFAULT.tBeans = [66,74,122,190,300, ...rAct.map(()=>118), 92,160,330,128,116,116,108,70,96,84,70];
-  tbl("tBeans", [selAllBox("beans"),"상태","MMS 코드","머신 종류","원두명",
-      ...rAct.map(r=>`<span class="fix">${r.name}</span><br><span class="hint" style="padding:0;font-weight:600;font-size:10.5px">가능 · 1배치 kg</span>`),
-      '<span class="fix">컬러</span>','<span class="fix">품목보고번호</span>','<span class="fix">원산지</span>',
+  tbl("tBeans", [selAllBox("beans"),"상태","MMS 코드","머신 종류",'<span class="fixl">원두명</span>',
+      ...rAct.map(r=>`${r.name}<br><span class="hint" style="padding:0;font-weight:600;font-size:10.5px">가능 · 1배치 kg</span>`),
+      "컬러","품목보고번호","원산지",
       "적요","출시일","종료일","MMS 재고(kg)","배치 수","연결 완제품","처리",""],
     bshow.map((b,i)=>{
       const live = DB.mms.filter(m=>m.bean===b.name && Number(m.stock_kg)>0);
@@ -11036,17 +11043,17 @@ function renderBase(){
         <td class="c">${off ? '<span class="tag">종료</span>' : '<span class="tag ok">사용중</span>'}</td>
         <td class="l wrap">${inp("beans",b.id,"mms_code",b.mms_code)}</td>
         <td class="l wrap">${inp("beans",b.id,"machine",b.machine)}</td>
-        <td class="l wrap">${inp("beans",b.id,"name",b.name)}</td>
+        <td class="l wrap fixl">${inp("beans",b.id,"name",b.name)}</td>
         ${rAct.map(r=>{ const al = brAllowed(b.name, r.id), v = brRow(b.name, r.id)?.batch_kg || "";
-          return `<td class="c fix" style="white-space:nowrap"><div class="brc${al?"":" off"}">
+          return `<td class="c" style="white-space:nowrap"><div class="brc${al?"":" off"}">
             <input type="checkbox" ${al?"checked":""} title="${r.name}에서 로스팅 가능" style="width:auto;height:auto"
               onchange="setBeanAllow('${b.name}','${r.id}',this.checked);renderBase()">
             <input type="number" class="num" step="0.5" style="width:62px" value="${v}" ${al?"":"disabled"}
               placeholder="${al?fmt(r.cap_kg):"불가"}" title="이 로스터기에서 1배치 투입 kg (비우면 로스터기 기본값 ${fmt(r.cap_kg)}kg)"
               onchange="setBeanRoaster('${b.name}','${r.id}',this.value);renderBase()"></div></td>`; }).join("")}
-        <td class="l fix wrap">${inp("beans",b.id,"color",b.color)}</td>
-        <td class="l fix wrap">${inp("beans",b.id,"report_no",b.report_no)}</td>
-        <td class="l fix wrap" style="min-width:330px">${inp("beans",b.id,"compose",b.compose)}</td>
+        <td class="l wrap">${inp("beans",b.id,"color",b.color)}</td>
+        <td class="l wrap">${inp("beans",b.id,"report_no",b.report_no)}</td>
+        <td class="l wrap" style="min-width:330px">${inp("beans",b.id,"compose",b.compose)}</td>
         <td class="l wrap">${inp("beans",b.id,"note",b.note)}</td>
         <td class="l wrap">${inp("beans",b.id,"launch",b.launch)}</td>
         <td class="l wrap">${inp("beans",b.id,"end_date",b.end_date)}</td>
