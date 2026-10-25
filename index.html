@@ -364,6 +364,10 @@
   .wc .hd .nm .pri{flex:none; min-width:27px; height:27px; border-radius:7px;
     background:rgba(255,255,255,.17); color:#fff; font-size:14px; font-weight:800;
     display:inline-flex; align-items:center; justify-content:center; font-variant-numeric:tabular-nums;}
+  /* 여유분 표시 */
+  .tag.buf{background:#efe7ff; color:#5b34b5; border:1px solid #d9c9fb;}
+  td.bufc{color:#5b34b5; font-weight:700;}
+  @media print{ .noprint{display:none!important;} }
   /* 여러 줄 골라 지우기 */
   .selbox{width:16px !important; height:16px !important; margin:0 6px 0 0; vertical-align:middle; cursor:pointer; accent-color:#c0392b;}
   tr.selrow > td{background:rgba(192,57,43,.09) !important;}
@@ -1296,6 +1300,14 @@
       </div>
       <div id="reqPending"></div>
       <div id="reqBoard"></div>
+    </div>
+    <div class="panel noprint" id="bufPanel">
+      <div class="panel-h">여유분 설정 — 로스팅 요일별 <span class="r hint" id="bufState"></span></div>
+      <div class="hint">상미기간 <b id="bufShelf"></b>일 안에 <b>실제로 생산하는 날</b>만 셉니다.
+        예) 월요일 로스팅 → 월·화·수·목·금 5일 사용 · 수요일 로스팅 → 수·목·금 3일 사용 (토·일 생산 안 함).<br>
+        <b>여유분 = 원두별 하루 평균 사용량 × 여유 일수</b> · 여유 일수는 <b>(쓸 수 있는 날 − 1)</b> 을 넘길 수 없습니다 — 넘기면 상미기간 안에 다 못 씁니다.
+        재고가 남아 있으면 그만큼 여유분에서 먼저 뺍니다.</div>
+      <div class="panel-b"><table id="bufTbl"></table></div>
     </div>
     <div class="panel">
       <div class="panel-h">로스팅 생산계획
@@ -2989,6 +3001,7 @@ async function initDB(){
            시연 데이터가 운영 DB 에 들어가거나 같은 것이 또 쌓였습니다.
            이제는 서버에 있는 것만 씁니다. 기준정보는 SQL 로 넣습니다. */
       TABLES.forEach(t => DB[t] = loaded[t] || []);
+      await loadSettings();                       // 공용 설정 (여유분 등) — 031 이 없으면 이 기기 값
 
       /* v66 — 운영 DB의 roasters 표가 비어 있어도 로스팅 요청서 카드가 사라지지 않게 한다.
          v51 기본 로스터기(S35/S70/P60)를 화면 기준정보로 복원한다.
@@ -3085,20 +3098,36 @@ async function initDB(){
    ══════════════════════════════════════════════════════════════ */
 
 /* 연결돼 있으면 서버, 아니면 로컬. 돌려주는 모양은 같다. */
-async function rpc(name, params, localFn){
+/* 순간적인 네트워크 끊김 — 사파리 "Load failed", 크롬 "Failed to fetch" 등 */
+const isNetErr = m => /load failed|failed to fetch|networkerror|network request failed|fetch failed|timed? ?out|aborted/i.test(String(m||""));
+/* 다시 보내도 결과가 같은 처리만 자동으로 다시 보낸다 (두 번 반영될 위험이 없는 것)
+   · 멱등키가 붙은 처리 — 서버가 같은 키를 한 번만 처리
+   · 목표 상태로 맞추는 동기화 */
+const RETRY_SAFE = ["sync_material_tasks", "touch_device"];
+let UNLOADING = false;
+window.addEventListener("beforeunload", ()=>{ UNLOADING = true; });   // 새로고침 중 끊긴 요청은 실패로 적지 않는다
+async function rpc(name, params, localFn, opt = {}){
   if (sb) {
     /* ★ 연결돼 있으면 로컬 엔진으로 넘어가지 않습니다.
          실패는 실패로 돌려줍니다 — 성공한 것처럼 보이게 하지 않습니다. */
-    try {
-      const { data, error } = await sb.rpc(name, params);
-      if (error) {
-        noteSaveFail("처리", name, null, error.message || String(error));
-        return MES_ERR("server", error.message || String(error));
+    const canRetry = RETRY_SAFE.includes(name) || !!(params && params.p_idempotency);
+    for (let attempt = 0; ; attempt++) {
+      try {
+        const { data, error } = await sb.rpc(name, params);
+        if (error) {
+          const m = error.message || String(error);
+          if (isNetErr(m) && canRetry && attempt < 2) { await new Promise(r=>setTimeout(r, 700*(attempt+1))); continue; }
+          if (!UNLOADING && !opt.quiet) noteSaveFail("처리", name, null, m);
+          return MES_ERR(isNetErr(m) ? "network" : "server", m);
+        }
+        return data;
+      } catch(e){
+        const m = String(e?.message || e);
+        if (isNetErr(m) && canRetry && attempt < 2) { await new Promise(r=>setTimeout(r, 700*(attempt+1))); continue; }
+        if (!UNLOADING && !opt.quiet) noteSaveFail("처리", name, null,
+          isNetErr(m) ? `${m} — 인터넷이 잠깐 끊겼습니다. 연결을 확인하고 다시 해 주세요` : m);
+        return MES_ERR("network", m);
       }
-      return data;
-    } catch(e){
-      noteSaveFail("처리", name, null, String(e?.message || e));
-      return MES_ERR("network", String(e?.message || e));
     }
   }
   try { return localFn(); }
@@ -3523,7 +3552,7 @@ async function mesSyncMt(a){
         const r = { ok:true, made, updated:upd, removed:gone };
         idemPut(T, a.idem, "sync_material_tasks", null, r); return r;
       });
-    });
+    }, { quiet: !!a.quiet });
 }
 
 /* ── 새 회차 만들기 ───────────────────────────────────────────
@@ -5501,7 +5530,7 @@ function renderSaveFail(){
 async function showSaveFails(){
   if (!SAVE_FAILS.length) return toast("저장 실패 기록이 없습니다");
   const lines = SAVE_FAILS.slice(-20).map(f =>
-    `${String(f.at).slice(11,19)}  ${f.op}  ${f.table}${f.id?` (${String(f.id).slice(0,8)})`:""}\n` +
+    `${new Date(f.at).toLocaleTimeString("ko-KR",{hour12:false})}  ${f.op}  ${f.table}${f.id?` (${String(f.id).slice(0,8)})`:""}\n` +
     `    ${f.message}`).join("\n");
   await ask(lines, { title:`저장되지 않은 ${SAVE_FAILS.length}건`, yes:"닫기" });
 }
@@ -6424,7 +6453,9 @@ function syncMatTasksSoon(rows, dateStr){
   if (!sb) { mesSyncMt({ date:d, rows:snap, idem:null }); return; }
   clearTimeout(mtSyncT);
   mtSyncT = setTimeout(async () => {
-    const r = await mesSyncMt({ date:d, rows:snap, idem:null });
+    /* 화면을 그릴 때 저절로 도는 맞추기 — 실패해도 다음 그리기 때 다시 맞추므로 빨간 경고를 띄우지 않는다 */
+    const r = await mesSyncMt({ date:d, rows:snap, idem:null, quiet:true });
+    if (r && !r.ok) console.warn("[MES] 라벨작업 자동 맞추기 실패 — 다음에 다시 시도", r.message);
     if (r && r.ok && ((r.made||0) + (r.removed||0) > 0)) { renderMtLink(); mtBadge(); renderMt(); }
   }, 250);
 }
@@ -8635,7 +8666,7 @@ const bestRoaster = (kg, bean) => pickRoaster(bean, kg, emptyLoad());
 /* 배치수·투입 생두량은 수동 입력이 있으면 그 값을 우선 사용 (auto=자동계산 여부) */
 function reqCalc(row){
   const r = roasterById(row.roaster_id);
-  const need = Number(row.need_kg)||0;
+  const need = (Number(row.need_kg)||0) + (Number(row.buf_kg)||0);       // 필요분 + 여유분
   const base = r ? capFor(row.bean, r.id) : 0;                       // 기준표에 등록된 1배치 양
   // 프로파일을 잡으면서 그날 투입량이 달라지면 이 줄에서만 덮어쓴다
   const over = (row.cap_kg != null && Number(row.cap_kg) > 0) ? Number(row.cap_kg) : null;
@@ -8661,12 +8692,93 @@ function reqCalc(row){
     per:Math.round(per*100)/100, cap, base, capOver: over!=null && over!==base, auto };
 }
 const reqMode = () => document.querySelector('input[name="rqMode"]:checked')?.value || "auto";
+/* ══════════════════════════════════════════════════════════════
+   공용 설정 — momos_settings (031_settings.sql)
+   서버에 표가 없으면 이 기기에만 저장하고, 그 사실을 화면에 알린다
+   ══════════════════════════════════════════════════════════════ */
+const SETTINGS = {};
+let SETTINGS_SERVER = false;
+function applySetting(k, v){ SETTINGS[k] = v; }
+async function loadSettings(){
+  try { const v = JSON.parse(localStorage.getItem("momos.settings") || "{}"); Object.assign(SETTINGS, v); } catch(_){}
+  if (!sb) return;
+  try {
+    const { data, error } = await sb.from(tb("settings")).select("*");
+    if (error) throw error;
+    SETTINGS_SERVER = true;
+    (data||[]).forEach(r => applySetting(r.key, r.value));
+  } catch(e){ SETTINGS_SERVER = false; console.info("[MES] 공용 설정 표 없음 — 031_settings.sql 실행 전", e?.message||e); }
+}
+async function saveSetting(k, v){
+  applySetting(k, v);
+  try { const all = JSON.parse(localStorage.getItem("momos.settings") || "{}"); all[k] = v;
+        localStorage.setItem("momos.settings", JSON.stringify(all)); } catch(_){}
+  if (!sb) return { ok:true, local:true };
+  const r = await rpc("set_setting", { p_key:k, p_value:v, p_user_name:CURRENT_USER || LOGIN_USER?.name || "" }, ()=>({ok:true}), { quiet:true });
+  if (r && r.ok) { SETTINGS_SERVER = true; return r; }
+  SETTINGS_SERVER = false;
+  return { ok:false, message:r?.message || "" };
+}
+
+/* ══════════════════════════════════════════════════════════════
+   여유분 — 로스팅 요일별
+   · 상미기간(5일) 안에 "실제로 생산하는 날"이 며칠인지 요일마다 계산한다
+       월 로스팅 → 월화수목금 5일 · 수 로스팅 → 수목금 3일 (토·일은 생산 안 함)
+   · 여유분 = 원두별 하루 평균 사용량 × 여유 일수
+   · 여유 일수는 (쓸 수 있는 생산일 − 1) 을 넘지 못한다 — 넘으면 상미기간 안에 다 못 쓴다
+   ══════════════════════════════════════════════════════════════ */
+const WD = ["일","월","화","수","목","금","토"];
+const BUF_DEFAULT = { workdays:[1,2,3,4,5], days:{ 0:0, 1:2, 2:2, 3:1, 4:1, 5:1, 6:0 } };
+const bufCfg = () => {
+  const c = SETTINGS.roast_buffer || {};
+  return { workdays: Array.isArray(c.workdays) ? c.workdays.map(Number) : BUF_DEFAULT.workdays,
+           days: Object.assign({}, BUF_DEFAULT.days, c.days || {}) };
+};
+const dowOf = ds => new Date(ds + "T12:00:00").getDay();
+const addDaysStr = (ds, n) => { const d = new Date(ds + "T12:00:00"); d.setDate(d.getDate()+n); return ymd(d); };
+/* 그날 로스팅하면 상미기간 안에 쓸 수 있는 생산일 목록 */
+function usableDays(roastDate){
+  const wd = bufCfg().workdays, out = [];
+  for (let i = 0; i < SHELF_LIFE_DAYS; i++) { const d = addDaysStr(roastDate, i); if (wd.includes(dowOf(d))) out.push(d); }
+  return out;
+}
+const usableByDow = dow => {        // 요일만으로 (그 주 아무 날짜나 써서 계산)
+  const base = new Date(); base.setDate(base.getDate() + ((dow - base.getDay() + 7) % 7));
+  return usableDays(ymd(base));
+};
+const bufMax = roastDate => Math.max(0, usableDays(roastDate).length - 1);
+/* 실제 적용 여유 일수 — 설정값을 상미기간 한도로 자른다 */
+function bufDaysFor(roastDate){
+  const set = Number(bufCfg().days[dowOf(roastDate)]) || 0;
+  return { set, max: bufMax(roastDate), use: Math.min(set, bufMax(roastDate)) };
+}
+/* 원두별 하루 평균 사용량 — 최근 4주 실적에서, 없으면 오늘 계획에서 */
+function dailyUse(bean){
+  const from = dayAfter(-28), wd = bufCfg().workdays;
+  const rows = CONSL().filter(c => c.bean === bean && String(c.work_date||"") >= from);
+  const days = new Set(CONSL().filter(c => String(c.work_date||"") >= from).map(c => c.work_date)
+                 .filter(d => wd.includes(dowOf(d))));
+  if (rows.length && days.size) {
+    const kg = rows.reduce((s,c)=>s+Number(c.used_kg||0),0);
+    return { kg: Math.round(kg / days.size * 100)/100, basis:`최근 4주 평균 (${days.size}일)` };
+  }
+  const n = beanNeeds()[bean] || 0;
+  return { kg: Math.round(n*100)/100, basis:"오늘 계획 기준 (실적 없음)" };
+}
+const dayList = ds => ds.map(d => WD[dowOf(d)]).join("·");
+
 function loadNeed(){
   const need = beanNeeds();
   const rows = [];
+  const R = $("rqWant").value || today(), bd = bufDaysFor(R);
   Object.keys(need).forEach(b=>{
-    const lack = Math.max(0, need[b] - mmsByBean(b));
-    if (lack>0) rows.push({ id:uid(), bean:b, need_kg:Math.round(lack*100)/100, roaster_id:null, note:"" });
+    const stock = mmsByBean(b);
+    const lack = Math.max(0, need[b] - stock);                       // 필요분 — 오늘 계획을 채우는 데 모자라는 양
+    const du = dailyUse(b), buf = bd.use * du.kg;                     // 여유분 — 며칠치 더
+    const extra = Math.max(0, need[b] + buf - stock) - lack;          // 재고가 남으면 여유분부터 채운다
+    if (lack > 0 || extra > 0.01)
+      rows.push({ id:uid(), bean:b, need_kg:Math.round(lack*100)/100, buf_kg:Math.round(extra*100)/100,
+                  buf_days:bd.use, buf_basis:du.basis, roaster_id:null, note:"" });
   });
   reqRows = rows;
   if (reqMode()==="auto") fillAssign(true);
@@ -8701,7 +8813,7 @@ function addReq(roasterId){
 }
 function setReq(id,k,v){
   const row = reqRows.find(r=>r.id===id); if(!row) return;
-  if (k==="need_kg") row[k] = numOf(v);
+  if (k==="need_kg" || k==="buf_kg") row[k] = numOf(v);
   else if (k==="cap_kg") row[k] = (String(v).trim()==="" ? null : numOf(v));   // 그날 실제 투입한 1배치 양
   else if (k==="batches" || k==="green_kg") {
     row[k] = (String(v).trim()==="" ? null : numOf(v));
@@ -8735,12 +8847,17 @@ function renderReq(){
   const tG = all.reduce((s,x)=>s+x.c.green,0);
   const tO = all.reduce((s,x)=>s+x.c.out,0);
   const tNeed = reqRows.reduce((s,r)=>s+Number(r.need_kg||0),0);
+  const tBuf  = reqRows.reduce((s,r)=>s+Number(r.buf_kg||0),0);
   $("reqTot").innerHTML = `총 <b>${tN}</b>배치 · 생두 <b>${fmt(tG)}</b>kg · 산출 <b>${fmt(tO)}</b>kg`;
 
-  tbl("reqInfo", ["요청일","희망 로스팅일","요청 부서","요청자","원두 수","요청 원두(kg)","총 배치수","투입 생두(kg)"],
-    [`<tr><td class="c">${$("rqDate").value}</td><td class="c"><b>${$("rqWant").value}</b></td>
+  tbl("reqInfo", ["요청일","희망 로스팅일","요청 부서","요청자","원두 수","필요분(kg)",'<span class="tag buf">여유분(kg)</span>',"요청 합계(kg)","총 배치수","투입 생두(kg)"],
+    [`<tr><td class="c">${$("rqDate").value}</td><td class="c"><b>${$("rqWant").value}</b> (${WD[dowOf($("rqWant").value)]})${(()=>{
+        const u = usableDays($("rqWant").value), b = bufDaysFor($("rqWant").value);
+        return `<br><span class="hint" style="padding:0;font-size:11px">${dayList(u)} ${u.length}일 사용 가능 · 여유 ${b.use}일치</span>`; })()}</td>
       <td class="c">제품생산팀 (원두파트)</td><td class="c">${$("rqBy").value||"—"}</td>
-      <td>${reqRows.length}</td><td><b>${fmt(tNeed)}</b></td><td><b>${tN}</b></td><td><b>${fmt(tG)}</b></td></tr>`]);
+      <td>${reqRows.length}</td><td>${fmt(tNeed)}</td><td class="bufc">${fmt(tBuf)}</td><td><b>${fmt(tNeed+tBuf)}</b></td>
+      <td><b>${tN}</b></td><td><b>${fmt(tG)}</b></td></tr>`]);
+  renderBufPanel();
 
   // 로스터기 미지정 항목
   const pend = reqRows.filter(r=>!roasterById(r.roaster_id));
@@ -8838,6 +8955,37 @@ function renderReq(){
      <td><b>${Object.values(LD).reduce((a,l)=>a+l.n,0)||"—"}</b></td><td></td><td></td>`);
 }
 /* 카드 안의 원두 한 건 */
+function renderBufPanel(){
+  if (!$("bufTbl")) return;
+  const c = bufCfg(), edit = can("roast") || can("base");
+  if ($("bufShelf")) $("bufShelf").textContent = SHELF_LIFE_DAYS;
+  if ($("bufState")) $("bufState").innerHTML = !sb ? "로컬 모드"
+    : SETTINGS_SERVER ? '<span class="tag ok">모든 PC 공용</span>'
+    : '<span class="tag warn">이 PC에만 저장됨 — 031_settings.sql 실행 필요</span>';
+  const order = [1,2,3,4,5,6,0];
+  tbl("bufTbl", ["로스팅 요일","생산하는 날","이 날 로스팅하면 쓸 수 있는 생산일","여유 일수","적용"],
+    order.map(d=>{
+      const u = usableByDow(d), mx = Math.max(0, u.length-1), set = Number(c.days[d])||0, work = c.workdays.includes(d);
+      const over = set > mx;
+      return `<tr class="${work?"":"offrow"}"><td class="c"><b>${WD[d]}</b></td>
+        <td class="c"><input type="checkbox" ${work?"checked":""} ${edit?"":"disabled"} onchange="setWorkday(${d},this.checked)" style="width:auto;height:auto"></td>
+        <td class="l">${u.length ? `${dayList(u)} <b>${u.length}일</b>` : '<span class="bad">없음</span>'}</td>
+        <td class="c"><select ${edit?"":"disabled"} onchange="setBufDays(${d},this.value)" style="width:auto">
+          ${Array.from({length:Math.max(mx,set)+1},(_,k)=>`<option value="${k}" ${k===set?"selected":""} ${k>mx?"disabled":""}>${k}일치${k>mx?" (불가)":""}</option>`).join("")}
+          </select> <span class="hint" style="padding:0">최대 ${mx}일치</span></td>
+        <td class="c">${over ? `<span class="tag warn">${mx}일치로 줄여 적용</span>` : set ? `<span class="tag buf">여유 ${set}일치</span>` : '<span class="tag">여유 없음</span>'}</td></tr>`;
+    }));
+}
+async function setBufDays(dow, v){
+  const c = bufCfg(); c.days[dow] = Math.max(0, Math.round(Number(v)||0));
+  const r = await saveSetting("roast_buffer", c);
+  renderReq(); toast(`${WD[dow]}요일 로스팅 여유 ${c.days[dow]}일치${r.ok?"":" — 이 PC에만 저장됨"}`);
+}
+async function setWorkday(dow, on){
+  const c = bufCfg(); c.workdays = on ? [...new Set([...c.workdays, dow])] : c.workdays.filter(x=>x!==dow);
+  const r = await saveSetting("roast_buffer", c);
+  renderReq(); toast(`${WD[dow]}요일 ${on?"생산함":"생산 안 함"}${r.ok?"":" — 이 PC에만 저장됨"}`);
+}
 function itemCard(r){
   const c = reqCalc(r);
   const others = allowedRoasters(r.bean).filter(x=>x.id!==r.roaster_id);
@@ -8859,7 +9007,13 @@ function itemCard(r){
     <div class="row">필요
       <input type="text" inputmode="decimal" value="${r.need_kg}" data-f="req:${r.id}:need"
         oninput="setReq('${r.id}','need_kg',this.value)"> kg
-      <span class="calc">${c.blocked?'<span class="bad">이 로스터기 생산 불가</span>':c.n?`산출 <b>${fmt(c.out)}</b>kg <span class="${c.over>0?'warn':''}">(여유 ${fmt(c.over)})</span><br>1배치 ${fmt(c.cap)}kg → ${fmt(c.per)}kg`:'<span class="bad">로스터기 지정 필요</span>'}</span>
+      <span class="calc">${c.blocked?'<span class="bad">이 로스터기 생산 불가</span>':c.n?`산출 <b>${fmt(c.out)}</b>kg <span class="hint" style="padding:0" title="배치 단위로 올려서 생기는 양">(배치 올림 +${fmt(c.over)})</span><br>1배치 ${fmt(c.cap)}kg → ${fmt(c.per)}kg`:'<span class="bad">로스터기 지정 필요</span>'}</span>
+    </div>
+    <div class="row" style="margin-top:5px"><span class="tag buf" title="${r.buf_basis||""}">여유분</span>
+      <input type="text" inputmode="decimal" value="${r.buf_kg??0}" data-f="req:${r.id}:buf"
+        oninput="setReq('${r.id}','buf_kg',this.value)" style="width:62px"> kg
+      <span class="hint" style="padding:0;font-size:11px;margin-left:4px">${r.buf_days!=null
+        ? `${r.buf_days}일치 · ${r.buf_basis||""}` : "직접 입력"}</span>
     </div>
     <div class="row" style="margin-top:5px">1배치
       <input type="text" inputmode="decimal" value="${r.cap_kg??""}" placeholder="${c.base?fmt(c.base):""}"
@@ -8964,7 +9118,8 @@ async function sendToPlan(){
     const res = await mesUpsertRoast({ id:null, patch:{
       plan_date: $("rqWant").value || today(), bean: row.bean,
       roaster: roasterById(row.roaster_id)?.name || "",
-      batch_kg: c.cap || null, plan_kg: c.out || row.need_kg, batches: c.n || 1 },
+      batch_kg: c.cap || null, plan_kg: c.out || row.need_kg, batches: c.n || 1,
+      note: Number(row.buf_kg) > 0 ? `필요 ${fmt(row.need_kg)}kg + 여유 ${fmt(row.buf_kg)}kg${row.buf_days!=null?` (${row.buf_days}일치)`:""}` : (row.note || "") },
       idem:`rq-new-${row.bean}-${uid()}` });
     if (!res || !res.ok) { renderAll(); return toast(res?.message || "요청을 등록하지 못했습니다"); }
     made++;
@@ -8973,12 +9128,12 @@ async function sendToPlan(){
   toast(`${made}건 등록 — 받을 배치 ${openLines().length}개가 위에 펼쳐졌습니다`);
 }
 function csvReq(){
-  const head = ["요청일","희망로스팅일","요청자","MMS코드","원두","필요원두kg","로스터기","가능로스터기","1배치투입kg","기준투입kg","1배치산출kg","배치수","로스팅원두kg","투입생두kg","여유kg","산정","비고"];
+  const head = ["요청일","희망로스팅일","요청자","MMS코드","원두","필요분kg","여유분kg","여유일수","로스터기","가능로스터기","1배치투입kg","기준투입kg","1배치산출kg","배치수","로스팅원두kg","투입생두kg","배치올림kg","산정","비고"];
   const body = reqRows.map(row=>{ const c=reqCalc(row), r=roasterById(row.roaster_id);
     return [$("rqDate").value, $("rqWant").value, $("rqBy").value, mmsCodeOf(row.bean), row.bean,
-      row.need_kg, r?.name||"미지정", allowedRoasters(row.bean).map(x=>x.name).join(" · ")||"없음",
+      row.need_kg, row.buf_kg||0, row.buf_days??"", r?.name||"미지정", allowedRoasters(row.bean).map(x=>x.name).join(" · ")||"없음",
       c.cap, c.base, c.per, c.n, c.out, c.green, c.over, c.auto?"자동":"직접지정", row.note||""]; });
-  body.push(["","","","","합계", reqRows.reduce((s,r)=>s+Number(r.need_kg||0),0), "", "", "", "",
+  body.push(["","","","","합계", reqRows.reduce((s,r)=>s+Number(r.need_kg||0),0), reqRows.reduce((s,r)=>s+Number(r.buf_kg||0),0), "", "", "", "", "",
     reqRows.reduce((s,r)=>s+reqCalc(r).n,0), reqRows.reduce((s,r)=>s+reqCalc(r).out,0),
     reqRows.reduce((s,r)=>s+reqCalc(r).green,0), "", "", ""]);
   csv("로스팅요청서", head, body);
@@ -11015,6 +11170,7 @@ function startRealtime(){
   RT_STATE = "wait"; rtBadge();
   RT_CH = sb.channel("momos-mes-live")
     .on("postgres_changes", { event:"*", schema:"public" }, p => {
+      if (p.table === tb("settings")) { if (p.new && p.new.key) applySetting(p.new.key, p.new.value); liveRender(); return; }
       const t = byName[p.table]; if (!t) return;
       try { rtApply(t, p.eventType, p.new && Object.keys(p.new).length ? p.new : null, p.old); }
       catch(e){ console.warn("실시간 반영 실패", e); }
