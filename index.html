@@ -1172,8 +1172,15 @@
     <button class="btn primary" onclick="openPaste('roast')">로스팅 계획 붙여넣기</button>
     <button class="btn" onclick="csvNeed()">필요MMS 다운로드</button>
   </div>
+  <div class="subtabs" id="roastTabs">
+    <button class="subtab on" data-p="in">입고 · 계획</button>
+    <button class="subtab" data-p="stock">배치 재고</button>
+    <button class="subtab" data-p="hold">보류 · 상미기간</button>
+    <button class="subtab" data-p="flow">수불 · 사용이력</button>
+  </div>
   <div class="body">
     <h2 class="page">로스팅 / MMS<small id="asof-roast"></small></h2>
+    <div class="subpane on" id="rp-in">
     <div class="panel" id="inWrap">
       <div class="panel-h">입고 확인 — 로스팅팀에서 받을 배치
         <span class="r"><span id="inWait"></span>
@@ -1189,6 +1196,29 @@
       </div>
       <div class="panel-b"><table id="inTbl"></table></div>
     </div>
+    <div class="panel">
+      <div class="panel-h">원두별 필요 MMS · 부족 현황</div>
+      <div class="panel-b"><table id="needTbl"></table></div>
+    </div>
+    <div class="panel">
+      <div class="panel-h">로스팅 계획 · 입고 등록
+        <span class="r"><span id="roastWait"></span>
+          <button class="btn" onclick="addRoast()">행추가</button></span></div>
+      <div class="guide">
+        <b>무엇을 몇 배치로 받을지 정하는 곳입니다 — 실제로 받는 것은 맨 위 [입고 확인]에서</b>
+        <ol><li><b>원두</b>는 다 안 쳐도 됩니다 — <b>쇼콜라</b>→에스쇼콜라, <b>므쵸</b>→므쵸베리, 초성 <b>ㅅㅋㄹ</b>도 됩니다</li>
+          <li><b>계획(kg)</b>과 <b>배치수</b>를 넣으면 배치 줄이 그만큼 위에 펼쳐집니다</li>
+          <li>맨 위에서 배치마다 <b>날짜·kg</b>만 확인하고 [받음]</li></ol>
+      </div>
+      <div class="selbar" id="selBar-roasting"></div>
+      <div class="panel-b"><table id="roastTbl"></table></div>
+    </div>
+    <div class="panel">
+      <div class="panel-h">오늘 받은 배치 <span class="r hint">지금 바로 쓸 수 있습니다</span></div>
+      <div class="panel-b" id="todayIn"></div>
+    </div>
+    </div>
+    <div class="subpane" id="rp-hold">
     <div class="panel" id="holdWrap" style="display:none">
       <div class="panel-h">⛔ 보류 중인 배치 <span class="r"><span id="holdSum"></span></span></div>
       <div class="guide">
@@ -1214,27 +1244,8 @@
         <span class="r hint" id="shelfRule"></span></div>
       <div class="panel-b"><table id="shelfTbl"></table></div>
     </div>
-    <div class="panel">
-      <div class="panel-h">원두별 필요 MMS · 부족 현황</div>
-      <div class="panel-b"><table id="needTbl"></table></div>
     </div>
-    <div class="panel">
-      <div class="panel-h">로스팅 계획 · 입고 등록
-        <span class="r"><span id="roastWait"></span>
-          <button class="btn" onclick="addRoast()">행추가</button></span></div>
-      <div class="guide">
-        <b>무엇을 몇 배치로 받을지 정하는 곳입니다 — 실제로 받는 것은 맨 위 [입고 확인]에서</b>
-        <ol><li><b>원두</b>는 다 안 쳐도 됩니다 — <b>쇼콜라</b>→에스쇼콜라, <b>므쵸</b>→므쵸베리, 초성 <b>ㅅㅋㄹ</b>도 됩니다</li>
-          <li><b>계획(kg)</b>과 <b>배치수</b>를 넣으면 배치 줄이 그만큼 위에 펼쳐집니다</li>
-          <li>맨 위에서 배치마다 <b>날짜·kg</b>만 확인하고 [받음]</li></ol>
-      </div>
-      <div class="selbar" id="selBar-roasting"></div>
-      <div class="panel-b"><table id="roastTbl"></table></div>
-    </div>
-    <div class="panel">
-      <div class="panel-h">오늘 받은 배치 <span class="r hint">지금 바로 쓸 수 있습니다</span></div>
-      <div class="panel-b" id="todayIn"></div>
-    </div>
+    <div class="subpane" id="rp-flow">
     <div class="panel">
       <div class="panel-h">원두 수불 조회
         <span class="r">
@@ -1250,6 +1261,19 @@
         음료용으로 썼거나 다른 제품에 섞었다면 <b>[용도 지정]</b>으로 어디에 썼는지 남기세요. 자동으로 지우지 않습니다.</div>
       <div class="panel-b"><table id="flowTbl"></table></div>
     </div>
+    <div class="panel" id="useWrap">
+      <div class="panel-h">생산 외 사용 내역
+        <span class="r"><span class="hint" style="padding:0">음료용·타제품 혼합 등 용도가 지정된 차감</span>
+        <button class="btn" onclick="csvUse()">엑셀 다운로드</button></span></div>
+      <div class="panel-b"><table id="useTbl"></table></div>
+    </div>
+    <div class="panel">
+      <div class="panel-h">배치 사용이력 (추적) <span class="r"><button class="btn" onclick="csvCons()">엑셀 다운로드</button></span></div>
+      <div class="hint">생산 시 차감된 배치가 자동 기록됩니다 · 최근 40건 표시</div>
+      <div class="panel-b"><table id="consTbl"></table></div>
+    </div>
+    </div>
+    <div class="subpane" id="rp-stock">
     <div class="panel" id="cntWrap" style="display:none">
       <div class="panel-h">배치별 실측 · <span id="cntBeanName"></span>
         <span class="r"><span id="cntSum" class="hint" style="padding:0"></span>
@@ -1269,12 +1293,6 @@
       </div>
       <div class="panel-b"><table id="cntTbl"></table></div>
     </div>
-    <div class="panel" id="useWrap">
-      <div class="panel-h">생산 외 사용 내역
-        <span class="r"><span class="hint" style="padding:0">음료용·타제품 혼합 등 용도가 지정된 차감</span>
-        <button class="btn" onclick="csvUse()">엑셀 다운로드</button></span></div>
-      <div class="panel-b"><table id="useTbl"></table></div>
-    </div>
     <div class="panel">
       <div class="panel-h">배치별 잔량 <span id="asOfLabel" class="hint" style="padding:0"></span>
         <span class="r"><button class="btn" onclick="csvAsOf()">엑셀 다운로드</button></span></div>
@@ -1285,10 +1303,6 @@
       <div class="hint">재고가 남은 배치만 · 오래된 순 (생산 시 위에서부터 차감) · <b>계획 사용</b>은 현재 생산계획이 이 배치에서 가져갈 예정 수량입니다</div>
       <div class="panel-b"><table id="liveTbl"></table></div>
     </div>
-    <div class="panel">
-      <div class="panel-h">배치 사용이력 (추적) <span class="r"><button class="btn" onclick="csvCons()">엑셀 다운로드</button></span></div>
-      <div class="hint">생산 시 차감된 배치가 자동 기록됩니다 · 최근 40건 표시</div>
-      <div class="panel-b"><table id="consTbl"></table></div>
     </div>
   </div>
 </section>
@@ -2598,6 +2612,7 @@ function tbl(id, head, rows, foot){
     `<tbody>${rows.length ? rows.join("") : `<tr><td colspan="${head.length}" class="c" style="height:52px;color:#999">데이터 없음</td></tr>`}</tbody>` +
     (foot ? `<tfoot><tr>${foot}</tr></tfoot>` : "");
   sizeCols(id);
+  if (SORT_COLS[id]) sortHeads(id);
 }
 /* ── 칸 너비 ──────────────────────────────────────────────────
    머리글 오른쪽 끝을 잡고 끌면 그 칸이 넓어진다. 브라우저가 기억한다.
@@ -2630,15 +2645,39 @@ const SORT_COLS = {
             11:b=>DB.mms.filter(m=>m.bean===b.name && Number(m.stock_kg)>0).reduce((t,m)=>t+Number(m.stock_kg||0),0) },
   tMms:   { 1:m=>batchLabel(m), 2:m=>m.bean, 3:m=>m.roast_date, 4:m=>Number(m.batch)||0, 5:m=>Number(m.stock_kg)||0 },
   tMat:   { 1:M=>M.kind, 2:M=>M.name, 3:M=>M.code, 4:M=>M.spec, 7:M=>Number(M.stock)||0, 9:M=>Number(M.safety)||0 },
+  tMach:  { 1:m=>m.name, 2:m=>Number(m.workers)||0, 3:m=>Number(m.hours)||0 },
+  tWork:  { 1:w=>w.name, 2:w=>w.role, 3:w=>w.perm },
+  /* 작업지시 · 라벨작업 · 실적 · 출고 · 재고확인 · 로스팅 · 집계 · 변경이력 */
+  woTbl:  { 1:o=>Number(o.priority)||0, 2:o=>o.order_no, 3:o=>o.product_name||prodById(o.product_id)?.name||"", 4:o=>o.channel,
+            5:o=>o.machine||"", 6:o=>Number(o.qty_plan)||0, 7:o=>Number(o.qty_done)||0, 8:o=>Number(o.qty_ng)||0,
+            9:o=>pctOf(o), 10:o=>stIdx(o) },
+  mtTbl:  { 1:t=>["대기","작업중","작업완료"].indexOf(t.status), 2:t=>t.product_name, 3:t=>Number(t.spec_g)||0, 4:t=>Number(t.plan_ea)||0,
+            5:t=>Number(t.need_qty)||0, 6:t=>Number(t.order_qty)||0, 13:t=>t.worker||"", 14:t=>t.start_at||"", 15:t=>t.end_at||"" },
+  logTbl: { 0:l=>l.serial||"", 1:l=>prodById(l.product_id)?.name||"", 2:l=>statusOf(l), 4:l=>l.machine||"", 5:l=>l.worker||"",
+            6:l=>Number(l.qty_ea)||0, 7:l=>Number(l.received_qty)||0 },
+  shTbl:  { 0:o=>o.ship_at||"", 1:o=>o.channel, 2:o=>prodById(o.product_id)?.name||"", 3:o=>Number(o.qty_done)||0, 4:o=>o.serial||"", 6:o=>o.qc_by||"", 7:o=>o.ship_by||"" },
+  stTbl:  { 0:r=>r.code||"", 1:r=>r.name, 2:r=>Number(r.app)||0 },
+  roastTbl:{ 1:r=>r.plan_date||"", 2:r=>r.bean||"", 3:r=>Number(r.plan_kg)||0, 4:r=>Number(r.received_kg)||0, 5:r=>Number(r.batches)||0, 7:r=>r.done?1:0 },
+  tallyTbl:{ 1:p=>p.code||"", 2:p=>p.name, 5:p=>Number(p.spec_g)||0 },
+  tallyLog:{ 1:t=>TALLY_ROUNDS.indexOf(t.round), 2:t=>prodById(t.product_id)?.name||t.product_name||"", 3:t=>Number(t.qty)||0, 5:t=>t.user||"", 6:t=>t.at||"" },
+  serialTbl:{ 0:l=>l.serial||"", 1:l=>l.work_date||"", 2:l=>prodById(l.product_id)?.code||"", 3:l=>prodById(l.product_id)?.name||"", 4:l=>Number(l.qty_ea)||0, 7:l=>l.worker||"" },
+  auditTbl:{ 0:a=>a.at||"", 1:a=>a.user||"", 2:a=>a.action||"", 3:a=>a.target||"" },
 };
-const SORT_NAME = { tProd:"품목", tBeans:"원두", tMms:"배치", tMat:"부자재" };
+const SORT_NAME = { tProd:"품목", tBeans:"원두", tMms:"배치", tMat:"부자재", tMach:"기계", tWork:"생산자",
+  woTbl:"작업지시", mtTbl:"라벨작업", logTbl:"생산실적", shTbl:"출고", stTbl:"재고확인", roastTbl:"로스팅 계획",
+  tallyTbl:"집계", tallyLog:"집계 내역", serialTbl:"일련번호", auditTbl:"변경이력" };
+/* 표가 어느 화면에 있는지 — 정렬을 바꾸면 그 화면만 다시 그린다 */
+const SORT_SCREEN = { woTbl:"order", mtTbl:"mt", logTbl:"log", shTbl:"ship", stTbl:"stock", roastTbl:"roast",
+  tallyTbl:"plan", tallyLog:"plan", serialTbl:"trace" };
 const sortKey = id => "momos.sort." + id;
 function sortState(id){ try { return JSON.parse(localStorage.getItem(sortKey(id)) || "null"); } catch(_){ return null; } }
 function setSort(id, col){
   const cur = sortState(id);
   const next = (!cur || cur.col !== col) ? { col, dir:1 } : cur.dir === 1 ? { col, dir:-1 } : null;
   try { next ? localStorage.setItem(sortKey(id), JSON.stringify(next)) : localStorage.removeItem(sortKey(id)); } catch(_){}
-  keepFocus(renderBase);
+  const sc = SORT_SCREEN[id];
+  keepFocus(()=>{ if (!sc) renderBase(); else renderOne(sc); if (id==="tallyLog" || id==="tallyTbl") renderTally(); });
+  sortHeads(id);
   toast(next ? `${SORT_NAME[id]||""} ${next.dir===1?"오름차순":"내림차순"} 정렬` : "원래 순서로");
 }
 /* 목록을 정렬해서 돌려준다 — 정렬이 없으면 그대로 */
@@ -5650,6 +5689,17 @@ $("planTabs").addEventListener("click", e=>{
   const b = e.target.closest(".subtab"); if(!b) return;
   setPlanTab(b.dataset.p);
 });
+$("roastTabs").addEventListener("click", e=>{
+  const b = e.target.closest(".subtab"); if(!b) return;
+  setRoastTab(b.dataset.p);
+});
+let roastTab = "in";
+try { roastTab = localStorage.getItem("momos.roastTab") || "in"; } catch(_){}
+function setRoastTab(t){
+  roastTab = t; try { localStorage.setItem("momos.roastTab", t); } catch(_){}
+  document.querySelectorAll("#roastTabs .subtab").forEach(x=>x.classList.toggle("on", x.dataset.p===t));
+  document.querySelectorAll("#s-roast .subpane").forEach(x=>x.classList.toggle("on", x.id==="rp-"+t));
+}
 let planTab = "tally";
 try { planTab = localStorage.getItem("momos.planTab") || "tally"; } catch(_){}
 function setPlanTab(t){
@@ -6162,7 +6212,7 @@ function renderTally(){
   if ($("tallyRoundIn")) $("tallyRoundIn").innerHTML =
     TALLY_ROUNDS.map(r=>`<option ${r===tallyRound?"selected":""}>${r}</option>`).join("");
 
-  const rounds = roundsOf(d), ps = tallyProds(d);
+  const rounds = roundsOf(d), ps = sorted("tallyTbl", tallyProds(d));
   const sum  = ps.reduce((t,p)=>t+tallyQty(p.id, undefined, d), 0);
   const made = ps.reduce((t,p)=>t+madeQty(p.id, d), 0);
   const left = ps.reduce((t,p)=>t+planCalc(p, d).total, 0);
@@ -6205,8 +6255,8 @@ function renderTally(){
       <td class="fix"><b>${fmt(left)}</b></td><td></td>` : null);
 
   /* 집계 입력 내역 */
-  const log = [...talliesOf(d)].sort((a,b)=>
-    (TALLY_ROUNDS.indexOf(a.round)-TALLY_ROUNDS.indexOf(b.round)) || String(a.at).localeCompare(String(b.at)));
+  const log = sorted("tallyLog", [...talliesOf(d)].sort((a,b)=>
+    (TALLY_ROUNDS.indexOf(a.round)-TALLY_ROUNDS.indexOf(b.round)) || String(a.at).localeCompare(String(b.at))));
   SHOWN.tallies = log.map(t=>t.id);
   tbl("tallyLog", [selAllBox("tallies"),"차수","품목","수량(EA)","비고","넣은 사람","넣은 시각",""],
     log.map((t,i)=>`<tr class="${SEL.tallies.has(t.id)?"selrow":""}"><td class="rowno" style="white-space:nowrap">${selBox("tallies",t.id,i)}${i+1}</td>
@@ -6841,9 +6891,10 @@ function renderMt(){
     : "";
 
   // ── 전체 표 ──
-  SHOWN.material_tasks = list.map(t=>t.id);
+  const mtList = sorted("mtTbl", list);
+  SHOWN.material_tasks = mtList.map(t=>t.id);
   tbl("mtTbl", [selAllBox("material_tasks"),"상태","제품명","규격","생산수량","라벨 필요수량","작업지시","작업단위","보유수량","작업 후 예상","실제 작업","폐기","실제 차감","작업자","시작","완료","걸린 시간",'<span class="fix">처리</span>'],
-    list.map((t,ti)=>{
+    mtList.map((t,ti)=>{
       const M = matById(t.material_id);
       const stock = Number(M?.stock||0);
       const after = Math.round((stock - (t.status==="작업완료" ? Number(t.used_qty||0) : Number(t.order_qty||0)))*100)/100;
@@ -7354,6 +7405,7 @@ function beanNeeds(){
   return need;
 }
 function renderRoast(){
+  if (document.querySelector("#s-roast .subpane.on")?.id !== "rp-"+roastTab) setRoastTab(roastTab);
   const shelf = sortBatches(DB.mms.filter(m=>Number(m.stock_kg)>0 && shelfState(m.roast_date)!=="ok"));
   $("shelfWrap").style.display = shelf.length ? "" : "none";
   tbl("shelfTbl", ["배치","원두","로스팅일","재고(kg)","경과","잔여","상태"],
@@ -7386,6 +7438,7 @@ function renderRoast(){
     ? `<span class="tag warn">입고 대기 ${waitN}건</span>`
     : `<span class="tag ok">입고 대기 없음</span>`;
 
+  if (sortState("roastTbl")) rs.splice(0, rs.length, ...sorted("roastTbl", rs));
   SHOWN.roasting = rs.map(r=>r.id);
   tbl("roastTbl", [selAllBox("roasting"),"로스팅일","원두","계획(kg)","입고(kg)","배치수","생길 배치번호","상태","",""],
     rs.map((r,i)=>{
@@ -7421,6 +7474,12 @@ function renderRoast(){
   renderIn();                         // 받을 배치 줄을 계획에서 펼친다
   renderHold();                       // 보류 중인 배치
   renderHoldLog();                    // 보류 이력 (최근 90일)
+  (()=>{ const tb = $("roastTabs"); if (!tb) return;
+    const set = (k, txt) => { const b = tb.querySelector(`[data-p="${k}"]`); if (b) b.innerHTML = txt; };
+    const wait = openLines().length, held = heldAll().length, bad = shelf.filter(m=>shelfState(m.roast_date)==="bad").length;
+    set("in", `입고 · 계획${wait?` <span class="tag warn" style="font-size:10px">받을 배치 ${wait}</span>`:""}`);
+    set("hold", `보류 · 상미기간${held?` <span class="tag bad" style="font-size:10px">보류 ${held}</span>`:""}${bad?` <span class="tag bad" style="font-size:10px">초과 ${bad}</span>`:(shelf.length?` <span class="tag warn" style="font-size:10px">임박 ${shelf.length}</span>`:"")}`);
+  })();
 
   // 오늘 받은 배치 — 바로 쓸 수 있는 것
   const todayIn = DB.mms.filter(m=>m.in_date===today() && Number(m.stock_kg)>0);
@@ -8335,7 +8394,7 @@ async function takeLine(id){
 }
 /* 계획에 달린 줄을 다 받았으면 계획을 닫는다 */
 function gotoIn(){
-  go("roast");
+  go("roast"); setRoastTab("in");
   const w = $("inWrap");
   if (w) setTimeout(()=>w.scrollIntoView({behavior:"smooth", block:"start"}), 60);
 }
@@ -8379,7 +8438,7 @@ async function addRoastLine(planId){
    봉지에 적힌 네 자리(2801)를 그대로 찾아 적고, 차이는 배치별로 본다. */
 let cntBean = "";
 function openCount(bean){
-  cntBean = bean; renderCount();
+  cntBean = bean; renderCount(); setRoastTab("stock");
   const w = $("cntWrap");
   if (w) setTimeout(()=>w.scrollIntoView({behavior:"smooth", block:"start"}), 40);
 }
@@ -9623,7 +9682,7 @@ function renderLog(){
     `<td class="c">합 계</td><td>${fmt(tEA)}</td><td>${tEA?"100%":"—"}</td><td>${fmt(tIn)}</td>`);
 
   tbl("logTbl", ["일련번호","품목","상태","배치 / LOT","기계","생산자","생산(EA)","수령(EA)","로스(kg)","잔량(kg)","확인 (입력·수령·검수)",'<span class="fix">관리</span>'],
-    logs.map(l=>{ const p=prodById(l.product_id);
+    sorted("logTbl", logs).map(l=>{ const p=prodById(l.product_id);
       return `<tr><td class="l" style="font-weight:800">${l.serial||"—"}</td>
         <td class="l">${p?p.name:"?"}<br><span class="hint" style="padding:0">${p?.code||""}${isGround(p?.grind)?" · "+p.grind:""}</span></td>
         <td class="c">${statusBadge(l)}${l.edit_count?`<br><span class="tag warn" style="font-size:10.5px" title="${l.edit_note||""}">수정 ${l.edit_count}회</span>`:""}</td>
@@ -9849,7 +9908,7 @@ function renderSerial(){
       return [l.serial,l.batch_codes,l.lot,p?.name,p?.code,l.worker].some(v=>String(v||"").toLowerCase().includes(q)); })
     .slice(0,60);
   tbl("serialTbl", ["일련번호","작업일","CFE코드","품목명","수량(EA)","사용 배치","LOT","생산자"],
-    rows.map(l=>{ const p=prodById(l.product_id);
+    sorted("serialTbl", rows).map(l=>{ const p=prodById(l.product_id);
       return `<tr><td class="l" style="font-weight:800">${l.serial||"—"}</td><td class="c">${l.work_date}</td>
         <td class="l">${p?.code||"—"}</td><td class="l">${p?p.name:"?"}</td><td>${fmt(l.qty_ea)}</td>
         <td class="c">${l.batch_codes?`<span class="tag ok">${l.batch_codes}</span>`:"—"}</td>
@@ -9903,8 +9962,9 @@ function renderStock(){
       <div class="vl">${diffs.length} <small>항목 (부족 ${fmt(diffs.filter(r=>r.d<0).reduce((s,r)=>s+r.d,0))} / 초과 +${fmt(diffs.filter(r=>r.d>0).reduce((s,r)=>s+r.d,0))})</small></div></div>`;
   $("stApply").style.display = diffs.length ? "" : "none";
 
-  const sorted = [...rows].sort((a,b)=>{
+  let stList = [...rows].sort((a,b)=>{
     const da = a.act!=null?Math.abs(a.act-a.app):-1, db = b.act!=null?Math.abs(b.act-b.app):-1; return db-da; });
+  if (sortState("stTbl")) stList = sorted("stTbl", stList);
   /* 원두: 오늘 계획(주문·안전재고분 + 여유분)을 다 만들면 남는 원두 — 여유분은 그날 다 포장 못 할 수 있어 둘 다 보여준다 */
   const planToday = isCfe ? [] : planRows(), dd = tallyDay();
   const beanLeft = bn => {
@@ -9919,7 +9979,7 @@ function renderStock(){
   const extraC = r => { if (isCfe) return ""; const L = beanLeft(r.name);
     return `<td class="bufc">${L.bufKg?`+${fmt(L.bufKg)}`:"—"}${L.needKg?`<br><span class="hint" style="padding:0;font-size:10.5px">주문분 ${fmt(L.needKg)}</span>`:""}</td>${leftCell(L.all)}${leftCell(L.noBuf)}`; };
   tbl("stTbl", [isCfe?"CFE코드":"MMS코드", isCfe?"품목명":"원두", `앱 재고(${unit})`, ...extraH, `실제 재고(${unit})`, "차이", "차이율", "상태", ""],
-    sorted.map(r=>{
+    stList.map(r=>{
       if (r.act==null) return `<tr><td class="l">${r.code||"—"}</td><td class="l">${r.name}${r.sub?` <span class="tag warn">${r.sub}</span>`:""}</td>
         <td>${fmt(r.app)}</td>${extraC(r)}<td colspan="4" class="c hint" style="padding:0">엑셀 미입력</td><td></td></tr>`;
       const d = r.act-r.app, same = Math.abs(d)<=.005;
@@ -10702,7 +10762,6 @@ function renderBase(){
 
   selBar("products"); selBar("beans");
   setTimeout(()=>{ selBar("materials"); selBar("mms"); });
-  ["tProd","tBeans","tMms","tMat"].forEach(sortHeads);
   renderBufPanel();
 
   // ── 부자재 재고 ──
@@ -10838,7 +10897,7 @@ function renderBase(){
     `<td colspan="5" class="c">합 계</td><td>${fmt(DB.mms.reduce((s,m)=>s+Number(m.stock_kg||0),0))}</td><td colspan="2"></td>`);
 
   tbl("tMach", ["No","기계명","인원","가동시간(h)","인원비례","최소 투입(EA)","1품목 최대(EA)","1kg (EA/h)","500g","200g","100g·기타","라벨(초/EA)","가용(h)","분쇄가능","이카전용",""],
-    DB.machines.map((m,i)=>`<tr><td class="rowno">${i+1}</td>
+    sorted("tMach", DB.machines).map((m,i)=>`<tr><td class="rowno">${i+1}</td>
       <td class="l">${inp("machines",m.id,"name",m.name)}</td>
       <td>${inp("machines",m.id,"workers",m.workers,"number")}</td>
       <td>${inp("machines",m.id,"hours",m.hours,"number",'step="0.5"')}</td>
@@ -10865,7 +10924,7 @@ function renderBase(){
 
   const adminN = DB.workers.filter(w=>permOf(w)==="admin").length;
   const rankIdx = w => { const i = RANKS.indexOf(w.role); return i<0 ? RANKS.length : i; };
-  const wlist = [...DB.workers].sort((a,b)=> rankIdx(a)-rankIdx(b) || String(a.name).localeCompare(String(b.name)));
+  const wlist = sorted("tWork", [...DB.workers].sort((a,b)=> rankIdx(a)-rankIdx(b) || String(a.name).localeCompare(String(b.name))));
   if ($("workHint")) $("workHint").innerHTML =
     `<b>생산자와 로그인 계정은 서로 다른 정보입니다.</b> 직급·업무 역할은 현장 운영용이며,
      <b>시스템 관리자</b>만 생산자 수정·계정 생성을 할 수 있습니다 · 실제 작업자를 바꿔도 로그인 권한은 바뀌지 않습니다.`;
@@ -11015,7 +11074,7 @@ function renderAudit(){
     .filter(a=>!q || [a.user,a.action,a.target,a.detail].some(v=>String(v||"").toLowerCase().includes(q)))
     .slice(0,200);
   tbl("auditTbl", ["시각","작업자","작업","대상","내용"],
-    rows.map(a=>`<tr><td class="c">${fmtDT(a.at)}</td><td class="c"><b>${a.user}</b></td>
+    sorted("auditTbl", rows).map(a=>`<tr><td class="c">${fmtDT(a.at)}</td><td class="c"><b>${a.user}</b></td>
       <td class="c"><span class="tag ${/삭제|초기화/.test(a.action)?"bad":/확인/.test(a.action)?"ok":"warn"}">${a.action}</span></td>
       <td class="l">${a.target||"—"}</td><td class="l">${a.detail||"—"}</td></tr>`));
 }
@@ -13063,6 +13122,7 @@ function renderOrder(){
   $("woSortBar").innerHTML = sortBarHTML();
   setTimeout(()=>selBar("orders"));
   list.sort((a,b)=>String(a.machine||"~").localeCompare(String(b.machine||"~")) || byPriority(a,b));
+  if (sortState("woTbl")) list.splice(0, list.length, ...sorted("woTbl", list));
   SHOWN.orders = list.map(o=>o.id);
   tbl("woTbl", [selAllBox("orders"),"순서","지시번호","품목","출고처","설비","계획","생산","부적합","진행","상태","담당",""],
     list.map((o,oi)=>{
@@ -13387,7 +13447,7 @@ function renderShip(){
     : `<div class="wempty">출고할 것이 없습니다<br><span>검수가 끝나면 출고처별로 여기 모입니다</span></div>`;
 
   tbl("shTbl", ["출고일","출고처","품목","수량","일련번호","LOT","검수자","출고자",""],
-    gone.map(o=>{ const p=prodById(o.product_id);
+    sorted("shTbl", gone).map(o=>{ const p=prodById(o.product_id);
       return `<tr><td class="c">${String(o.ship_at||"").slice(0,10)}</td><td class="c"><span class="tag">${o.channel}</span></td>
         <td class="l">${p?.name||""}</td><td>${fmt(o.qty_done)}</td>
         <td class="l">${o.serial||"—"}</td><td class="l">${o.lot||"—"}</td>
