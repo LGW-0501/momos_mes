@@ -12837,10 +12837,26 @@ async function delOrder(id){
 }
 
 /* ── 현장: 생산 시작 ── */
+/* 기계마다 동시에 돌릴 수 있는 지시 수 — 리팩·이카는 1개, 수동은 인원 수 */
+function maxRunOf(machineName){
+  const m = DB.machines.find(x=>x.name===machineName);
+  if (!m) return 99;
+  return m.per_person ? Math.max(1, Math.round(Number(m.workers)||1)) : 1;
+}
+function runningOn(machineName, d){
+  return DB.orders.filter(o=>o.work_date===(d||today()) && (o.machine||"")===(machineName||"") && o.status==="생산중");
+}
+function machineBusy(o){
+  if (!o.machine) return null;
+  const run = runningOn(o.machine, o.work_date).filter(x=>x.id!==o.id);
+  return run.length >= maxRunOf(o.machine) ? run : null;
+}
 async function startWork(id){
   if (INFLIGHT.has(id)) return;
   if (!(await requireUser())) return;
   const o = ordById(id); if(!o || o.status !== "대기") return;
+  const busy = machineBusy(o);
+  if (busy) return toast(`${o.machine} 에서 ${busy.map(x=>x.product_name||prodById(x.product_id)?.name).join(", ")} 생산중입니다 — 완료하거나 [작업 중단] 한 뒤 시작하세요`);
   /* 누르는 즉시 카드를 바꾼다 — 서버가 거절하면 되돌린다 (같은 지시를 둘이 동시에 시작하는 것은 서버가 막는다) */
   const before = { status:o.status, started_by:o.started_by, started_at:o.started_at };
   INFLIGHT.add(id);
@@ -13553,10 +13569,9 @@ function renderWork(){
   const extra = [...new Set(all.concat(done).map(o=>o.machine||"").filter(Boolean))]
     .filter(n=>!DB.machines.some(m=>m.name===n));
   const names = [...DB.machines.map(m=>m.name), ...extra];
-  const runFirst = (a,b) => ((a.status==="생산중")?0:1) - ((b.status==="생산중")?0:1) || byPriority(a,b);
-  let groups = names.map(n=>({ name:n, items:all.filter(o=>(o.machine||"")===n).sort(runFirst) }))
+  let groups = names.map(n=>({ name:n, items:all.filter(o=>(o.machine||"")===n).sort(byPriority) }))
     .filter(g=>g.items.length);
-  const un = all.filter(o=>!o.machine).sort(runFirst);
+  const un = all.filter(o=>!o.machine).sort(byPriority);
   if (un.length) groups.push({ name:"", items:un });
   /* 위쪽 탭 — 전체 · 수동 · 리팩 · 이카 (기준정보에 있는 기계 종류 순서대로, 항상 보인다) */
   const kinds = [...new Set([...DB.machines.map(m=>machKind(m.name)), ...groups.map(g=>machKind(g.name))].filter(Boolean))];
@@ -13634,7 +13649,9 @@ function renderWork(){
       </div>
       <div class="btns">
         ${o.status==="대기"
-          ? `<button class="go" onclick="startWork('${o.id}')">생산 시작</button>`
+          ? (machineBusy(o)
+              ? `<button class="go" disabled style="opacity:.45" title="이 기계에서 다른 지시가 생산중입니다">생산중 — 대기</button>`
+              : `<button class="go" onclick="startWork('${o.id}')">생산 시작</button>`)
           : `<button class="go2" onclick="countWork('${o.id}')">수량 입력</button>
              <button class="go" onclick="finishWork('${o.id}')">생산 완료</button>`}
       </div>
