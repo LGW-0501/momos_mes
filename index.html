@@ -62,6 +62,38 @@
   .topbar .avatar{width:34px; height:34px; border-radius:50%; background:var(--blue-500); color:#fff;
     display:flex; align-items:center; justify-content:center; font-weight:800; font-size:13px;}
 
+  /* ── 즐겨찾기 ★ · 계정 메뉴 ── */
+  .topbar .favbtn{width:34px; height:34px; border-radius:50%; border:1px solid rgba(255,255,255,.16);
+    background:rgba(255,255,255,.08); color:#C3CCE6; font-size:17px; line-height:1; cursor:pointer; padding:0;
+    display:flex; align-items:center; justify-content:center; flex:none;}
+  .topbar .favbtn:hover{background:rgba(255,255,255,.16); color:#fff;}
+  .topbar .favbtn.on{color:#FFC94D; border-color:rgba(255,201,77,.5);}
+  .topbar .avatar{cursor:pointer;}
+  .gnb #favList{padding-bottom:8px; margin-bottom:6px; border-bottom:1px solid var(--line);}
+  .gnb #favList button .ico{color:#E0A400;}
+  .gnb #favList button .lb{white-space:nowrap; max-width:76px; overflow:hidden; text-overflow:ellipsis;}
+  .acct{position:fixed; right:12px; top:70px; width:300px; max-width:calc(100vw - 24px); background:#fff; color:var(--ink);
+    border:1px solid var(--line); border-radius:14px; box-shadow:0 18px 50px rgba(26,31,51,.22); z-index:70;
+    max-height:calc(100vh - 84px); overflow-y:auto;}
+  .acct .ah{padding:16px 18px 12px; border-bottom:1px solid var(--line);}
+  .acct .ah b{font-size:17px; display:block; margin-bottom:3px;}
+  .acct .ah .hint{padding:0; font-size:12.5px; line-height:1.55;}
+  .acct .sec{padding:12px 18px; border-bottom:1px solid var(--line);}
+  .acct .sec:last-child{border-bottom:0;}
+  .acct .seg{display:flex; background:#EEF0F4; border-radius:10px; padding:3px; gap:2px; margin-top:8px;}
+  .acct .seg button{flex:1; border:0; background:transparent; font:inherit; font-size:13px; font-weight:700; color:var(--soft);
+    height:34px; border-radius:8px; cursor:pointer;}
+  .acct .seg button.on{background:#fff; color:var(--blue-600); box-shadow:0 1px 3px rgba(0,0,0,.12);}
+  .acct .it{display:flex; align-items:center; gap:12px; width:100%; border:0; background:transparent; font:inherit;
+    font-size:14.5px; font-weight:600; color:var(--ink); padding:11px 18px; cursor:pointer; text-align:left;}
+  .acct .it:hover{background:var(--blue-50);}
+  .acct .it .ico{width:20px; text-align:center; color:var(--soft); font-size:15px;}
+  .acct .it.danger{color:var(--bad);}
+  .acct .alb{font-size:12.5px; font-weight:700; color:var(--soft); display:flex; justify-content:space-between;}
+  .acctScrim{position:fixed; inset:0; z-index:69; display:none;}
+  body.acctopen .acctScrim{display:block;}
+  .pwf label{display:block; font-size:12px; font-weight:700; color:var(--soft); margin:10px 0 5px;}
+  .pwf input{width:100%;}
   .shell{flex:1; display:flex; overflow:hidden; min-height:0;}
 
   /* ── 아이콘 사이드바 ── */
@@ -536,6 +568,12 @@
 
   td.fix, th.fix{position:sticky; right:0; z-index:3; background:#fff; box-shadow:-8px 0 10px -8px rgba(26,31,51,.12);}
   /* 왼쪽 고정 — 표를 옆으로 밀어도 이름 칸은 남는다 */
+  /* 간단히 보기 — 긴 설명을 접고 기계 칸을 좁게 */
+  body.plancompact #s-plan .panel > .hint{display:none;}
+  body.plancompact.showguide #s-plan .panel > .hint{display:block;}
+  body.plancompact #planGrid .mcell{gap:4px;}
+  body.plancompact #planGrid .mpick input.num{width:58px;}
+  body.plancompact #planGrid td, body.plancompact #planGrid th{padding-left:8px;padding-right:8px;}
   td.fixl, th.fixl{position:sticky; left:0; z-index:3; background:#fff; box-shadow:8px 0 10px -8px rgba(26,31,51,.14);}
   thead th.fixl{background:#F7F8FB; z-index:4;}
   tbody tr:hover td.fixl{background:#F8FAFD;}
@@ -913,6 +951,8 @@
   body.mobile .topbar .right > button:not(#personalLogoutBtn), body.mobile .topbar .right #personalLogoutBtn,
   body.mobile .topbar .right #loginIdentity, body.mobile .topbar .right .st{display:none !important;}
   body.mobile .topbar .right #curUser{display:block; max-width:none; flex:1 1 0;}
+  body.mobile .topbar .right #favBtn{display:flex !important; width:32px; height:32px;}
+  body.mobile .acct{top:62px; right:8px;}
   body.mobile .guide{display:none;}                       /* 설명은 서랍의 [설명 보기]로 */
   body.mobile.showguide .guide{display:block;}
   body.mobile .cond{gap:8px; padding:10px 12px;}
@@ -1001,14 +1041,18 @@
     <button class="btn" onclick="reloadDB()">새로고침</button>
     <span class="st" id="stDb"></span>
     <span class="st" id="stLive" style="display:none"></span>
-    <div class="avatar" id="avatar">—</div>
+    <button class="favbtn" id="favBtn" onclick="toggleFav()" title="이 화면을 즐겨찾기에 넣기 / 빼기">☆</button>
+    <div class="avatar" id="avatar" onclick="toggleAcct()" title="계정 메뉴">—</div>
   </div>
 </div>
+<div class="acctScrim" onclick="closeAcct()"></div>
+<div id="acctMenu" class="acct" style="display:none"></div>
 
 <div class="navScrim" onclick="closeNav()"></div>
 
 <div class="shell">
 <div class="gnb">
+  <div class="menu" id="favList" style="display:none"></div>
   <nav class="menu" id="menu">
     <button data-s="dash" data-r="admin" class="on"><span class="ico">▦</span><span class="lb">대시보드</span></button>
     <div class="grp" data-r="admin"></div>
@@ -2162,6 +2206,23 @@
   </div>
 </div>
 
+
+<!-- ══ 비밀번호 변경 창 (계정 메뉴에서) ══ -->
+<div id="pwDlg" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:81;align-items:center;justify-content:center;padding:16px">
+  <div style="background:var(--paper);width:380px;max-width:92vw;border-radius:12px;overflow:hidden;box-shadow:0 20px 50px rgba(0,0,0,.3)">
+    <div class="panel-h">비밀번호 변경 <span class="r hint" id="pwWho"></span></div>
+    <div class="pwf" style="padding:6px 18px 16px">
+      <label>현재 비밀번호</label><input id="pwCur" type="password" autocomplete="current-password">
+      <label>새 비밀번호 (4자 이상)</label><input id="pwNew" type="password" autocomplete="new-password">
+      <label>새 비밀번호 확인</label><input id="pwNew2" type="password" autocomplete="new-password">
+    </div>
+    <div style="padding:12px 18px;display:flex;gap:8px;justify-content:flex-end;border-top:1px solid var(--line)">
+      <button class="btn" onclick="closePwDlg()">취소</button>
+      <button class="btn primary" onclick="submitPwDlg()">변경</button>
+    </div>
+  </div>
+</div>
+
 <!-- ══ 라벨 — 바꾸거나 풀패키지로 돌리는 창 (안 열어도 자동으로 붙는다) ══ -->
 <div id="labFix" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:92;">
   <div class="lf">
@@ -2449,7 +2510,7 @@ function applyLoginChrome(){
     /* 화면이 좁아 위쪽 버튼이 밀려나도 찾을 수 있게 — 왼쪽 메뉴 맨 아래 · 오른쪽 동그라미 */
     const g = $("gnbLogout"); if (g) g.style.display = "";
     const av = $("avatar");
-    if (av) { av.style.cursor = "pointer"; av.title = `${LOGIN_USER.name} — 눌러서 로그아웃`; av.onclick = askLogout; }
+    if (av) { av.title = `${LOGIN_USER.name} — 계정 메뉴`; }
   } else {
     showPersonalLogin(dbMode === "conn_fail" ? `서버에 연결하지 못했습니다 — ${CONN_ERR || "인터넷 연결을 확인하세요"}`
       : (dbMode === "need_login" && CONN_ERR ? CONN_ERR : undefined));
@@ -5857,7 +5918,89 @@ function go(s){
   document.querySelectorAll("#menu button").forEach(b=>b.classList.toggle("on", b.dataset.s===s));
   document.querySelectorAll(".screen").forEach(x=>x.classList.toggle("on", x.id==="s-"+s));
   render(s);
+  updateFavBtn();
 }
+/* ══ 즐겨찾기 ★ — 자주 가는 화면(탭까지)을 왼쪽 메뉴 맨 위에 둔다. 이 기기가 기억한다. ══ */
+const PLAN_TAB_NAME = { tally:"집계", grid:"기계 배분", order:"작업 순서", mat:"부자재·라벨", buf:"여유분" };
+function favList(){ try { return JSON.parse(localStorage.getItem("momos.favs") || "[]") || []; } catch(_){ return []; } }
+function saveFavs(a){ try { localStorage.setItem("momos.favs", JSON.stringify(a)); } catch(_){} renderFavs(); updateFavBtn(); }
+function curCtx(){
+  const s = document.querySelector(".screen.on")?.id?.replace(/^s-/, "") || "";
+  let tab = "", tabName = "";
+  if (s === "plan")  { tab = planTab;  tabName = PLAN_TAB_NAME[tab] || ""; }
+  if (s === "roast") { tab = roastTab; tabName = document.querySelector(`#roastTabs [data-p="${tab}"]`)?.textContent.trim() || ""; }
+  if (s === "base")  { const b = document.querySelector("#baseTabs .subtab.on"); tab = b?.dataset.p || ""; tabName = b?.textContent.trim() || ""; }
+  if (s === "work" && typeof wkMach !== "undefined") { tab = wkMach || ""; tabName = wkMach || ""; }
+  const menu = document.querySelector(`#menu button[data-s="${s}"] .lb`)?.textContent.trim() || s;
+  return { s, tab, k: tab ? `${s}:${tab}` : s, label: tabName ? `${menu}·${tabName}` : menu, menu, tabName };
+}
+function isFav(k){ return favList().some(f=>f.k===k); }
+function toggleFav(){
+  const c = curCtx(); if (!c.s) return;
+  let a = favList();
+  if (isFav(c.k)) { a = a.filter(f=>f.k!==c.k); saveFavs(a); toast(`즐겨찾기에서 뺐습니다 — ${c.label}`); }
+  else { if (a.length >= 8) return toast("즐겨찾기는 8개까지입니다 — 하나를 빼고 넣어 주세요");
+    a.push({ k:c.k, s:c.s, tab:c.tab, label:c.label }); saveFavs(a); toast(`즐겨찾기에 넣었습니다 — ${c.label}`); }
+}
+function updateFavBtn(){
+  const b = $("favBtn"); if (!b) return;
+  const on = isFav(curCtx().k);
+  b.textContent = on ? "★" : "☆"; b.classList.toggle("on", on);
+}
+function renderFavs(){
+  const box = $("favList"); if (!box) return;
+  const a = favList();
+  box.style.display = a.length ? "" : "none";
+  box.innerHTML = a.map(f=>`<button onclick="goFav('${f.k}')" title="${f.label}"><span class="ico">★</span><span class="lb">${f.tabName||f.label.split("·").pop()}</span></button>`).join("");
+}
+function goFav(k){
+  const f = favList().find(x=>x.k===k); if (!f) return;
+  const mb = document.querySelector(`#menu button[data-s="${f.s}"]`);
+  if (mb && mb.style.display === "none") return toast("이 계정으로는 볼 수 없는 화면입니다");
+  if (f.s === "plan"  && f.tab) setPlanTab(f.tab);
+  if (f.s === "roast" && f.tab) setRoastTab(f.tab);
+  if (f.s === "base"  && f.tab) document.querySelector(`#baseTabs [data-p="${f.tab}"]`)?.click();
+  if (f.s === "work" && typeof setWkMach === "function") { wkMach = f.tab || ""; try { localStorage.setItem("momos.wkMach", wkMach); } catch(_){} }
+  go(f.s); closeNav();
+}
+renderFavs();
+
+/* ══ 계정 메뉴 — 오른쪽 위 동그라미를 누르면 ══ */
+function toggleAcct(){ const m = $("acctMenu"); if (m.style.display === "none") openAcct(); else closeAcct(); }
+function closeAcct(){ $("acctMenu").style.display = "none"; document.body.classList.remove("acctopen"); }
+function openAcct(){
+  const m = $("acctMenu"), u = LOGIN_USER, fs = fontScale();
+  const roleTxt = u ? (isSystemAdmin() ? "시스템 관리자" : (ROLES[loginRole()] || loginRole())) : "로그인 안 됨";
+  const mobile = document.body.classList.contains("mobile");
+  const guideOn = mobile ? document.body.classList.contains("showguide") : !guideOff;
+  m.innerHTML = `
+    <div class="ah"><b>${u ? u.name : (CURRENT_USER || "—")}</b>
+      <div class="hint">${CURRENT_USER ? `작업자 ${CURRENT_USER} · ` : ""}제품생산팀 원두파트<br>${u ? `${u.login_id || ""}<br>` : ""}${roleTxt}</div></div>
+    <div class="sec"><div class="alb"><span>글자 크기</span><span>${fs}%</span></div>
+      <div class="seg">${[90,100,115,130].map(p=>`<button class="${p===fs?"on":""}" onclick="setFontScale(${p})">${p===100?"기본":p+"%"}</button>`).join("")}</div>
+      <div class="hint" style="padding:6px 0 0;font-size:11.5px">이 기기에서만 적용됩니다</div></div>
+    <div class="sec" style="padding:6px 0">
+      <button class="it" onclick="goHome()"><span class="ico">⌂</span>홈으로</button>
+      <button class="it" onclick="closeAcct();reloadDB()"><span class="ico">↻</span>데이터 새로고침</button>
+      <button class="it" onclick="closeAcct();toggleGuide()"><span class="ico">?</span>${guideOn ? "설명 접기" : "설명 보기"}</button>
+      <button class="it" onclick="closeAcct();toggleMobile()"><span class="ico">${mobile ? "🖥" : "📱"}</span>${mobile ? "PC 보기" : "모바일 보기"}</button>
+      <button class="it" onclick="closeAcct();toggleFav()"><span class="ico">★</span>${isFav(curCtx().k) ? "이 화면 즐겨찾기 빼기" : "이 화면 즐겨찾기"}</button>
+    </div>
+    <div class="sec" style="padding:6px 0">
+      ${u ? `<button class="it" onclick="openPwDlg()"><span class="ico">🔑</span>비밀번호 변경</button>
+      <button class="it danger" onclick="closeAcct();askLogout()"><span class="ico">⏻</span>로그아웃</button>` : `<div class="hint">개인 로그인 후 비밀번호 변경·로그아웃이 보입니다</div>`}
+    </div>`;
+  m.style.display = ""; document.body.classList.add("acctopen");
+}
+function goHome(){ closeAcct(); closeNav();
+  const b = [...document.querySelectorAll("#menu button")].find(x=>x.style.display !== "none" && x.offsetParent !== null) || document.querySelector("#menu button");
+  if (b) go(b.dataset.s); }
+document.addEventListener("keydown", e=>{ if (e.key === "Escape") closeAcct(); });
+/* 글자 크기 — 90 / 100 / 115 / 130 %, 이 기기만 */
+function fontScale(){ let v = 100; try { v = Number(localStorage.getItem("momos.fontScale")) || 100; } catch(_){} return [90,100,115,130].includes(v) ? v : 100; }
+function applyFontScale(){ const v = fontScale(); document.body.style.zoom = v === 100 ? "" : (v/100); }
+function setFontScale(p){ try { localStorage.setItem("momos.fontScale", String(p)); } catch(_){} applyFontScale(); openAcct(); toast(`글자 크기 ${p===100?"기본":p+"%"}`); }
+applyFontScale();
 /* ══ 모바일 보기 — 태블릿·휴대폰 배치. 한 번 켜면 그 기기가 기억한다.
    처음 열 때 화면이 1100px 보다 좁으면(태블릿) 저절로 켠다. */
 function applyMobile(on){
@@ -5892,6 +6035,7 @@ function setRoastTab(t){
   roastTab = t; try { localStorage.setItem("momos.roastTab", t); } catch(_){}
   document.querySelectorAll("#roastTabs .subtab").forEach(x=>x.classList.toggle("on", x.dataset.p===t));
   document.querySelectorAll("#s-roast .subpane").forEach(x=>x.classList.toggle("on", x.id==="rp-"+t));
+  if (typeof updateFavBtn === "function") updateFavBtn();
 }
 let planTab = "tally";
 try { planTab = localStorage.getItem("momos.planTab") || "tally"; } catch(_){}
@@ -5899,12 +6043,14 @@ function setPlanTab(t){
   planTab = t; try { localStorage.setItem("momos.planTab", t); } catch(_){}
   document.querySelectorAll("#planTabs .subtab").forEach(x=>x.classList.toggle("on", x.dataset.p===t));
   document.querySelectorAll("#s-plan .subpane").forEach(x=>x.classList.toggle("on", x.id==="pp-"+t));
+  if (typeof updateFavBtn === "function") updateFavBtn();
 }
 $("baseTabs").addEventListener("click", e=>{
   const b = e.target.closest(".subtab"); if(!b) return;
   /* ★ 기준정보 안의 탭만 — 전에는 모든 화면의 탭·칸을 건드려서 다른 화면 탭이 꺼졌다 */
   document.querySelectorAll("#baseTabs .subtab").forEach(x=>x.classList.toggle("on",x===b));
   document.querySelectorAll("#s-base .subpane").forEach(x=>x.classList.toggle("on",x.id==="p-"+b.dataset.p));
+  updateFavBtn();
 });
 function render(s){
   renderOne(s);
@@ -6428,12 +6574,26 @@ function renderTally(){
       (manual ? ` <span class="tag warn">손으로 고침 ${manual}품목</span>` : "")
     : `<span class="tag">${d}</span> <span class="tag warn">집계가 없습니다 — 안전재고 기준으로 계획이 잡힙니다</span>`;
 
+  const CX = isCompact();
+  SORT_COLS.tallyTbl = CX ? { 1:p=>p.name } : { 1:p=>p.code||"", 2:p=>p.name, 5:p=>Number(p.spec_g)||0 };
   tbl("tallyTbl",
-    ["No","CFE코드","품목명", ...rounds.map(r=>`<span class="fix">${r}</span>`),
+    CX ? ["No","품목명", ...rounds.map(r=>`<span class="fix">${r}</span>`), '<span class="fix">합계</span>', '<span class="tag buf">여유분</span>', '<span class="fix">남은 계획</span>']
+       : ["No","CFE코드","품목명", ...rounds.map(r=>`<span class="fix">${r}</span>`),
      '<span class="fix">집계 합계</span>',"이미 만든 수량",'<span class="tag buf" title="오늘 칸에 직접 적으면 오늘만 바뀝니다 · 요일별 기본값은 기준정보 > 여유분">여유분 (오늘 수정 가능)</span>','<span class="fix">남은 계획</span>',"상태"],
     ps.map((p,i)=>{
       const tot = tallyQty(p.id, undefined, d), mk = madeQty(p.id, d), pc = planCalc(p, d), lf = pc.total;
       const over = mk > tot;
+      if (CX) { const base = bufBase(p, d), ov = bufOverride(p, d), ea = bufEA(p, d);
+        const edit = can("plan"), live = beanLive(p.bean);
+        return `<tr><td class="rowno">${i+1}</td>
+        <td class="l"><b>${p.name}</b>${p.id in planEA ? ' <span class="tag warn">손으로 고침</span>' : over ? ` <span class="tag bad">+${fmt(mk-tot)} 더 만듦</span>` : lf<=0 ? ' <span class="tag ok">다 만듦</span>' : ''}${mk?`<div class="hint" style="padding:0;font-size:10.5px">이미 만든 ${fmt(mk)}</div>`:''}</td>
+        ${rounds.map(r=>{ const q = tallyQty(p.id, r, d);
+          return `<td class="fix">${q?fmt(q):'<span class="hint" style="padding:0">—</span>'}</td>`; }).join("")}
+        <td class="fix"><b>${fmt(tot)}</b></td>
+        <td class="bufc"><input type="text" inputmode="numeric" class="num" style="width:56px;text-align:right;${ov!=null?"border-color:#5b34b5;font-weight:800":""}"
+              value="${ov!=null ? ov : (ea||"")}" placeholder="${base||0}" data-f="bt:${p.id}" ${edit&&live?"":"disabled"} title="오늘만 다르게 — 비우면 요일 기준(${base})으로"
+              onchange="setBufToday('${p.id}',this.value)">${!live?'<div class="hint bad" style="padding:0;font-size:10.5px">원두 없음</div>':''}</td>
+        <td class="fix ${lf>0?"":"ok"}"><b>${fmt(lf)}</b></td></tr>`; }
       return `<tr class="${lf<=0?"":""}">
         <td class="rowno">${i+1}</td>
         <td class="l">${p.code||"—"}</td>
@@ -6455,10 +6615,10 @@ function renderTally(){
           : over ? `<span class="tag bad">집계보다 ${fmt(mk-tot)} 더 만듦</span>`
           : lf<=0 ? '<span class="tag ok">다 만듦</span>'
           : '<span class="tag">생산 대기</span>'}</td></tr>`; }),
-    ps.length ? `<td colspan="3" class="c">합 계 · ${ps.length}품목</td>
+    ps.length ? `<td colspan="${CX?2:3}" class="c">합 계 · ${ps.length}품목</td>
       ${rounds.map(r=>`<td class="fix"><b>${fmt(ps.reduce((t,p)=>t+tallyQty(p.id,r,d),0))}</b></td>`).join("")}
-      <td class="fix"><b>${fmt(sum)}</b></td><td>${fmt(made)}</td><td class="bufc">${(()=>{ const t = ps.reduce((a,p)=>a+planCalc(p, d).buf,0); return t?`+${fmt(t)}`:"—"; })()}</td>
-      <td class="fix"><b>${fmt(left)}</b></td><td></td>` : null);
+      <td class="fix"><b>${fmt(sum)}</b></td>${CX?"":`<td>${fmt(made)}</td>`}<td class="bufc">${(()=>{ const t = ps.reduce((a,p)=>a+planCalc(p, d).buf,0); return t?`+${fmt(t)}`:"—"; })()}</td>
+      <td class="fix"><b>${fmt(left)}</b></td>${CX?"":"<td></td>"}` : null);
 
   /* 집계 입력 내역 */
   const log = sorted("tallyLog", [...talliesOf(d)].sort((a,b)=>
@@ -6492,7 +6652,17 @@ function csvTally(){
       ...rounds.map(r=>tallyQty(p.id,r,d)),
       tallyQty(p.id,undefined,d), madeQty(p.id,d), tallyLeft(p.id,d)]));
 }
+/* ── 간단히 보기 — 칸을 줄여서 옆으로 안 넘기게 (모바일은 기본 켬, 기기별로 기억) ── */
+let planCompact = (()=>{ try { const v = localStorage.getItem("momos.plancompact"); if (v != null) return v === "1"; } catch(_){} return null; })();
+const isCompact = () => planCompact != null ? planCompact : document.body.classList.contains("mobile");
+function setPlanCompact(v){
+  planCompact = !!v;
+  try { localStorage.setItem("momos.plancompact", planCompact ? "1" : "0"); } catch(_){}
+  renderPlan();
+  toast(planCompact ? "간단히 보기 — 꼭 필요한 칸만 보입니다" : "자세히 보기 — 모든 칸을 보입니다");
+}
 function renderPlan(){
+  document.body.classList.toggle("plancompact", isCompact());
   if (!document.querySelector("#s-plan .subpane.on") || document.querySelector("#s-plan .subpane.on").id !== "pp-"+planTab) setPlanTab(planTab);
   renderTally(); renderBufPanel();
   const rows = planRows(), pool = allocate(rows);
@@ -6512,8 +6682,19 @@ function renderPlan(){
     ? `<span class="tag warn">손으로 고친 품목 ${manN}건</span>`
     : `<span class="tag ok">전체 자동배분</span>`) +
     ` <button class="btn ${planSplit?"primary":""}" style="margin-left:8px"
-        onclick="setPlanSplit(${planSplit?"false":"true"})">배치별로 나누기 ${planSplit?"켬":"끔"}</button>`;
-  tbl("planMach", ["기계","인원","가동시간","능력방식","가용(h)","사용(h)","여유(h)","배정 EA","최소 투입","1품목 최대","1kg / 500g / 200g / 100g (EA/h)","라벨부착","비고"],
+        onclick="setPlanSplit(${planSplit?"false":"true"})">배치별로 나누기 ${planSplit?"켬":"끔"}</button>` +
+    ` <button class="btn ${isCompact()?"primary":""}" style="margin-left:4px" title="칸을 줄여서 옆으로 안 넘기고 봅니다"
+        onclick="setPlanCompact(${isCompact()?"false":"true"})">간단히 보기 ${isCompact()?"켬":"끔"}</button>`;
+  const CX = isCompact();
+  if (CX) tbl("planMach", ["기계","가용(h)","사용(h)","여유(h)","배정 EA"],
+    DB.machines.map(m=>{
+      const cap = machHours(m), free = pool[m.id], used = cap-free;
+      const ea = rows.reduce((a,r)=>a+(r.alloc[m.id]||0),0);
+      return `<tr><td class="l"><b>${m.name}</b> <span class="hint" style="padding:0">${m.workers}명·${m.hours}h</span></td><td>${fmt(cap)}</td>
+        <td class="${used>.01?'ok':''}">${fmt(used)}</td><td class="${free<.5?'bad':''}">${fmt(free)}</td>
+        <td><b>${ea?fmt(ea):"—"}</b></td></tr>`;
+    }));
+  else tbl("planMach", ["기계","인원","가동시간","능력방식","가용(h)","사용(h)","여유(h)","배정 EA","최소 투입","1품목 최대","1kg / 500g / 200g / 100g (EA/h)","라벨부착","비고"],
     DB.machines.map(m=>{
       const cap = machHours(m), free = pool[m.id], used = cap-free;
       const sp = ["s1000","s500","s200","s100"].map(k=>Number(m[k]||0)?fmt(m[k]):"불가").join(" / ");
@@ -6531,24 +6712,26 @@ function renderPlan(){
 
   const mh = DB.machines.map(m=>
     `<button class="mhead" onclick="allToMach('${m.id}')" title="만들 수 있는 품목을 전부 ${m.name}로 몰아줍니다">${m.name}</button>`);
-  tbl("planGrid", ["No","품목명","분쇄도","안전","CFE",'<span class="tag buf">여유분</span>',"계획EA","필요원두(kg)","사용할 배치 (선입선출)",...mh,"미배정","배분"],
+  tbl("planGrid", CX ? ["No","품목명","계획EA",...mh,"미배정","배분"]
+                     : ["No","품목명","분쇄도","안전","CFE",'<span class="tag buf">여유분</span>',"계획EA","필요원두(kg)","사용할 배치 (선입선출)",...mh,"미배정","배분"],
     rows.map((r,i)=>{
       const need = stdKg(r.p,r.ea), avail = mmsByBean(r.p.bean);
+      const warnPick = r.picks.some(x=>shelfState(x.b.roast_date)!=="ok");
       return `<tr><td class="rowno">${i+1}</td>
-        <td class="l">${r.p.name}${r.p.ica?' <span class="tag warn">이카</span>':''}</td>
-        <td class="c">${isGround(r.p.grind)?`<span class="tag warn">${r.p.grind}</span>`:"홀빈"}</td>
+        <td class="l">${r.p.name}${r.p.ica?' <span class="tag warn">이카</span>':''}${CX ? `${isGround(r.p.grind)?` <span class="tag warn">${r.p.grind}</span>`:''}${(()=>{ const pc = planCalc(r.p); return (!(r.p.id in planEA) && pc.buf) ? ` <span class="tag buf">+${fmt(pc.buf)}</span>` : ""; })()}<div class="hint" style="padding:0;font-size:10.5px">원두 ${fmt(need)}kg${warnPick?' · <span class="warn">상미기한 주의</span>':''}${r.lack>0?` · <span class="bad">로스팅요청 ${fmt(r.lack)}kg</span>`:''}</div>` : ''}</td>
+        ${CX ? '' : `<td class="c">${isGround(r.p.grind)?`<span class="tag warn">${r.p.grind}</span>`:"홀빈"}</td>
         <td>${fmt(r.p.safety)}</td><td>${fmt(r.p.cfe)}</td>
-        <td class="bufc">${(()=>{ const pc = planCalc(r.p); return (!(r.p.id in planEA) && pc.buf) ? `+${fmt(pc.buf)}<br><span class="hint" style="padding:0;font-size:10.5px">${fmt(eaKg(r.p,pc.buf))}kg</span>` : "—"; })()}</td>
+        <td class="bufc">${(()=>{ const pc = planCalc(r.p); return (!(r.p.id in planEA) && pc.buf) ? `+${fmt(pc.buf)}<br><span class="hint" style="padding:0;font-size:10.5px">${fmt(eaKg(r.p,pc.buf))}kg</span>` : "—"; })()}</td>`}
         <td><input type="text" inputmode="numeric" class="num" value="${r.ea}" data-f="plan:${r.p.id}"
           oninput="setPlan('${r.p.id}',this.value)"></td>
-        <td>${fmt(need)}</td>
+        ${CX ? '' : `<td>${fmt(need)}</td>
         <td class="l" style="white-space:normal;line-height:1.7;padding:7px 14px">${
           r.picks.length
             ? r.picks.map(x=>{ const st=shelfState(x.b.roast_date);
                 return `<span class="tag ${st==="bad"?"bad":st==="warn"?"warn":"ok"}" title="${x.b.bean} · 로스팅 ${x.b.roast_date} · 잔여 ${fmt(x.b.stock_kg)}kg">
                   ${batchLabel(x.b)} <b>${fmt(x.kg)}kg</b>${st!=="ok"?` ${shelfLabel(x.b.roast_date)}`:""}</span>`; }).join(" ")
             : '<span class="hint" style="padding:0">사용 가능한 배치 없음</span>'
-        }${r.lack>0?` <span class="tag bad">로스팅요청 ${fmt(r.lack)}kg</span>`:""}</td>
+        }${r.lack>0?` <span class="tag bad">로스팅요청 ${fmt(r.lack)}kg</span>`:""}</td>`}
         ${DB.machines.map(m=>{
           const v = r.alloc[m.id] || 0, f = r.flag[m.id];
           const ok = canRun(m, r.p);
@@ -6568,7 +6751,7 @@ function renderPlan(){
                   data-f="alloc:${r.p.id}:${m.id}" placeholder="0" ${ok?"":"disabled"}
                   oninput="setAlloc('${r.p.id}','${m.id}',this.value)">
               </label>
-              ${ok ? `<button class="allb${v>=r.ea&&r.ea>0?" on":""}" onclick="allOne('${r.p.id}','${m.id}')"
+              ${ok && !CX ? `<button class="allb${v>=r.ea&&r.ea>0?" on":""}" onclick="allOne('${r.p.id}','${m.id}')"
                 title="${r.p.name} ${fmt(r.ea)}EA 를 전부 ${m.name}로">전량</button>` : ""}
             </div>
             ${tag?`<div class="tag ${f==="no"?"bad":"warn"}" style="font-size:10px;margin-top:3px">${tag}</div>`:""}
@@ -6580,12 +6763,13 @@ function renderPlan(){
           ? `<span class="tag warn">수동</span><br><button class="btn" style="height:24px;padding:0 7px;margin-top:3px" onclick="autoAlloc('${r.p.id}')">자동으로</button>`
           : `<span class="tag ok">자동</span>`}</td></tr>`;
     }),
-    `<td colspan="5" class="c">합 계</td><td class="bufc">${(()=>{ const t = rows.filter(r=>!(r.p.id in planEA)).reduce((s,r)=>s+planCalc(r.p).buf,0); return t?`+${fmt(t)}`:"—"; })()}</td><td>${fmt(rows.reduce((s,r)=>s+r.ea,0))}</td>
+    (CX ? `<td colspan="2" class="c">합 계</td><td>${fmt(rows.reduce((s,r)=>s+r.ea,0))}</td>`
+        : `<td colspan="5" class="c">합 계</td><td class="bufc">${(()=>{ const t = rows.filter(r=>!(r.p.id in planEA)).reduce((s,r)=>s+planCalc(r.p).buf,0); return t?`+${fmt(t)}`:"—"; })()}</td><td>${fmt(rows.reduce((s,r)=>s+r.ea,0))}</td>
      <td>${fmt(rows.reduce((s,r)=>s+stdKg(r.p,r.ea),0))}</td>
      <td class="l">${(()=>{ const n=new Set(); rows.forEach(r=>r.picks.forEach(x=>n.add(x.b.id)));
        const lack=rows.reduce((s,r)=>s+r.lack,0);
-       return `배치 ${n.size}개 사용` + (lack>0?` · 부족 ${fmt(lack)}kg`:""); })()}</td>
-     ${DB.machines.map(m=>`<td>${fmt(rows.reduce((s,r)=>s+(r.alloc[m.id]||0),0))}</td>`).join("")}
+       return `배치 ${n.size}개 사용` + (lack>0?` · 부족 ${fmt(lack)}kg`:""); })()}</td>`) +
+     `${DB.machines.map(m=>`<td>${fmt(rows.reduce((s,r)=>s+(r.alloc[m.id]||0),0))}</td>`).join("")}
      <td>${fmt(rows.reduce((s,r)=>s+r.unalloc,0))}</td><td></td>`);
 
   renderPlanByMach(rows);             // 기계별로 다시 세운 작업 순서
@@ -11498,24 +11682,39 @@ async function createMesAccount(workerId){
   }
 }
 async function changeMyPassword(){
-  if(!sb || !LOGIN_USER) return toast("개인 로그인이 필요합니다");
-  const cur=$("myPwCurrent")?.value||"";
-  const n1=$("myPwNew")?.value||"";
-  const n2=$("myPwNew2")?.value||"";
-  if(!cur) return toast("현재 비밀번호를 입력해 주세요");
-  if(n1.length<4) return toast("새 비밀번호는 4자 이상 입력해 주세요");
-  if(n1!==n2) return toast("새 비밀번호 확인이 일치하지 않습니다");
-  if(cur===n1) return toast("현재 비밀번호와 다른 비밀번호를 입력해 주세요");
+  const ok = await doChangePassword($("myPwCurrent")?.value||"", $("myPwNew")?.value||"", $("myPwNew2")?.value||"");
+  if (ok) { $("myPwCurrent").value=""; $("myPwNew").value=""; $("myPwNew2").value=""; }
+}
+/* 비밀번호 바꾸기 — 기준정보 표와 계정 메뉴 창이 같이 쓴다 */
+async function doChangePassword(cur, n1, n2){
+  if(!sb || !LOGIN_USER) { toast("개인 로그인이 필요합니다"); return false; }
+  if(!cur) { toast("현재 비밀번호를 입력해 주세요"); return false; }
+  if(n1.length<4) { toast("새 비밀번호는 4자 이상 입력해 주세요"); return false; }
+  if(n1!==n2) { toast("새 비밀번호 확인이 일치하지 않습니다"); return false; }
+  if(cur===n1) { toast("현재 비밀번호와 다른 비밀번호를 입력해 주세요"); return false; }
   try{
     const email=LOGIN_USER.email || loginEmailOf(LOGIN_USER.login_id);
     const {error:reauthErr}=await sb.auth.signInWithPassword({email,password:cur});
     if(reauthErr) throw new Error("현재 비밀번호가 맞지 않습니다");
     const {error}=await sb.auth.updateUser({password:n1});
     if(error) throw error;
-    $("myPwCurrent").value=""; $("myPwNew").value=""; $("myPwNew2").value="";
     toast("비밀번호를 변경했습니다");
-  }catch(e){ toast(`비밀번호 변경 실패 — ${e?.message||e}`); }
+    return true;
+  }catch(e){ toast(`비밀번호 변경 실패 — ${e?.message||e}`); return false; }
 }
+function openPwDlg(){
+  closeAcct();
+  if(!sb || !LOGIN_USER) return toast("개인 로그인이 필요합니다");
+  $("pwWho").textContent = `${LOGIN_USER.name} · ${LOGIN_USER.login_id||""}`;
+  ["pwCur","pwNew","pwNew2"].forEach(i=>{ $(i).value=""; });
+  $("pwDlg").style.display="flex"; setTimeout(()=>$("pwCur").focus(),30);
+}
+function closePwDlg(){ $("pwDlg").style.display="none"; }
+async function submitPwDlg(){
+  const ok = await doChangePassword($("pwCur").value, $("pwNew").value, $("pwNew2").value);
+  if (ok) closePwDlg();
+}
+$("pwDlg").addEventListener("keydown", e=>{ if(e.key==="Enter") submitPwDlg(); if(e.key==="Escape") closePwDlg(); });
 
 /* ── 역할별 권한 설정 ── */
 function renderPerm(){
@@ -13751,7 +13950,7 @@ function setWkLabelEdit(){ wkLabelEdit = !wkLabelEdit; renderWork();
   toast(wkLabelEdit ? "카드에서 라벨을 바꿀 수 있습니다" : "라벨 칸을 접었습니다"); }
 let wkMach = "";                       // "" = 전체, 그 외 = 그 종류(수동 · 리팩 · 이카)만
 try { wkMach = localStorage.getItem("momos.wkMach") || ""; } catch(_){}     // 현장 태블릿은 자기 기계를 기억한다
-function setWkMach(m){ wkMach = m; try { localStorage.setItem("momos.wkMach", m); } catch(_){} renderWork(); }
+function setWkMach(m){ wkMach = m; try { localStorage.setItem("momos.wkMach", m); } catch(_){} renderWork(); updateFavBtn(); }
 /* 기계 이름 → 종류: "수동 2구"·"수동 1구" → 수동 · "리팩(Reepack)" → 리팩 · "이카(ICA)" → 이카 */
 function machKind(name){
   const n = String(name||"");
