@@ -1075,6 +1075,16 @@
         (생산계획표에서 손으로 고치면 <span class="tag warn">수동</span>이 되고, 되돌리려면 [집계 기준으로]).</div>
       <div class="panel-b"><table id="tallyTbl"></table></div>
     </div>
+    <div class="panel" id="bufPanel">
+      <div class="panel-h">여유분 설정 — 생산 요일별 <span class="r hint" id="bufState"></span></div>
+      <div class="hint">집계(주문)로 잡히는 품목에 <b>며칠치를 더 만들지</b> 요일마다 정합니다.
+        상미기간 <b id="bufShelf"></b>일 안에 <b>실제로 생산·출고하는 날</b>만 셉니다 —
+        월요일에 만들면 월·화·수·목·금 5일 · 수요일에 만들면 수·목·금 3일 (토·일 쉼).<br>
+        <b>여유분 = 품목별 하루 평균 주문량 × 여유 일수 − 지금 CFE 재고</b> ·
+        여유 일수는 <b>(나갈 수 있는 날 − 1)</b> 을 넘길 수 없습니다 — 넘기면 상미기간 안에 다 못 나갑니다.
+        안전재고로 잡히는 품목(집계 없음)은 안전재고가 이미 여유분이라 더하지 않습니다.</div>
+      <div class="panel-b"><table id="bufTbl"></table></div>
+    </div>
     <div class="panel">
       <div class="panel-h">집계 입력 내역 <span class="r hint">넣은 순서대로 · 지우면 계획이 바로 줄어듭니다</span></div>
       <div class="selbar" id="selBar-tallies"></div>
@@ -1300,14 +1310,6 @@
       </div>
       <div id="reqPending"></div>
       <div id="reqBoard"></div>
-    </div>
-    <div class="panel noprint" id="bufPanel">
-      <div class="panel-h">여유분 설정 — 로스팅 요일별 <span class="r hint" id="bufState"></span></div>
-      <div class="hint">상미기간 <b id="bufShelf"></b>일 안에 <b>실제로 생산하는 날</b>만 셉니다.
-        예) 월요일 로스팅 → 월·화·수·목·금 5일 사용 · 수요일 로스팅 → 수·목·금 3일 사용 (토·일 생산 안 함).<br>
-        <b>여유분 = 원두별 하루 평균 사용량 × 여유 일수</b> · 여유 일수는 <b>(쓸 수 있는 날 − 1)</b> 을 넘길 수 없습니다 — 넘기면 상미기간 안에 다 못 씁니다.
-        재고가 남아 있으면 그만큼 여유분에서 먼저 뺍니다.</div>
-      <div class="panel-b"><table id="bufTbl"></table></div>
     </div>
     <div class="panel">
       <div class="panel-h">로스팅 생산계획
@@ -5894,7 +5896,7 @@ const tallyProds = d => { const seen = [];
 let planEA = {};
 /* 계획 수량은 이 순서로 정해진다
    ① 손으로 고친 값  ② 오늘 집계가 있으면 (집계합계 − 이미 만든 수량)  ③ 안전재고 − 현재고 */
-const planFor = p => planEA[p.id] ?? (hasTally(p.id) ? tallyLeft(p.id) : shortage(p));
+const planFor = p => planEA[p.id] ?? planCalc(p).total;     // ② 집계 + 요일별 여유분 − 이미 만든 수량
 const planRows = () => PRODS().map(p=>({ p, ea: planFor(p) })).filter(r=>r.ea>0);
 const minEa = m => Math.max(0, Number(m.min_ea||0));   // 이 수량 미만이면 이 기계에 안 넣음
 const maxEa = m => Math.max(0, Number(m.max_ea||0));   // 한 품목당 최대 · 0 = 제한 없음
@@ -6078,21 +6080,24 @@ function renderTally(){
   const rounds = roundsOf(d), ps = tallyProds(d);
   const sum  = ps.reduce((t,p)=>t+tallyQty(p.id, undefined, d), 0);
   const made = ps.reduce((t,p)=>t+madeQty(p.id, d), 0);
-  const left = ps.reduce((t,p)=>t+tallyLeft(p.id, d), 0);
+  const left = ps.reduce((t,p)=>t+planCalc(p, d).total, 0);
+  const bufT = ps.reduce((t,p)=>t+planCalc(p, d).buf, 0), bd0 = bufDaysFor(d);
   const manual = ps.filter(p=>p.id in planEA).length;
   if ($("tallySum")) $("tallySum").innerHTML = ps.length
     ? `<span class="tag">${d}</span> <span class="tag ok">${rounds.join(" + ")||"—"}</span>` +
       ` <span class="tag">${ps.length}품목 · 합계 ${fmt(sum)}EA</span>` +
       (made ? ` <span class="tag ok">이미 만든 것 ${fmt(made)}EA</span>` : "") +
+      (bd0.use ? ` <span class="tag buf" style="cursor:pointer" onclick="gotoBuf()">${WD[dowOf(d)]}요일 여유 ${bd0.use}일치 +${fmt(bufT)}EA</span>`
+               : ` <span class="tag" style="cursor:pointer" onclick="gotoBuf()" title="눌러서 요일별 여유분 설정">여유분 없음</span>`) +
       ` <span class="tag ${left?"warn":"ok"}">남은 계획 ${fmt(left)}EA</span>` +
       (manual ? ` <span class="tag warn">손으로 고침 ${manual}품목</span>` : "")
     : `<span class="tag">${d}</span> <span class="tag warn">집계가 없습니다 — 안전재고 기준으로 계획이 잡힙니다</span>`;
 
   tbl("tallyTbl",
     ["No","CFE코드","품목명", ...rounds.map(r=>`<span class="fix">${r}</span>`),
-     '<span class="fix">집계 합계</span>',"이미 만든 수량",'<span class="fix">남은 계획</span>',"상태"],
+     '<span class="fix">집계 합계</span>',"이미 만든 수량",'<span class="tag buf">여유분</span>','<span class="fix">남은 계획</span>',"상태"],
     ps.map((p,i)=>{
-      const tot = tallyQty(p.id, undefined, d), mk = madeQty(p.id, d), lf = tallyLeft(p.id, d);
+      const tot = tallyQty(p.id, undefined, d), mk = madeQty(p.id, d), pc = planCalc(p, d), lf = pc.total;
       const over = mk > tot;
       return `<tr class="${lf<=0?"":""}">
         <td class="rowno">${i+1}</td>
@@ -6102,6 +6107,9 @@ function renderTally(){
           return `<td class="fix">${q?fmt(q):'<span class="hint" style="padding:0">—</span>'}</td>`; }).join("")}
         <td class="fix"><b>${fmt(tot)}</b></td>
         <td class="${over?"bad":""}">${mk?fmt(mk):"—"}</td>
+        <td class="bufc" title="${pc.basis||""}${pc.stock?` · CFE 재고 ${fmt(pc.stock)} 차감`:""}">${pc.buf
+          ? `+${fmt(pc.buf)}<br><span class="hint" style="padding:0;font-size:10.5px">${pc.days}일치${pc.stock&&pc.bufRaw>pc.buf?` · 재고 ${fmt(pc.bufRaw-pc.buf)} 차감`:""}</span>`
+          : (pc.days ? '<span class="hint" style="padding:0">재고로 충분</span>' : "—")}</td>
         <td class="fix ${lf>0?"":"ok"}"><b>${fmt(lf)}</b></td>
         <td class="c">${
           p.id in planEA ? '<span class="tag warn">손으로 고침</span>'
@@ -6110,8 +6118,9 @@ function renderTally(){
           : '<span class="tag">생산 대기</span>'}</td></tr>`; }),
     ps.length ? `<td colspan="3" class="c">합 계 · ${ps.length}품목</td>
       ${rounds.map(r=>`<td class="fix"><b>${fmt(ps.reduce((t,p)=>t+tallyQty(p.id,r,d),0))}</b></td>`).join("")}
-      <td class="fix"><b>${fmt(sum)}</b></td><td>${fmt(made)}</td>
+      <td class="fix"><b>${fmt(sum)}</b></td><td>${fmt(made)}</td><td class="bufc">${bufT?`+${fmt(bufT)}`:"—"}</td>
       <td class="fix"><b>${fmt(left)}</b></td><td></td>` : null);
+  renderBufPanel();
 
   /* 집계 입력 내역 */
   const log = [...talliesOf(d)].sort((a,b)=>
@@ -6174,13 +6183,14 @@ function renderPlan(){
 
   const mh = DB.machines.map(m=>
     `<button class="mhead" onclick="allToMach('${m.id}')" title="만들 수 있는 품목을 전부 ${m.name}로 몰아줍니다">${m.name}</button>`);
-  tbl("planGrid", ["No","품목명","분쇄도","안전","CFE","계획EA","필요원두(kg)","사용할 배치 (선입선출)",...mh,"미배정","배분"],
+  tbl("planGrid", ["No","품목명","분쇄도","안전","CFE",'<span class="tag buf">여유분</span>',"계획EA","필요원두(kg)","사용할 배치 (선입선출)",...mh,"미배정","배분"],
     rows.map((r,i)=>{
       const need = stdKg(r.p,r.ea), avail = mmsByBean(r.p.bean);
       return `<tr><td class="rowno">${i+1}</td>
         <td class="l">${r.p.name}${r.p.ica?' <span class="tag warn">이카</span>':''}</td>
         <td class="c">${isGround(r.p.grind)?`<span class="tag warn">${r.p.grind}</span>`:"홀빈"}</td>
         <td>${fmt(r.p.safety)}</td><td>${fmt(r.p.cfe)}</td>
+        <td class="bufc">${(()=>{ const pc = planCalc(r.p); return (!(r.p.id in planEA) && pc.buf) ? `+${fmt(pc.buf)}<br><span class="hint" style="padding:0;font-size:10.5px">${pc.days}일치</span>` : "—"; })()}</td>
         <td><input type="text" inputmode="numeric" class="num" value="${r.ea}" data-f="plan:${r.p.id}"
           oninput="setPlan('${r.p.id}',this.value)"></td>
         <td>${fmt(need)}</td>
@@ -6222,7 +6232,7 @@ function renderPlan(){
           ? `<span class="tag warn">수동</span><br><button class="btn" style="height:24px;padding:0 7px;margin-top:3px" onclick="autoAlloc('${r.p.id}')">자동으로</button>`
           : `<span class="tag ok">자동</span>`}</td></tr>`;
     }),
-    `<td colspan="5" class="c">합 계</td><td>${fmt(rows.reduce((s,r)=>s+r.ea,0))}</td>
+    `<td colspan="5" class="c">합 계</td><td class="bufc">${(()=>{ const t = rows.filter(r=>!(r.p.id in planEA)).reduce((s,r)=>s+planCalc(r.p).buf,0); return t?`+${fmt(t)}`:"—"; })()}</td><td>${fmt(rows.reduce((s,r)=>s+r.ea,0))}</td>
      <td>${fmt(rows.reduce((s,r)=>s+stdKg(r.p,r.ea),0))}</td>
      <td class="l">${(()=>{ const n=new Set(); rows.forEach(r=>r.picks.forEach(x=>n.add(x.b.id)));
        const lack=rows.reduce((s,r)=>s+r.lack,0);
@@ -8666,7 +8676,7 @@ const bestRoaster = (kg, bean) => pickRoaster(bean, kg, emptyLoad());
 /* 배치수·투입 생두량은 수동 입력이 있으면 그 값을 우선 사용 (auto=자동계산 여부) */
 function reqCalc(row){
   const r = roasterById(row.roaster_id);
-  const need = (Number(row.need_kg)||0) + (Number(row.buf_kg)||0);       // 필요분 + 여유분
+  const need = Number(row.need_kg)||0;
   const base = r ? capFor(row.bean, r.id) : 0;                       // 기준표에 등록된 1배치 양
   // 프로파일을 잡으면서 그날 투입량이 달라지면 이 줄에서만 덮어쓴다
   const over = (row.cap_kg != null && Number(row.cap_kg) > 0) ? Number(row.cap_kg) : null;
@@ -8721,64 +8731,70 @@ async function saveSetting(k, v){
 }
 
 /* ══════════════════════════════════════════════════════════════
-   여유분 — 로스팅 요일별
-   · 상미기간(5일) 안에 "실제로 생산하는 날"이 며칠인지 요일마다 계산한다
-       월 로스팅 → 월화수목금 5일 · 수 로스팅 → 수목금 3일 (토·일은 생산 안 함)
-   · 여유분 = 원두별 하루 평균 사용량 × 여유 일수
-   · 여유 일수는 (쓸 수 있는 생산일 − 1) 을 넘지 못한다 — 넘으면 상미기간 안에 다 못 쓴다
+   여유분 — 생산(CFE 완제품) 요일별
+   · 상미기간(5일) 안에 "실제로 생산·출고하는 날"이 며칠인지 요일마다 계산한다
+       월요일에 만들면 월화수목금 5일 · 수요일에 만들면 수목금 3일 (토·일 쉼)
+   · 여유분(EA) = 품목별 하루 평균 주문량 × 여유 일수 − 지금 CFE 재고
+   · 여유 일수는 (쓸 수 있는 날 − 1) 을 넘지 못한다 — 넘으면 상미기간 안에 다 못 나간다
+   · 집계(주문)로 계획이 잡히는 품목에만 붙는다 — 안전재고로 잡히는 품목은 안전재고가 이미 여유분
    ══════════════════════════════════════════════════════════════ */
 const WD = ["일","월","화","수","목","금","토"];
-const BUF_DEFAULT = { workdays:[1,2,3,4,5], days:{ 0:0, 1:2, 2:2, 3:1, 4:1, 5:1, 6:0 } };
+const BUF_KEY = "cfe_buffer";
+const BUF_DEFAULT = { workdays:[1,2,3,4,5], days:{ 0:0, 1:0, 2:0, 3:0, 4:0, 5:0, 6:0 } };
 const bufCfg = () => {
-  const c = SETTINGS.roast_buffer || {};
-  return { workdays: Array.isArray(c.workdays) ? c.workdays.map(Number) : BUF_DEFAULT.workdays,
+  const c = SETTINGS[BUF_KEY] || {};
+  return { workdays: Array.isArray(c.workdays) ? c.workdays.map(Number) : BUF_DEFAULT.workdays.slice(),
            days: Object.assign({}, BUF_DEFAULT.days, c.days || {}) };
 };
 const dowOf = ds => new Date(ds + "T12:00:00").getDay();
 const addDaysStr = (ds, n) => { const d = new Date(ds + "T12:00:00"); d.setDate(d.getDate()+n); return ymd(d); };
-/* 그날 로스팅하면 상미기간 안에 쓸 수 있는 생산일 목록 */
-function usableDays(roastDate){
+/* 그날 만들면 상미기간 안에 쓸(나갈) 수 있는 생산일 목록 */
+function usableDays(day){
   const wd = bufCfg().workdays, out = [];
-  for (let i = 0; i < SHELF_LIFE_DAYS; i++) { const d = addDaysStr(roastDate, i); if (wd.includes(dowOf(d))) out.push(d); }
+  for (let i = 0; i < SHELF_LIFE_DAYS; i++) { const d = addDaysStr(day, i); if (wd.includes(dowOf(d))) out.push(d); }
   return out;
 }
-const usableByDow = dow => {        // 요일만으로 (그 주 아무 날짜나 써서 계산)
+const usableByDow = dow => {
   const base = new Date(); base.setDate(base.getDate() + ((dow - base.getDay() + 7) % 7));
   return usableDays(ymd(base));
 };
-const bufMax = roastDate => Math.max(0, usableDays(roastDate).length - 1);
-/* 실제 적용 여유 일수 — 설정값을 상미기간 한도로 자른다 */
-function bufDaysFor(roastDate){
-  const set = Number(bufCfg().days[dowOf(roastDate)]) || 0;
-  return { set, max: bufMax(roastDate), use: Math.min(set, bufMax(roastDate)) };
+const bufMax = day => Math.max(0, usableDays(day).length - 1);
+function bufDaysFor(day){
+  const set = Number(bufCfg().days[dowOf(day)]) || 0;
+  return { set, max: bufMax(day), use: Math.min(set, bufMax(day)) };
 }
-/* 원두별 하루 평균 사용량 — 최근 4주 실적에서, 없으면 오늘 계획에서 */
-function dailyUse(bean){
-  const from = dayAfter(-28), wd = bufCfg().workdays;
-  const rows = CONSL().filter(c => c.bean === bean && String(c.work_date||"") >= from);
-  const days = new Set(CONSL().filter(c => String(c.work_date||"") >= from).map(c => c.work_date)
-                 .filter(d => wd.includes(dowOf(d))));
-  if (rows.length && days.size) {
-    const kg = rows.reduce((s,c)=>s+Number(c.used_kg||0),0);
-    return { kg: Math.round(kg / days.size * 100)/100, basis:`최근 4주 평균 (${days.size}일)` };
-  }
-  const n = beanNeeds()[bean] || 0;
-  return { kg: Math.round(n*100)/100, basis:"오늘 계획 기준 (실적 없음)" };
+/* 품목별 하루 평균 주문량 — 최근 4주 집계에서 (집계가 들어온 날 기준) */
+function dailyDemand(pid, day){
+  const from = addDaysStr(day, -28), wd = bufCfg().workdays;
+  const inWin = DB.tallies.filter(t => t.date >= from && t.date < day && wd.includes(dowOf(t.date)));
+  const days = new Set(inWin.map(t => t.date));
+  const mine = inWin.filter(t => t.product_id === pid).reduce((s,t)=>s+Number(t.qty||0),0);
+  if (days.size >= 3) return { ea: mine / days.size, basis:`최근 4주 평균 (${days.size}일)` };
+  const todayQ = tallyQty(pid, undefined, day);                       // 기록이 적으면 오늘 주문량을 하루치로 본다
+  return { ea: todayQ, basis:"오늘 집계 기준 (지난 기록 부족)" };
+}
+/* 품목 하나의 계획 — 필요분 · 여유분 · 합계 */
+function planCalc(p, day){
+  const d = day || tallyDay();
+  if (!hasTally(p.id, d)) return { need: shortage(p), buf: 0, total: shortage(p), mode:"safety" };
+  const tally = tallyQty(p.id, undefined, d), made = madeQty(p.id, d);
+  const bd = bufDaysFor(d), dd = bd.use ? dailyDemand(p.id, d) : { ea:0, basis:"" };
+  const raw = Math.round(dd.ea * bd.use);
+  const stock = Math.max(0, Number(p.cfe||0));
+  const buf = Math.max(0, raw - stock);                                // 재고가 있으면 여유분에서 먼저 뺀다
+  const total = Math.max(0, tally + buf - made);
+  const need = Math.max(0, tally - made);
+  return { need, buf: total - need, bufRaw: raw, stock, days: bd.use, basis: dd.basis, total, mode:"tally" };
 }
 const dayList = ds => ds.map(d => WD[dowOf(d)]).join("·");
 
 function loadNeed(){
+  /* 생산계획(CFE 여유분 포함)에 필요한 원두에서 재고를 뺀 만큼 */
   const need = beanNeeds();
   const rows = [];
-  const R = $("rqWant").value || today(), bd = bufDaysFor(R);
   Object.keys(need).forEach(b=>{
-    const stock = mmsByBean(b);
-    const lack = Math.max(0, need[b] - stock);                       // 필요분 — 오늘 계획을 채우는 데 모자라는 양
-    const du = dailyUse(b), buf = bd.use * du.kg;                     // 여유분 — 며칠치 더
-    const extra = Math.max(0, need[b] + buf - stock) - lack;          // 재고가 남으면 여유분부터 채운다
-    if (lack > 0 || extra > 0.01)
-      rows.push({ id:uid(), bean:b, need_kg:Math.round(lack*100)/100, buf_kg:Math.round(extra*100)/100,
-                  buf_days:bd.use, buf_basis:du.basis, roaster_id:null, note:"" });
+    const lack = Math.max(0, need[b] - mmsByBean(b));
+    if (lack>0) rows.push({ id:uid(), bean:b, need_kg:Math.round(lack*100)/100, roaster_id:null, note:"" });
   });
   reqRows = rows;
   if (reqMode()==="auto") fillAssign(true);
@@ -8813,7 +8829,7 @@ function addReq(roasterId){
 }
 function setReq(id,k,v){
   const row = reqRows.find(r=>r.id===id); if(!row) return;
-  if (k==="need_kg" || k==="buf_kg") row[k] = numOf(v);
+  if (k==="need_kg") row[k] = numOf(v);
   else if (k==="cap_kg") row[k] = (String(v).trim()==="" ? null : numOf(v));   // 그날 실제 투입한 1배치 양
   else if (k==="batches" || k==="green_kg") {
     row[k] = (String(v).trim()==="" ? null : numOf(v));
@@ -8847,17 +8863,12 @@ function renderReq(){
   const tG = all.reduce((s,x)=>s+x.c.green,0);
   const tO = all.reduce((s,x)=>s+x.c.out,0);
   const tNeed = reqRows.reduce((s,r)=>s+Number(r.need_kg||0),0);
-  const tBuf  = reqRows.reduce((s,r)=>s+Number(r.buf_kg||0),0);
   $("reqTot").innerHTML = `총 <b>${tN}</b>배치 · 생두 <b>${fmt(tG)}</b>kg · 산출 <b>${fmt(tO)}</b>kg`;
 
-  tbl("reqInfo", ["요청일","희망 로스팅일","요청 부서","요청자","원두 수","필요분(kg)",'<span class="tag buf">여유분(kg)</span>',"요청 합계(kg)","총 배치수","투입 생두(kg)"],
-    [`<tr><td class="c">${$("rqDate").value}</td><td class="c"><b>${$("rqWant").value}</b> (${WD[dowOf($("rqWant").value)]})${(()=>{
-        const u = usableDays($("rqWant").value), b = bufDaysFor($("rqWant").value);
-        return `<br><span class="hint" style="padding:0;font-size:11px">${dayList(u)} ${u.length}일 사용 가능 · 여유 ${b.use}일치</span>`; })()}</td>
+  tbl("reqInfo", ["요청일","희망 로스팅일","요청 부서","요청자","원두 수","요청 원두(kg)","총 배치수","투입 생두(kg)"],
+    [`<tr><td class="c">${$("rqDate").value}</td><td class="c"><b>${$("rqWant").value}</b> (${WD[dowOf($("rqWant").value)]})</td>
       <td class="c">제품생산팀 (원두파트)</td><td class="c">${$("rqBy").value||"—"}</td>
-      <td>${reqRows.length}</td><td>${fmt(tNeed)}</td><td class="bufc">${fmt(tBuf)}</td><td><b>${fmt(tNeed+tBuf)}</b></td>
-      <td><b>${tN}</b></td><td><b>${fmt(tG)}</b></td></tr>`]);
-  renderBufPanel();
+      <td>${reqRows.length}</td><td><b>${fmt(tNeed)}</b></td><td><b>${tN}</b></td><td><b>${fmt(tG)}</b></td></tr>`]);
 
   // 로스터기 미지정 항목
   const pend = reqRows.filter(r=>!roasterById(r.roaster_id));
@@ -8955,19 +8966,25 @@ function renderReq(){
      <td><b>${Object.values(LD).reduce((a,l)=>a+l.n,0)||"—"}</b></td><td></td><td></td>`);
 }
 /* 카드 안의 원두 한 건 */
+function gotoBuf(){
+  go("plan");
+  setTimeout(()=>{ const el = $("bufPanel"); if (!el) return;
+    el.scrollIntoView({ behavior:"smooth", block:"start" });
+    el.classList.add("justadded"); setTimeout(()=>el.classList.remove("justadded"), 1800); }, 50);
+}
 function renderBufPanel(){
   if (!$("bufTbl")) return;
-  const c = bufCfg(), edit = can("roast") || can("base");
+  const c = bufCfg(), edit = can("plan") || can("base");
   if ($("bufShelf")) $("bufShelf").textContent = SHELF_LIFE_DAYS;
   if ($("bufState")) $("bufState").innerHTML = !sb ? "로컬 모드"
     : SETTINGS_SERVER ? '<span class="tag ok">모든 PC 공용</span>'
     : '<span class="tag warn">이 PC에만 저장됨 — 031_settings.sql 실행 필요</span>';
-  const order = [1,2,3,4,5,6,0];
-  tbl("bufTbl", ["로스팅 요일","생산하는 날","이 날 로스팅하면 쓸 수 있는 생산일","여유 일수","적용"],
+  const order = [1,2,3,4,5,6,0], todayDow = dowOf(tallyDay());
+  tbl("bufTbl", ["생산 요일","생산하는 날","이 날 만들면 상미기간 안에 나갈 수 있는 날","여유 일수","적용"],
     order.map(d=>{
       const u = usableByDow(d), mx = Math.max(0, u.length-1), set = Number(c.days[d])||0, work = c.workdays.includes(d);
       const over = set > mx;
-      return `<tr class="${work?"":"offrow"}"><td class="c"><b>${WD[d]}</b></td>
+      return `<tr class="${work?"":"offrow"}${d===todayDow?" today":""}"><td class="c"><b>${WD[d]}</b>${d===todayDow?' <span class="tag ok" style="font-size:10px">오늘</span>':""}</td>
         <td class="c"><input type="checkbox" ${work?"checked":""} ${edit?"":"disabled"} onchange="setWorkday(${d},this.checked)" style="width:auto;height:auto"></td>
         <td class="l">${u.length ? `${dayList(u)} <b>${u.length}일</b>` : '<span class="bad">없음</span>'}</td>
         <td class="c"><select ${edit?"":"disabled"} onchange="setBufDays(${d},this.value)" style="width:auto">
@@ -8978,13 +8995,13 @@ function renderBufPanel(){
 }
 async function setBufDays(dow, v){
   const c = bufCfg(); c.days[dow] = Math.max(0, Math.round(Number(v)||0));
-  const r = await saveSetting("roast_buffer", c);
-  renderReq(); toast(`${WD[dow]}요일 로스팅 여유 ${c.days[dow]}일치${r.ok?"":" — 이 PC에만 저장됨"}`);
+  const r = await saveSetting(BUF_KEY, c);
+  renderAll(); toast(`${WD[dow]}요일 생산 여유 ${c.days[dow]}일치${r.ok?"":" — 이 PC에만 저장됨"}`);
 }
 async function setWorkday(dow, on){
   const c = bufCfg(); c.workdays = on ? [...new Set([...c.workdays, dow])] : c.workdays.filter(x=>x!==dow);
-  const r = await saveSetting("roast_buffer", c);
-  renderReq(); toast(`${WD[dow]}요일 ${on?"생산함":"생산 안 함"}${r.ok?"":" — 이 PC에만 저장됨"}`);
+  const r = await saveSetting(BUF_KEY, c);
+  renderAll(); toast(`${WD[dow]}요일 ${on?"생산함":"생산 안 함"}${r.ok?"":" — 이 PC에만 저장됨"}`);
 }
 function itemCard(r){
   const c = reqCalc(r);
@@ -9008,12 +9025,6 @@ function itemCard(r){
       <input type="text" inputmode="decimal" value="${r.need_kg}" data-f="req:${r.id}:need"
         oninput="setReq('${r.id}','need_kg',this.value)"> kg
       <span class="calc">${c.blocked?'<span class="bad">이 로스터기 생산 불가</span>':c.n?`산출 <b>${fmt(c.out)}</b>kg <span class="hint" style="padding:0" title="배치 단위로 올려서 생기는 양">(배치 올림 +${fmt(c.over)})</span><br>1배치 ${fmt(c.cap)}kg → ${fmt(c.per)}kg`:'<span class="bad">로스터기 지정 필요</span>'}</span>
-    </div>
-    <div class="row" style="margin-top:5px"><span class="tag buf" title="${r.buf_basis||""}">여유분</span>
-      <input type="text" inputmode="decimal" value="${r.buf_kg??0}" data-f="req:${r.id}:buf"
-        oninput="setReq('${r.id}','buf_kg',this.value)" style="width:62px"> kg
-      <span class="hint" style="padding:0;font-size:11px;margin-left:4px">${r.buf_days!=null
-        ? `${r.buf_days}일치 · ${r.buf_basis||""}` : "직접 입력"}</span>
     </div>
     <div class="row" style="margin-top:5px">1배치
       <input type="text" inputmode="decimal" value="${r.cap_kg??""}" placeholder="${c.base?fmt(c.base):""}"
@@ -9118,8 +9129,7 @@ async function sendToPlan(){
     const res = await mesUpsertRoast({ id:null, patch:{
       plan_date: $("rqWant").value || today(), bean: row.bean,
       roaster: roasterById(row.roaster_id)?.name || "",
-      batch_kg: c.cap || null, plan_kg: c.out || row.need_kg, batches: c.n || 1,
-      note: Number(row.buf_kg) > 0 ? `필요 ${fmt(row.need_kg)}kg + 여유 ${fmt(row.buf_kg)}kg${row.buf_days!=null?` (${row.buf_days}일치)`:""}` : (row.note || "") },
+      batch_kg: c.cap || null, plan_kg: c.out || row.need_kg, batches: c.n || 1 },
       idem:`rq-new-${row.bean}-${uid()}` });
     if (!res || !res.ok) { renderAll(); return toast(res?.message || "요청을 등록하지 못했습니다"); }
     made++;
@@ -9128,12 +9138,12 @@ async function sendToPlan(){
   toast(`${made}건 등록 — 받을 배치 ${openLines().length}개가 위에 펼쳐졌습니다`);
 }
 function csvReq(){
-  const head = ["요청일","희망로스팅일","요청자","MMS코드","원두","필요분kg","여유분kg","여유일수","로스터기","가능로스터기","1배치투입kg","기준투입kg","1배치산출kg","배치수","로스팅원두kg","투입생두kg","배치올림kg","산정","비고"];
+  const head = ["요청일","희망로스팅일","요청자","MMS코드","원두","필요원두kg","로스터기","가능로스터기","1배치투입kg","기준투입kg","1배치산출kg","배치수","로스팅원두kg","투입생두kg","배치올림kg","산정","비고"];
   const body = reqRows.map(row=>{ const c=reqCalc(row), r=roasterById(row.roaster_id);
     return [$("rqDate").value, $("rqWant").value, $("rqBy").value, mmsCodeOf(row.bean), row.bean,
-      row.need_kg, row.buf_kg||0, row.buf_days??"", r?.name||"미지정", allowedRoasters(row.bean).map(x=>x.name).join(" · ")||"없음",
+      row.need_kg, r?.name||"미지정", allowedRoasters(row.bean).map(x=>x.name).join(" · ")||"없음",
       c.cap, c.base, c.per, c.n, c.out, c.green, c.over, c.auto?"자동":"직접지정", row.note||""]; });
-  body.push(["","","","","합계", reqRows.reduce((s,r)=>s+Number(r.need_kg||0),0), reqRows.reduce((s,r)=>s+Number(r.buf_kg||0),0), "", "", "", "", "",
+  body.push(["","","","","합계", reqRows.reduce((s,r)=>s+Number(r.need_kg||0),0), "", "", "", "",
     reqRows.reduce((s,r)=>s+reqCalc(r).n,0), reqRows.reduce((s,r)=>s+reqCalc(r).out,0),
     reqRows.reduce((s,r)=>s+reqCalc(r).green,0), "", "", ""]);
   csv("로스팅요청서", head, body);
