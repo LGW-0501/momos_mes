@@ -1106,7 +1106,7 @@
     <div class="panel">
       <div class="panel-h">생산계획 · 기계 배분표</div>
       <div class="hint">계획EA는 직접 수정 가능 · <b>사용할 배치</b>는 오래된 순서(선입선출)로 계획 전체를 나눠 계산한 결과입니다 — 위 품목부터 차례로 소진됩니다 ·
-        <span class="warn">주황</span>은 상미기간 임박, <span class="bad">빨강</span>은 초과 배치 · 규격별 속도 0인 기계에는 배정되지 않음 · 이카전용 품목은 이카에만 · 분쇄 품목은 분쇄가능 기계에만 ·
+        <span class="warn">주황</span>은 상미기한 임박, <span class="bad">빨강</span>은 초과 배치 · 규격별 속도 0인 기계에는 배정되지 않음 · 이카전용 품목은 이카에만 · 분쇄 품목은 분쇄가능 기계에만 ·
         <b>기계 칸의 체크를 눌러 고릅니다</b> — 체크한 기계들끼리 똑같이 나눠 가집니다
         (예: 300개를 수동 2구·1구 체크 → 150 / 150) ·
         <b>[전량]</b>을 누르면 다른 기계를 비우고 <b>그 기계가 전부</b> 맡습니다 (나눠 놓은 것을 한 대로 몰 때) ·
@@ -1175,7 +1175,7 @@
   <div class="subtabs" id="roastTabs">
     <button class="subtab on" data-p="in">입고 · 계획</button>
     <button class="subtab" data-p="stock">배치 재고</button>
-    <button class="subtab" data-p="hold">보류 · 상미기간</button>
+    <button class="subtab" data-p="hold">보류 · 상미기한</button>
     <button class="subtab" data-p="flow">수불 · 사용이력</button>
   </div>
   <div class="body">
@@ -1240,7 +1240,7 @@
       <div class="panel-b"><table id="hlogTbl"></table></div>
     </div>
     <div class="panel" id="shelfWrap">
-      <div class="panel-h">⏰ 상미기간 주의 배치
+      <div class="panel-h">⏰ 상미기한 주의 배치
         <span class="r hint" id="shelfRule"></span></div>
       <div class="panel-b"><table id="shelfTbl"></table></div>
     </div>
@@ -1814,7 +1814,7 @@
         <div class="hint">예) 에스쇼콜라 1kg — <b>월 100 · 수 50</b> 이라고 적으면, 월요일 생산계획에 100개 · 수요일 생산계획에 50개가 여유분으로 더해집니다.<br>
           품목마다 <b>그 요일에 더 만들 개수(EA)</b>를 적습니다 — 칸 아래에 <b>kg</b>, 원두별 <b>합계 kg</b>이 나옵니다.
           왼쪽 <b>[적용]</b> 네모로 켜고 끕니다 (수량을 넣으면 저절로 켜짐). 오늘 요일 칸의 수량이 생산계획에 <b>여유분</b>으로 더해집니다.<br>
-          요일 머리의 네모 = <b>생산하는 날</b> · 아래 숫자 = 그날 만들면 상미기간 <b id="bufShelf"></b>일 안에 나갈 수 있는 날
+          요일 머리의 네모 = <b>생산하는 날</b> · 아래 숫자 = 그날 만들면 상미기한 <b id="bufShelf"></b>일 안에 나갈 수 있는 날
           (월 5일 · 수 수·목·금·일 4일 …) — 많이 잡아도 그 안에 다 나가는지 보고 정하세요.
           <b>원두가 종료되거나 없어지면</b> 그 품목은 저절로 빠집니다. 남는 원두는 <b>재고확인 > MMS 원두</b>에서 봅니다.</div>
         <div id="bufDead"></div>
@@ -2122,7 +2122,7 @@ Resources:`;for(let t of c){if(!t||typeof t!=`string`)throw Error(`@supabase/aut
 </script>
 <script>
 /* ══════════════════════════════════════════════════════════════
-   ① 설정 — Supabase 연결 정보와 상미기간 기준
+   ① 설정 — Supabase 연결 정보와 상미기한 기준
    ══════════════════════════════════════════════════════════════ */
 /* ══ Supabase 연결 정보 — 여기에 직접 넣습니다 ══════════════════
    Supabase 대시보드 → Settings → API 에서 복사해 따옴표 안에 붙여 넣으세요.
@@ -2183,7 +2183,7 @@ const DEV_TOKEN = readDevToken();
 const CONF = readConf();
 const SB_URL = CONF.url || "";
 const SB_KEY = CONF.key || "";
-const SHELF_LIFE_DAYS = 5;      // 상미기간: 로스팅 후 5일
+const SHELF_LIFE_DAYS = 5;      // 상미기한: 로스팅 후 5일
 const SHELF_WARN_LEFT = 2;      // 잔여 이 일수 이하면 '임박'
 
 /* ── 연결설정 화면 ─────────────────────────────────────────── */
@@ -3195,8 +3195,8 @@ async function initDB(){
     work:1,qc:1,ship:1,order:1,trace:1}).forEach(k=>{
     const el = $("asof-"+k); if (el) el.textContent = today().replace(/-/g,".") + " 기준";
   });
-  if ($("stShelf")) $("stShelf").textContent = `상미기간 ${SHELF_LIFE_DAYS}일 · 잔여 ${SHELF_WARN_LEFT}일 이하 임박`;
-  $("shelfRule").textContent = `상미기간 ${SHELF_LIFE_DAYS}일 · 잔여 ${SHELF_WARN_LEFT}일 이하 임박 · 선입선출로 오래된 배치부터 차감`;
+  if ($("stShelf")) $("stShelf").textContent = `상미기한 ${SHELF_LIFE_DAYS}일 · 잔여 ${SHELF_WARN_LEFT}일 이하 임박`;
+  $("shelfRule").textContent = `상미기한 ${SHELF_LIFE_DAYS}일 · 잔여 ${SHELF_WARN_LEFT}일 이하 임박 · 선입선출로 오래된 배치부터 차감`;
   renderAll();
 }
 
@@ -7478,7 +7478,7 @@ function renderRoast(){
     const set = (k, txt) => { const b = tb.querySelector(`[data-p="${k}"]`); if (b) b.innerHTML = txt; };
     const wait = openLines().length, held = heldAll().length, bad = shelf.filter(m=>shelfState(m.roast_date)==="bad").length;
     set("in", `입고 · 계획${wait?` <span class="tag warn" style="font-size:10px">받을 배치 ${wait}</span>`:""}`);
-    set("hold", `보류 · 상미기간${held?` <span class="tag bad" style="font-size:10px">보류 ${held}</span>`:""}${bad?` <span class="tag bad" style="font-size:10px">초과 ${bad}</span>`:(shelf.length?` <span class="tag warn" style="font-size:10px">임박 ${shelf.length}</span>`:"")}`);
+    set("hold", `보류 · 상미기한${held?` <span class="tag bad" style="font-size:10px">보류 ${held}</span>`:""}${bad?` <span class="tag bad" style="font-size:10px">초과 ${bad}</span>`:(shelf.length?` <span class="tag warn" style="font-size:10px">임박 ${shelf.length}</span>`:"")}`);
   })();
 
   // 오늘 받은 배치 — 바로 쓸 수 있는 것
@@ -8884,7 +8884,7 @@ async function saveSetting(k, v){
    · 품목마다 월~일 칸에 "그 요일에 더 만들 개수"를 적고 [적용] 을 켠다
    · 칸마다 kg (EA × 표준투입g) 을 같이 보여주고, 원두(MMS)별 합계 kg 도 보여준다
    · 원두가 종료되거나 사라지면 그 품목은 여유분에서 빠진다 (화면에 경고)
-   · 상미기간(5일) 안에 실제로 생산·출고하는 날이 며칠인지 요일마다 같이 보여준다
+   · 상미기한(5일) 안에 실제로 생산·출고하는 날이 며칠인지 요일마다 같이 보여준다
        월요일에 만들면 월화수목금 5일 · 수요일에 만들면 수목금 3일 (토·일 쉼)
    ══════════════════════════════════════════════════════════════ */
 const WD = ["일","월","화","수","목","금","토"];
@@ -9123,7 +9123,7 @@ function renderBufPanel(){
     ` <label style="font-size:12px;margin-left:8px;cursor:pointer"><input type="checkbox" ${bufShowAll?"checked":""}
        onchange="setBufShowAll(this.checked)" style="width:auto;height:auto"> 전체 품목 보기</label>`;
 
-  /* 요일 머리 — 생산하는 날 체크 + 상미기간 안에 나갈 수 있는 날 */
+  /* 요일 머리 — 생산하는 날 체크 + 상미기한 안에 나갈 수 있는 날 */
   const head = WD_ORDER.map(w=>{
     const u = usableByDow(w), work = c.workdays.includes(w);
     return `<div style="line-height:1.35;${w===today?"color:#5b34b5":""}">
