@@ -3268,12 +3268,15 @@ function kInfoHTML(beanName, o, opt){
   if (!b.report_no)  miss.push("품목보고번호");
   if (!b.compose)    miss.push("원산지");
   if (!mfg)          miss.push("제조일자");
+  const lot = (o && o.lot) || (opt && opt.lot) || "";
+  if (!lot)          miss.push("봉투 LOT");
   return `<div class="kinfo ${miss.length?"miss":""}">
     <div class="t">한글표시사항${b.mms_code?` <i>${b.mms_code}</i>`:""}${
       miss.length?` <em>${miss.join(" · ")} 없음</em>`:""}</div>
     <div>${kv("컬러", b.color, !b.color)}${kv("품목보고번호", b.report_no, !b.report_no)}</div>
     <div class="wide">${kv("원산지", b.compose, !b.compose)}</div>
     <div>${kv("제조일자", mfg, !mfg)}${kv("일련번호", (o&&o.serial)||(opt&&opt.serial))}</div>
+    <div>${kv("봉투 LOT", lot, !lot)}</div>
   </div>`;
 }
 /* ── 배치 보류 ────────────────────────────────────────────────
@@ -13765,6 +13768,23 @@ async function mesStartWork(args){
   return { ok:true };
 }
 
+/* 봉투 LOT — 봉투 박스에 인쇄된 번호. 같은 봉투(라벨/풀패키지)로 오늘 먼저 적은 값을 기본으로 보여 준다 */
+function lastLotFor(o){
+  const key = ordLabel(o) || o.product_id;
+  const same = DB.orders.filter(x=>x.id!==o.id && x.lot && (ordLabel(x)||x.product_id)===key)
+    .sort((a,b)=>String(b.done_at||b.started_at||b.work_date||"").localeCompare(String(a.done_at||a.started_at||a.work_date||"")));
+  return same[0]?.lot || "";
+}
+async function setOrderLot(id){
+  if (!(await requireUser())) return;
+  const o = ordById(id); if (!o) return;
+  const v = await askText(`${o.product_name||prodById(o.product_id)?.name||""}\n\n봉투에 인쇄된 LOT 번호를 적으세요.`, o.lot || lastLotFor(o), "봉투 LOT");
+  if (v === null) return;
+  const lot = String(v).trim();
+  const r = await mesEditOrder({ order_id:o.id, patch:{ lot }, idem:`lot-${o.id}-${uid()}` });
+  if (!r || !r.ok) return toast(r?.message || "LOT를 저장하지 못했습니다");
+  o.lot = lot; renderWork(); renderOrder(); toast(lot ? `봉투 LOT ${lot}` : "봉투 LOT를 지웠습니다");
+}
 async function finishWork(id){
   if (!(await requireUser())) return;
   const o = ordById(id); if(!o) return;
@@ -13785,6 +13805,13 @@ async function finishWork(id){
     const er = await mesEditOrder({ order_id:o.id, patch:{ serial }, idem:`sn-${o.id}-${uid()}` });
     if (!er || !er.ok) return toast(er?.message || "일련번호를 고치지 못했습니다");
     o.serial = serial;
+  }
+  /* ★ 봉투 LOT — 안 적혀 있으면 여기서 받는다 (비워도 넘어가지만 표시사항에 "없음"으로 남는다) */
+  if (!o.lot) {
+    const lv = await askText(`${p.name}\n\n봉투 LOT 번호 (봉투 박스에 인쇄된 번호)\n모르면 비우고 확인 — 나중에 생산실적에서 고칠 수 있습니다.`, lastLotFor(o), "봉투 LOT");
+    if (lv === null) return;
+    const lot = String(lv).trim();
+    if (lot) { const lr = await mesEditOrder({ order_id:o.id, patch:{ lot }, idem:`lot-${o.id}-${uid()}` }); if (lr && lr.ok) o.lot = lot; }
   }
   const plan = Math.round(Number(o.qty_plan)||0);
   const g = await askNum("정상품 수량",
@@ -14287,6 +14314,7 @@ function renderWork(){
           return `<b class="bad">배치 ${ps.length}개 섞임</b>`;
         })()}</div>
         <div><span>일련번호</span><b>${o.serial || "완료 때 매겨짐"}</b></div>
+        <div><span>봉투 LOT</span><b class="${o.lot?"":"bad"}">${o.lot || "미입력"}</b>${stIdx(o)<2?` <button class="btn" style="height:24px;padding:0 8px;margin-left:6px" onclick="setOrderLot('${o.id}')">${o.lot?"수정":"입력"}</button>`:""}</div>
         ${(()=>{ const L = labelById(ordLabel(o)), st = packState(p, ordLabel(o));
           if (st === "풀패키지") return `<div><span>포장</span><b>${PACK_FULL}</b></div>`;
           if (!L) return `<div><span>포장</span><b class="bad">라벨 미지정</b></div>`;
