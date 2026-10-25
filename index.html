@@ -98,7 +98,8 @@
   .topbar .right #roleSel, .topbar .right #mobBtn, .topbar .right #guideBtn, .topbar .right #reloadBtn,
   .topbar .right #personalLogoutBtn, .topbar .right #loginIdentity{display:none !important;}
   /* ── 마감 체크리스트 ── */
-  .ck{display:flex; align-items:flex-start; gap:12px; padding:12px 18px; border-bottom:1px solid var(--line);}
+  .ck{display:flex; align-items:center; gap:12px; padding:12px 18px; border-bottom:1px solid var(--line);}
+  body.mobile .ck{flex-wrap:wrap;} body.mobile .ck > .btn{margin-left:34px;}
   .ck:last-child{border-bottom:0;}
   .ck input[type=checkbox]{width:22px; height:22px; margin:2px 0 0; flex:none; cursor:pointer;}
   .ck .t{font-size:14.5px; font-weight:700; line-height:1.4;}
@@ -14396,24 +14397,37 @@ function renderTrace(){
    ══════════════════════════════════════════════════════════════ */
 const CLOSE_ITEMS_KEY = "close_items", CLOSE_LOG_KEY = "close_log";
 /* 저절로 세는 항목 — MES 기록에서 "아직 안 끝난 것"을 센다 */
+/* s = 화면, tab = 그 안의 탭(또는 재고확인의 대상), go = 바로가기 글자 */
 const CLOSE_AUTO = {
-  orders: { t:"오늘 작업지시 전부 생산 완료", s:"work",
+  orders: { t:"오늘 작업지시 전부 생산 완료", s:"work", go:"현장 작업 열기",
             n:d=>ordsOf(d).filter(o=>stIdx(o)<2).length, lbl:"미완료" },
-  labels: { t:"오늘 라벨 작업 전부 완료", s:"mt",
+  labels: { t:"오늘 라벨 작업 전부 완료", s:"mt", go:"라벨작업 열기",
             n:d=>mtOf(d).filter(t=>t.status!=="작업완료").length, lbl:"미완료" },
-  qc:     { t:"생산완료 건 검수 · 실적 수령 확인", s:"qc",
+  qc:     { t:"생산완료 건 검수 · 실적 수령 확인", s:"qc", go:"검수 열기",
             n:d=>ordsOf(d).filter(o=>o.status==="생산완료").length + DB.logs.filter(l=>logLive(l) && l.work_date===d && statusOf(l)==="pending").length, lbl:"대기" },
-  mat:    { t:"부자재 마감 현황 확인 — 음수 재고 · 안전재고 미달", s:"mt",
-            n:d=>mtCloseRows(d).filter(r=>r.neg||r.low).length, lbl:"확인 필요" },
-  roast:  { t:"로스팅 입고 · 배치 재고 확인", s:"roast", n:null },
+  mat:    { t:"부자재 · 라벨 재고 세기 — 남은 장수 입력", s:"base", tab:"label", go:"부자재 재고 입력",
+            n:d=>mtCloseRows(d).filter(r=>r.neg||r.low).length, lbl:"음수·안전재고 미달" },
+  mms:    { t:"MMS 원두 재고 확인 — 배치별 남은 kg 입력", s:"stock", tab:"mms", go:"원두 실재고 입력",
+            n:d=>DB.mms.filter(m=>Number(m.stock_kg)<0).length, lbl:"음수 배치" },
+  cfe:    { t:"CFE 완제품 재고 확인", s:"stock", tab:"cfe", go:"완제품 실재고 입력", n:null },
+  roast:  { t:"로스팅 입고 · 배치 등록 확인", s:"roast", tab:"stock", go:"배치 재고 열기", n:null },
 };
 const CLOSE_DEFAULT = [
   { id:"orders", auto:"orders" }, { id:"labels", auto:"labels" }, { id:"qc", auto:"qc" },
-  { id:"mat", auto:"mat" }, { id:"roast", auto:"roast" },
+  { id:"mat", auto:"mat" }, { id:"mms", auto:"mms" }, { id:"cfe", auto:"cfe" }, { id:"roast", auto:"roast" },
   { id:"m1", t:"기계 전원 끄기 · 작업장 정리·청소" },
   { id:"m2", t:"남은 원두 · 반제품 밀봉 보관" },
   { id:"m3", t:"내일 생산계획 · 라벨 작업 확인" },
 ];
+/* 화면 + 탭까지 한 번에 — 체크리스트 바로가기 */
+function goTo(s, tab){
+  if (s === "plan"  && tab) setPlanTab(tab);
+  if (s === "roast" && tab) setRoastTab(tab);
+  if (s === "base"  && tab) document.querySelector(`#baseTabs [data-p="${tab}"]`)?.click();
+  if (s === "stock" && tab && $("stType")) $("stType").value = tab;
+  if (s === "work" && typeof wkMach !== "undefined") { wkMach = tab || ""; }
+  go(s); closeNav();
+}
 const closeItems = () => { const v = SETTINGS[CLOSE_ITEMS_KEY]; return Array.isArray(v) && v.length ? v : CLOSE_DEFAULT; };
 const closeLog = () => { const v = SETTINGS[CLOSE_LOG_KEY]; return (v && typeof v === "object") ? v : {}; };
 const closeDay = () => $("closeDate")?.value || today();
@@ -14444,13 +14458,14 @@ function renderClose(){
   $("closeList").innerHTML = items.map(it=>{
     const a = it.auto ? CLOSE_AUTO[it.auto] : null, ck = rec.items[it.id];
     const n = a && a.n ? a.n(d) : null;
-    const cnt = a ? (n === null ? `<span class="cnt" style="background:var(--blue-50);color:var(--blue-600)" onclick="go('${a.s}')">화면 열기 ›</span>`
-                 : n > 0 ? `<span class="cnt bad" onclick="go('${a.s}')">${a.lbl} ${n}건 ›</span>` : `<span class="cnt ok">이상 없음</span>`) : "";
-    return `<label class="ck${ck?" done":""}">
+    const cnt = a && n !== null ? (n > 0 ? `<span class="cnt bad" onclick="goTo('${a.s}','${a.tab||""}')">${a.lbl} ${n}건</span>` : `<span class="cnt ok">이상 없음</span>`) : "";
+    const link = a ? `<button class="btn primary" style="height:34px;padding:0 14px;flex:none" onclick="goTo('${a.s}','${a.tab||""}')">${a.go || "열기"} ›</button>` : "";
+    return `<div class="ck${ck?" done":""}">
       <input type="checkbox" ${ck?"checked":""} onchange="setCloseItem('${it.id}',this.checked)">
       <div style="flex:1;min-width:0"><div class="t">${closeItemText(it)}${cnt}</div>
         <div class="m">${ck ? `✓ ${ck.by||"—"} · ${fmtTime(ck.at)}` : (a && n > 0 ? "아직 남은 것이 있습니다 — 끝내고 체크하세요" : "")}</div></div>
-    </label>`; }).join("");
+      ${link}
+    </div>`; }).join("");
   const ta = $("closeNote"); if (ta && document.activeElement !== ta) ta.value = rec.note || "";
   $("closeNoteWho").textContent = rec.note ? `${rec.note_by||"—"} · ${fmtTime(rec.note_at)}` : "";
   /* 최근 14일 */
