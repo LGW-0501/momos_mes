@@ -94,6 +94,9 @@
   body.acctopen .acctScrim{display:block;}
   .pwf label{display:block; font-size:12px; font-weight:700; color:var(--soft); margin:10px 0 5px;}
   .pwf input{width:100%;}
+  /* 위쪽 바 정리 — 계정 메뉴(동그라미)로 옮긴 것들은 숨긴다 */
+  .topbar .right #roleSel, .topbar .right #mobBtn, .topbar .right #guideBtn, .topbar .right #reloadBtn,
+  .topbar .right #personalLogoutBtn, .topbar .right #loginIdentity{display:none !important;}
   .shell{flex:1; display:flex; overflow:hidden; min-height:0;}
 
   /* ── 아이콘 사이드바 ── */
@@ -1038,7 +1041,7 @@
     <select id="curUser" onchange="setUser(this.value)"></select>
     <button class="btn" id="mobBtn" onclick="toggleMobile()" title="태블릿·휴대폰에서 보기 편한 배치">📱 모바일</button>
     <button class="btn" id="guideBtn" onclick="toggleGuide()">설명</button>
-    <button class="btn" onclick="reloadDB()">새로고침</button>
+    <button class="btn" id="reloadBtn" onclick="reloadDB()">새로고침</button>
     <span class="st" id="stDb"></span>
     <span class="st" id="stLive" style="display:none"></span>
     <button class="favbtn" id="favBtn" onclick="toggleFav()" title="이 화면을 즐겨찾기에 넣기 / 빼기">☆</button>
