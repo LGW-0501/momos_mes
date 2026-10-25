@@ -944,11 +944,12 @@
     <span style="margin-left:auto"></span>
     <button class="btn" onclick="renderWork()">새로고침</button>
   </div>
+  <div class="subtabs" id="wkTabs"></div>
   <div class="body">
     <h2 class="page">현장 작업<small id="asof-work"></small></h2>
     <div class="guide">
       <b>이렇게 하시면 됩니다</b>
-      <ol><li>위에서 <b>내 기계</b> 버튼을 누르면 그 기계 카드만 남습니다 — 기계별로 나눠서 뜹니다</li>
+      <ol><li>위 탭에서 <b>수동 · 리팩 · 이카</b> 중 내 기계를 누르면 그 기계 카드만 남습니다 — 한 번 고르면 이 기기가 기억합니다</li>
         <li><b>생산 시작</b>을 누릅니다</li>
         <li>중간중간 <b>수량 입력</b>으로 지금까지 만든 개수를 적습니다</li>
         <li>다 되면 <b>생산 완료</b> — 정상품과 부적합 개수만 넣으면 끝입니다</li></ol>
@@ -1729,7 +1730,7 @@
         <div class="panel-h">로그인 계정 관리</div>
         <div class="hint">
           <b>시스템 관리자만 신규 로그인 계정을 만들 수 있습니다.</b>
-          생산자와 로그인 계정은 1:1로 연결됩니다 · 신규 계정의 초기 비밀번호는 <b>0000</b>입니다 ·
+          생산자와 로그인 계정은 1:1로 연결됩니다 · 신규 계정의 초기 비밀번호는 <b>000000</b>입니다 ·
           로그인 계정의 권한과 실제 작업자 선택은 서로 분리됩니다.
         </div>
         <div class="panel-b"><table id="tAccounts"></table></div>
@@ -1779,7 +1780,7 @@
           품목마다 <b>그 요일에 더 만들 개수(EA)</b>를 적습니다 — 칸 아래에 <b>kg</b>, 원두별 <b>합계 kg</b>이 나옵니다.
           왼쪽 <b>[적용]</b> 네모로 켜고 끕니다 (수량을 넣으면 저절로 켜짐). 오늘 요일 칸의 수량이 생산계획에 <b>여유분</b>으로 더해집니다.<br>
           요일 머리의 네모 = <b>생산하는 날</b> · 아래 숫자 = 그날 만들면 상미기간 <b id="bufShelf"></b>일 안에 나갈 수 있는 날
-          (월 5일 · 수 수·목·금 3일 …) — 많이 잡아도 그 안에 다 나가는지 보고 정하세요.
+          (월 5일 · 수 수·목·금·일 4일 …) — 많이 잡아도 그 안에 다 나가는지 보고 정하세요.
           <b>원두가 종료되거나 없어지면</b> 그 품목은 저절로 빠집니다. 남는 원두는 <b>재고확인 > MMS 원두</b>에서 봅니다.</div>
         <div id="bufDead"></div>
         <div class="panel-b" style="overflow-x:auto"><table id="bufTbl"></table></div>
@@ -8745,7 +8746,7 @@ const WD_ORDER = [1,2,3,4,5,6,0];
 const BUF_KEY = "cfe_buffer";
 const bufCfg = () => {
   const c = SETTINGS[BUF_KEY] || {};
-  return { workdays: Array.isArray(c.workdays) ? c.workdays.map(Number) : [1,2,3,4,5],
+  return { workdays: Array.isArray(c.workdays) ? c.workdays.map(Number) : [0,1,2,3,4,5],   // 기본: 토요일만 쉼
            items: (c.items && typeof c.items === "object") ? JSON.parse(JSON.stringify(c.items)) : {} };
 };
 const dowOf = ds => new Date(ds + "T12:00:00").getDay();
@@ -10838,7 +10839,7 @@ function renderAccountManagement(){
         <td class="c">${manage}</td>
       </tr>`;
     }),
-    `<td colspan="6" class="c">신규 계정 초기 비밀번호: <b>0000</b> · 생성 후 본인이 비밀번호를 변경하세요</td>`);
+    `<td colspan="6" class="c">신규 계정 초기 비밀번호: <b>000000</b> · 생성 후 본인이 비밀번호를 변경하세요</td>`);
   if ($("myLoginId")) $("myLoginId").value = LOGIN_USER?.login_id || "";
 }
 async function reloadAppUsers(){
@@ -10857,7 +10858,7 @@ async function createMesAccount(workerId){
   const loginId=String(el?.value||"").trim().toLowerCase();
   if(!/^[a-z0-9._-]{3,40}$/.test(loginId))
     return toast("로그인 ID는 영문 소문자·숫자·._- 조합 3~40자로 입력해 주세요");
-  if(!(await ask(`${w.name}님의 로그인 계정을 생성합니다.\n\n로그인 ID: ${loginId}\n초기 비밀번호: 0000\n\n계속할까요?`,
+  if(!(await ask(`${w.name}님의 로그인 계정을 생성합니다.\n\n로그인 ID: ${loginId}\n초기 비밀번호: 000000\n\n계속할까요?`,
     {title:"MES 계정 생성",yes:"계정 생성"}))) return;
   try{
     const {data:ses}=await sb.auth.getSession();
@@ -10869,7 +10870,7 @@ async function createMesAccount(workerId){
     if(!data?.ok) throw new Error(data?.error||"계정을 생성하지 못했습니다");
     await reloadAppUsers();
     renderAll();
-    toast(`${w.name} 계정 생성 완료 · ID ${loginId} · 초기 비밀번호 0000`);
+    toast(`${w.name} 계정 생성 완료 · ID ${loginId} · 초기 비밀번호 000000`);
   }catch(e){
     console.error("createMesAccount",e);
     toast(`계정 생성 실패 — ${e?.message||e}`);
@@ -13090,8 +13091,18 @@ const byPriority = (a,b) =>
 let wkLabelEdit = false;               // 라벨 고르는 칸을 띄울지 — 평소엔 접어 둔다
 function setWkLabelEdit(){ wkLabelEdit = !wkLabelEdit; renderWork();
   toast(wkLabelEdit ? "카드에서 라벨을 바꿀 수 있습니다" : "라벨 칸을 접었습니다"); }
-let wkMach = "";                       // "" = 전체, 그 외 = 그 기계만
-function setWkMach(m){ wkMach = (wkMach===m ? "" : m); renderWork(); }
+let wkMach = "";                       // "" = 전체, 그 외 = 그 종류(수동 · 리팩 · 이카)만
+try { wkMach = localStorage.getItem("momos.wkMach") || ""; } catch(_){}     // 현장 태블릿은 자기 기계를 기억한다
+function setWkMach(m){ wkMach = m; try { localStorage.setItem("momos.wkMach", m); } catch(_){} renderWork(); }
+/* 기계 이름 → 종류: "수동 2구"·"수동 1구" → 수동 · "리팩(Reepack)" → 리팩 · "이카(ICA)" → 이카 */
+function machKind(name){
+  const n = String(name||"");
+  if (!n) return "";
+  if (/이카|ica/i.test(n)) return "이카";
+  if (/리팩|reepack|repack/i.test(n)) return "리팩";
+  if (/수동|manual/i.test(n)) return "수동";
+  return n.replace(/\s*\d+\s*구$/, "").replace(/\(.*?\)/g, "").trim() || n;
+}
 function renderWork(){
   const d = $("wkDate").value || today();
   if (!$("wkDate").value) $("wkDate").value = d;
@@ -13106,7 +13117,17 @@ function renderWork(){
     .filter(g=>g.items.length);
   const un = all.filter(o=>!o.machine).sort(byPriority);
   if (un.length) groups.push({ name:"", items:un });
-  if (wkMach && !groups.some(g=>g.name===wkMach)) wkMach = "";
+  /* 위쪽 탭 — 전체 · 수동 · 리팩 · 이카 (기준정보에 있는 기계 종류 순서대로, 항상 보인다) */
+  const kinds = [...new Set([...DB.machines.map(m=>machKind(m.name)), ...groups.map(g=>machKind(g.name))].filter(Boolean))];
+  if (un.length) kinds.push("미지정");
+  const kindOf = g => g.name ? machKind(g.name) : "미지정";
+  if (wkMach && !kinds.includes(wkMach)) wkMach = "";
+  $("wkTabs").innerHTML = [["", "전체"], ...kinds.map(k=>[k,k])].map(([v,t])=>{
+    const n = v==="" ? all.length : groups.filter(g=>kindOf(g)===v).reduce((s,g)=>s+g.items.length,0);
+    const run = v==="" ? all.filter(o=>o.status==="생산중").length
+                       : groups.filter(g=>kindOf(g)===v).reduce((s,g)=>s+g.items.filter(o=>o.status==="생산중").length,0);
+    return `<button class="subtab ${wkMach===v?"on":""}" onclick="setWkMach('${v}')">${t} ${n}${run?` <span style="opacity:.8">· 생산중 ${run}</span>`:""}</button>`;
+  }).join("");
 
   $("wkInfo").innerHTML = all.length
     ? `할 일 <b>${all.length}</b>건 · 기계 ${groups.length}대${done.length?` · 검수로 넘어간 것 ${done.length}건`:""}`
@@ -13120,17 +13141,9 @@ function renderWork(){
     (canEdit ? `<button class="btn" onclick="sortOrdersBySpec($('wkDate').value||today())"
        title="기계마다 규격순으로 순서를 한 번에 다시 매깁니다">규격순 정렬 (${specDir()==="asc"?"100g→1kg":"1kg→100g"})</button>` : "") +
     (mixedAll.length && can("plan") ? `<button class="btn primary" onclick="splitAllOrders()"
-       title="배치가 여러 개 묶인 지시를 배치마다 한 장씩 나눕니다">배치별로 나누기 ${mixedAll.length}건</button>` : "") +
-    (groups.length > 1
-    ? `<button class="btn ${wkMach===""?"primary":""}" onclick="setWkMach('')">전체 ${all.length}건</button>` +
-      groups.map(g=>{
-        const run = g.items.filter(o=>o.status==="생산중").length;
-        return `<button class="btn ${wkMach===g.name?"primary":""}" onclick="setWkMach('${g.name}')">${
-          g.name||"설비 미지정"} ${g.items.length}건${run?` · 생산중 ${run}`:""}</button>`;
-      }).join("")
-    : "");
+       title="배치가 여러 개 묶인 지시를 배치마다 한 장씩 나눕니다">배치별로 나누기 ${mixedAll.length}건</button>` : "");
 
-  const shown = wkMach ? groups.filter(g=>g.name===wkMach) : groups;
+  const shown = wkMach ? groups.filter(g=>kindOf(g)===wkMach) : groups;
   const card = o=>{
     const p = prodById(o.product_id);
     const pct = pctOf(o), run = o.status==="생산중";
@@ -13219,7 +13232,7 @@ function renderWork(){
     </div>`;
   }).join("")
     : `<div class="wempty">${wkMach
-        ? `${wkMach} 에 할 작업이 없습니다<br><span>위에서 [전체]를 누르면 다른 기계도 보입니다</span>`
+        ? `${wkMach} 에 할 작업이 없습니다<br><span>위 탭에서 [전체]를 누르면 다른 기계도 보입니다</span>`
         : `오늘 할 작업이 없습니다<br><span>관리자가 작업지시를 내리면 기계별로 여기에 카드로 뜹니다</span>`}</div>`;
 }
 
