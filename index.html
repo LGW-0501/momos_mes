@@ -363,6 +363,21 @@
   .wc .hd .nm .pri{flex:none; min-width:27px; height:27px; border-radius:7px;
     background:rgba(255,255,255,.17); color:#fff; font-size:14px; font-weight:800;
     display:inline-flex; align-items:center; justify-content:center; font-variant-numeric:tabular-nums;}
+  /* 여러 줄 골라 지우기 */
+  .selbox{width:16px !important; height:16px !important; margin:0 6px 0 0; vertical-align:middle; cursor:pointer; accent-color:#c0392b;}
+  tr.selrow > td{background:rgba(192,57,43,.09) !important;}
+  .selbar{display:flex; flex-wrap:wrap; align-items:center; gap:6px; padding:8px 14px;
+    border-bottom:1px solid var(--line); font-size:13px;}
+  .selbar .n{font-weight:800;}
+  /* 규격 표시 — 1kg / 500g / 200g / 100g 를 색으로 한눈에 */
+  .specb{display:inline-flex; align-items:center; justify-content:center; flex:none;
+    min-width:44px; height:24px; padding:0 7px; margin-right:6px; border-radius:6px;
+    font-size:13px; font-weight:800; letter-spacing:-.2px; color:#fff; vertical-align:middle;}
+  .specb.s1000{background:#3b2a20;} .specb.s500{background:#1d5fa8;}
+  .specb.s200{background:#1f7a4a;}  .specb.s100{background:#c2610c;}
+  .sortbar{display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-left:auto; font-weight:400;}
+  .sortbar label{font-size:12.5px; cursor:pointer; display:flex; align-items:center; gap:4px;}
+  .sortbar input{width:auto; height:auto;}
   .wc .hd .nm .prib{margin-left:auto; flex:none; display:flex; flex-direction:column; gap:2px;}
   .wc .hd .nm .prib button{width:26px; height:17px; padding:0; line-height:1;
     border:1px solid rgba(255,255,255,.28); border-radius:5px; background:transparent;
@@ -770,6 +785,10 @@
 #personalLoginGate .pl-btn{width:100%;height:48px;margin-top:18px;border:0;border-radius:9px;background:#1B4FD8;
  color:#fff;font:inherit;font-size:15px;font-weight:800;cursor:pointer}
 #personalLoginGate .pl-btn:disabled{opacity:.55}
+/* 새로고침(F5) 때 — 이미 로그인돼 있으면 입력칸 대신 "불러오는 중" 만 보인다 */
+#personalLoginGate.loading .pl-body > :not(#personalLoginMsg){display:none!important}
+#personalLoginGate.loading .pl-head p{display:none}
+#personalLoginGate.loading #personalLoginMsg{color:#0B1444;font-size:14px;font-weight:700;text-align:center;margin:6px 0}
 #personalLoginGate .pl-msg{min-height:20px;margin-top:11px;color:#D93B4C;font-size:12.5px;line-height:1.55}
 #personalLoginGate .pl-note{margin-top:13px;padding-top:13px;border-top:1px solid #E4E7EE;color:#6E7585;
  font-size:11.5px;line-height:1.6}
@@ -818,6 +837,7 @@
     <button class="btn" id="guideBtn" onclick="toggleGuide()">설명</button>
     <button class="btn" onclick="reloadDB()">새로고침</button>
     <span class="st" id="stDb"></span>
+    <span class="st" id="stLive" style="display:none"></span>
     <div class="avatar" id="avatar">—</div>
   </div>
 </div>
@@ -986,7 +1006,8 @@
       <div class="stline" id="woSum"></div>
     </div>
     <div class="panel">
-      <div class="panel-h">작업지시 목록</div>
+      <div class="panel-h" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">작업지시 목록
+        <span class="sortbar" id="woSortBar"></span></div>
       <div class="panel-b"><table id="woTbl"></table></div>
     </div>
   </div>
@@ -1591,6 +1612,7 @@
           <b>목록에 없는 품목은 자동으로 만들어집니다</b> (원두·규격·분쇄도를 이름에서 읽음 · 안전재고는 0이니 등록 후 채워주세요) ·
           한 건씩 넣을 때는 [행추가] · CFE 코드가 없으면 [빈 코드 자동생성](규칙: 원두이니셜-규격-분쇄도) ·
           <b>원두명은 MMS와 똑같이</b> 적어야 재고가 연결됩니다.</div>
+        <div class="selbar" id="selBar-products"></div>
         <div class="panel-b"><table id="tProd"></table></div>
       </div>
     </div>
@@ -1602,6 +1624,7 @@
             <button class="btn" onclick="resetCols('tBeans')" title="끌어서 바꾼 칸 넓이를 처음으로">칸 넓이 초기화</button>
             <button class="btn primary" onclick="seedBeanMaster()">원두 마스터 다시 넣기</button>
             <button class="btn" onclick="openPaste('mmscode')">엑셀로 MMS코드 넣기</button>
+            <button class="btn" onclick="openPaste('beanmaster')">엑셀로 원두 마스터 넣기</button>
             <button class="btn" onclick="addBean()">행추가</button>
             <button class="btn" onclick="csvBeans()">엑셀 다운로드</button></span></div>
         <div class="hint">포장 전 원두(반제품)입니다. <b class="bad">컬러 · 품목보고번호 · 원산지</b>는 한글표시사항(식품표시광고법)에 들어가는 값이라
@@ -1609,6 +1632,7 @@
           제조일자는 쓴 원두의 로스팅일에서 자동으로 따옵니다.<br>
           <b>칸이 좁아 안 보이면</b> 머리글 오른쪽 끝을 잡고 <b>끌어서 넓히세요</b> — 브라우저가 기억합니다 (두 번 누르면 그 칸만 원래대로).
           <b>종료</b>를 누르면 마지막 로스팅일을 적고 <b>종료</b> 쪽으로 옮겨집니다 — 생산계획·원두 선택 목록에서 빠지고, 지난 기록은 그대로 남습니다.</div>
+        <div class="selbar" id="selBar-beans"></div>
         <div class="panel-b"><table id="tBeans"></table></div>
       </div>
     </div>
@@ -1741,14 +1765,14 @@
         </div>
         <div class="panel-b" style="padding:14px 16px;display:flex;flex-direction:column;gap:10px">
           <div><button class="btn" onclick="wipe('tx')">① 실적·이력만 삭제</button>
-            <span class="hint">생산실적 · 배치사용이력 · 로스팅계획 · 품질기록 · 일정 · 변경이력을 지웁니다. 품목과 기준정보는 유지.</span></div>
+            <span class="hint">작업지시 · 생산실적 · 원두사용 · 로스팅 · 품질 · 검수 · 출고 · 집계 · 수불 · 라벨작업 · 일정을 지웁니다. 품목·기준정보·변경이력은 유지.</span></div>
           <div><button class="btn" onclick="wipe('stock')">② 재고 0으로</button>
-            <span class="hint">CFE 현재고와 MMS 배치 재고를 모두 0으로 만듭니다. 품목·원두 목록은 유지.</span></div>
+            <span class="hint">CFE 현재고 · MMS 배치 재고 · 부자재 현재고를 모두 0으로 만듭니다 (수불 원장도 비움). 품목·원두 목록은 유지.</span></div>
           <div><button class="btn danger" style="border:1px solid var(--bad)" onclick="wipe('master')">③ 품목·원두 전체 삭제</button>
             <span class="hint">품목 · 원두 · BOM · 배치 기준까지 모두 지웁니다. 기계·생산자·로스터기는 유지.</span></div>
           <div style="border-top:1px solid var(--line);padding-top:10px">
             <button class="btn danger" style="border:1px solid var(--bad);font-weight:800" onclick="wipe('all')">전체 초기화 (빈 상태로)</button>
-            <span class="hint">기계·생산자·로스터기를 제외한 모든 데이터를 지웁니다.</span></div>
+            <span class="hint">실적·이력 + 품목·원두 + 재고 0. 기계·생산자·로스터기·라벨/부자재 목록·계정·변경이력은 유지. <b>관리자 계정만</b> · 서버에 028_admin_wipe.sql 이 실행돼 있어야 합니다.</span></div>
           <div><button class="btn primary" onclick="seedBeanMaster()">④ 원두 마스터 넣기 (16종)</button>
             <span class="hint">받은 원두 마스터를 그대로 넣습니다 — 컬러·품목보고번호·원산지·적요·출시일까지.
               초기화한 뒤에 이걸 먼저 누르고, 품목(CFE)을 등록하세요.</span></div>
@@ -1993,6 +2017,7 @@
         <option value="stock_mms">재고확인 · MMS 보유수량 (kg)</option>
         <option value="cfecode">코드등록 · 품목 CFE 코드</option>
         <option value="mmscode">코드등록 · 원두 MMS 코드</option>
+        <option value="beanmaster">기준등록 · 원두 마스터 (코드·머신·컬러·품목보고번호·조성·출시일)</option>
           <option value="beanroaster">기준등록 · 원두별 로스터기 배치수량</option>
       </select></div>
       <div class="hint" style="padding:0" id="pHelp"></div>
@@ -2150,10 +2175,34 @@ async function personalLogin(){
   finally{ btn.disabled=false; }
 }
 function showPersonalLogin(message){
-  $("personalLoginGate")?.classList.remove("hidden");
+  $("personalLoginGate")?.classList.remove("hidden", "loading");
   if(message && $("personalLoginMsg")) $("personalLoginMsg").textContent=message;
 }
-function hidePersonalLogin(){ $("personalLoginGate")?.classList.add("hidden"); }
+function hidePersonalLogin(){ const g=$("personalLoginGate"); if(g){ g.classList.add("hidden"); g.classList.remove("loading"); } }
+/* 로그인된 사람 표시 + 로그아웃 버튼 — 데이터를 다 받은 뒤에 붙인다
+   (전에는 화면이 뜨고 0.15초 뒤에 붙였는데, 그때 아직 불러오는 중이면 버튼이 안 생기고
+    로그인 화면이 다시 떴다 — F5 를 누르면 로그아웃된 것처럼 보이던 원인) */
+function applyLoginChrome(){
+  if (dbMode === "supabase" && LOGIN_USER) {
+    hidePersonalLogin();
+    const r = document.querySelector(".topbar .right");
+    if (r && !$("loginIdentity")) {
+      const x = document.createElement("span"); x.id = "loginIdentity";
+      x.style.cssText = "font-size:12.5px;opacity:.85;white-space:nowrap";
+      x.textContent = `${LOGIN_USER.name} · ${isSystemAdmin()?"시스템 관리자":(ROLES[loginRole()]||loginRole())}`;
+      r.prepend(x);
+    }
+    if (r && !$("personalLogoutBtn")) {
+      const b = document.createElement("button");
+      b.id = "personalLogoutBtn"; b.className = "btn"; b.textContent = "로그아웃";
+      b.onclick = async () => { if (await ask("로그아웃할까요?", { title:"로그아웃", yes:"로그아웃" })) connLogout(); };
+      const av = $("avatar"); av ? r.insertBefore(b, av) : r.appendChild(b);
+    }
+  } else {
+    showPersonalLogin(dbMode === "conn_fail" ? `서버에 연결하지 못했습니다 — ${CONN_ERR || "인터넷 연결을 확인하세요"}`
+      : (dbMode === "need_login" && CONN_ERR ? CONN_ERR : undefined));
+  }
+}
 function currentWorkerId(){
   const w=workerByName(CURRENT_USER);
   return w?.id || null;
@@ -2490,8 +2539,8 @@ function tbl(id, head, rows, foot){
    글이 길어 안 보이는 칸(원산지 같은)은 늘려 놓고 쓰면 된다. */
 /* 칸이 많은 표는 기본 너비를 정해 둔다 — 안 그러면 다 쪼그라들어 글이 잘린다 */
 const COL_DEFAULT = {
-  tBeans: [44,74,122,190,300,92,160,330,128,116,116,108,70,96,84,70],
-  tProd:  [44,118,92,92,150,260,86,96,98,88,96,112,240,124,80,86,70],
+  tBeans: [66,74,122,190,300,92,160,330,128,116,116,108,70,96,84,70],
+  tProd:  [66,118,92,92,150,260,86,96,98,88,96,112,240,124,80,86,70],
 };
 const colKey = id => "momos_col_" + id;
 function colWidths(id){
@@ -2882,6 +2931,10 @@ async function initDB(){
            현장기기 : 등록된 토큰 (로그인 없이 현장 작업만)
          둘 다 아니면 RLS 가 한 줄도 안 돌려주므로 여기서 멈춥니다. */
       const { data: sess } = await sb.auth.getSession();
+      if (sess && sess.session && hasMesLoginVerified()) {          // 이미 로그인 — 입력칸 대신 "불러오는 중"
+        $("personalLoginGate")?.classList.add("loading");
+        const m = $("personalLoginMsg"); if (m) m.textContent = "로그인 확인 중…";
+      }
       DEV_OK = false;
       if (DEV_TOKEN) {
         try { const { data } = await sb.rpc("touch_device");
@@ -2901,19 +2954,10 @@ async function initDB(){
       /* ★ 한 번에 1000행만 옵니다 — 끝까지 나눠서 받습니다.
            전에는 그냥 select("*") 라, 실적·수불이 1000행을 넘으면
            조용히 잘린 채로 재고를 계산했습니다. */
-      const PAGE = 1000;
-      const fetchAll = async (t) => {
-        const out = [];
-        for (let from = 0; ; from += PAGE) {
-          const { data, error } = await sb.from(tb(t)).select("*").range(from, from + PAGE - 1);
-          if (error) throw error;
-          out.push(...data);
-          if (data.length < PAGE) break;
-        }
-        return out;
-      };
-      const loaded = {};
-      for (const t of TABLES) loaded[t] = await fetchAll(t);
+      /* ★ 표를 동시에 받습니다 — 전에는 41개를 하나씩 차례로 받아 로그인이 오래 걸렸습니다 */
+      const loaded = await loadTables((n, all) => {
+        const m = $("personalLoginMsg"); if (m) m.textContent = `데이터 불러오는 중… ${n} / ${all}`;
+      });
 
       /* ★ 화면에 있던 것을 운영 DB 로 밀어넣지 않습니다.
            전에는 products 가 비어 있으면 DB 전체를 insert 했습니다.
@@ -2970,6 +3014,7 @@ async function initDB(){
   }[dbMode] || ["<span class=\"dot o\"></span>로컬 모드", "미연결"];
   $("stDb").innerHTML = DBST[0];
   $("connState").textContent = DBST[1];
+  if (dbMode === "supabase") startRealtime();     // 다른 PC·현장 기기에서 바꾼 것이 바로 보이게
   if ($("connFrom")) $("connFrom").textContent =
     SB_URL ? `설정을 ${CONF.from||"?"} 에서 읽었습니다` : "설정이 없습니다 — 로컬 모드입니다";
   if ($("connUrl") && !$("connUrl").value) $("connUrl").value = SB_URL;
@@ -10027,9 +10072,119 @@ async function delRow(t,id){
   logAudit("삭제", nm, t);
   renderAll(); toast("삭제했습니다");
 }
+/* ══ 여러 줄 골라서 한 번에 지우기 (품목 · 원두) ══
+   · 줄 왼쪽 네모를 누르면 선택 · Shift 를 누른 채 다른 줄을 누르면 그 사이를 전부 선택
+   · 머리글 네모 = 지금 보이는 줄 전체
+   · [코드 없는 줄 선택] — 잘못 들어간 빈 줄을 한 번에 고를 때 */
+const SEL = { products:new Set(), beans:new Set() }, SHOWN = { products:[], beans:[] }, SEL_LAST = {};
+const SEL_TBL = { products:"tProd", beans:"tBeans" };
+const selBox = (t,id,i) => `<input type="checkbox" class="selbox" data-sel="${t}" data-id="${id}" ${SEL[t].has(id)?"checked":""}
+  onclick="selRow(event,'${t}','${id}',${i})" title="선택 (Shift+클릭 = 사이 전부)">`;
+const selAllBox = t => { const ids = SHOWN[t], all = ids.length && ids.every(id=>SEL[t].has(id));
+  return `<input type="checkbox" class="selbox" ${all?"checked":""} onclick="selAll('${t}',this.checked)" title="보이는 줄 전체 선택">No`; };
+function selSync(t){
+  document.querySelectorAll(`#${SEL_TBL[t]} .selbox[data-sel="${t}"]`).forEach(cb=>{
+    const on = SEL[t].has(cb.dataset.id); cb.checked = on; cb.closest("tr")?.classList.toggle("selrow", on); });
+  const head = document.querySelector(`#${SEL_TBL[t]} thead .selbox`);
+  if (head) head.checked = SHOWN[t].length>0 && SHOWN[t].every(id=>SEL[t].has(id));
+  selBar(t);
+}
+function selRow(e,t,id,i){
+  const on = e.target.checked, ids = SHOWN[t];
+  if (e.shiftKey && SEL_LAST[t]!=null) {
+    const a = Math.min(SEL_LAST[t], i), b = Math.max(SEL_LAST[t], i);
+    for (let k=a;k<=b;k++) on ? SEL[t].add(ids[k]) : SEL[t].delete(ids[k]);
+  } else on ? SEL[t].add(id) : SEL[t].delete(id);
+  SEL_LAST[t] = i; selSync(t);
+}
+function selAll(t,on){ SHOWN[t].forEach(id=> on ? SEL[t].add(id) : SEL[t].delete(id)); selSync(t); }
+function selClear(t){ SEL[t].clear(); SEL_LAST[t] = null; selSync(t); }
+function selNoCode(t){
+  const k = t==="beans" ? "mms_code" : "code";
+  const rows = DB[t].filter(r=>SHOWN[t].includes(r.id) && !String(r[k]||"").trim());
+  if (!rows.length) return toast("코드 없는 줄이 없습니다");
+  rows.forEach(r=>SEL[t].add(r.id)); selSync(t);
+  toast(`코드 없는 줄 ${rows.length}개를 골랐습니다 — 확인 후 [선택 삭제]`);
+}
+function selBar(t){
+  const el = $("selBar-"+t); if (!el) return;
+  [...SEL[t]].forEach(id=>{ if (!DB[t].some(r=>r.id===id)) SEL[t].delete(id); });   // 이미 지워진 것 정리
+  const n = SEL[t].size;
+  el.innerHTML = can("base") ? (n
+    ? `<span class="n">선택 ${n}개</span>
+       <button class="btn danger" onclick="delSelected('${t}')">선택 삭제</button>
+       ${t==="products" ? `<button class="btn" onclick="offSelected()">선택 사용중지</button>` : ""}
+       <button class="btn" onclick="selClear('${t}')">선택 해제</button>`
+    : `<span class="hint" style="padding:0">줄 왼쪽 네모로 여러 개 골라 한 번에 지울 수 있습니다 · Shift+클릭 = 사이 전부</span>`)
+    + `<button class="btn" style="margin-left:auto" onclick="selNoCode('${t}')">코드 없는 줄 선택</button>` : "";
+}
+function delMany(t, ids){
+  if (!ids.length) return;
+  if (!sb) { if (SB_URL) noteSaveFail("삭제", t, ids[0], "연결되지 않아 지우지 못했습니다"); return; }
+  for (let i=0;i<ids.length;i+=100) {               // 한 번에 100개씩
+    const part = ids.slice(i, i+100);
+    try {
+      sb.from(tb(t)).delete().in("id", part).then(({ error }) => {
+        if (error) noteSaveFail("삭제", t, part[0], error.message || String(error));
+      }, e => noteSaveFail("삭제", t, part[0], e && e.message || String(e)));
+    } catch(e){ noteSaveFail("삭제", t, part[0], e && e.message || String(e)); }
+  }
+}
+async function delSelected(t){
+  const rows = DB[t].filter(r=>SEL[t].has(r.id));
+  if (!rows.length) return toast("고른 줄이 없습니다");
+  const nm = r => (t==="beans" ? r.name : r.name) || (t==="beans" ? r.mms_code : r.code) || "(빈 줄)";
+  const list = rows.slice(0,12).map(r=>`· ${nm(r)}`).join("\n") + (rows.length>12 ? `\n… 외 ${rows.length-12}개` : "");
+  let note = "", dropIds = rows.map(r=>r.id);
+  if (t === "products") {
+    const used = rows.filter(r=>Object.values(prodUses(r.id)).some(v=>v));
+    if (used.length) {
+      const pick = await ask(
+        `고른 ${rows.length}개 중 ${used.length}개는 이미 작업한 기록이 있습니다.\n\n` +
+        used.slice(0,8).map(r=>`· ${nm(r)}`).join("\n") + (used.length>8?`\n… 외 ${used.length-8}개`:"") +
+        `\n\n기록 있는 것은 사용중지(목록에서만 빠짐)하고 나머지만 지울까요?`,
+        { title:"선택 삭제", choices:[
+          { label:`기록 있는 ${used.length}개는 사용중지 (권장)`, v:"off", cls:"primary" },
+          { label:"전부 완전삭제", v:"del", cls:"danger" },
+          { label:"취소", v:null }] });
+      if (!pick) return;
+      if (pick === "off") {
+        used.forEach(p=>{ if (!p.off) { p.off = true; save("products", p); } });
+        const usedIds = new Set(used.map(r=>r.id));
+        dropIds = dropIds.filter(id=>!usedIds.has(id));
+        note = ` · 사용중지 ${used.length}개`;
+      } else used.forEach(stampProd);              // 이름을 기록에 박아 두고 지운다
+    }
+  }
+  if (t === "beans") {
+    const linked = rows.filter(b=>DB.products.some(p=>p.bean===b.name) || DB.mms.some(m=>m.bean===b.name && Number(m.stock_kg)>0));
+    if (linked.length) note = ` (이 중 ${linked.length}개는 연결된 완제품·MMS 재고가 있습니다 — 그 기록의 원두 이름은 그대로 남습니다)`;
+  }
+  if (dropIds.length) {
+    const L2 = rows.filter(r=>dropIds.includes(r.id));
+    const msg = `${dropIds.length}개를 삭제합니다. 되돌릴 수 없습니다.${t==="beans"?note:""}\n\n` +
+      L2.slice(0,12).map(r=>`· ${nm(r)}`).join("\n") + (L2.length>12 ? `\n… 외 ${L2.length-12}개` : "");
+    if (!(await ask(msg, { title:"선택 삭제", yes:`${dropIds.length}개 삭제`, danger:true }))) return;
+    const drop = new Set(dropIds);
+    DB[t] = DB[t].filter(r=>!drop.has(r.id));
+    delMany(t, dropIds);
+    logAudit("선택 삭제", `${dropIds.length}개`, `${t} · ${L2.slice(0,5).map(nm).join(", ")}${L2.length>5?" 외":""}`);
+  }
+  SEL[t].clear(); SEL_LAST[t] = null;
+  renderAll();
+  toast(`${dropIds.length}개 삭제${t==="products"?note:""}`);
+}
+async function offSelected(){
+  const rows = DB.products.filter(r=>SEL.products.has(r.id) && !r.off);
+  if (!rows.length) return toast("사용중인 품목을 고르지 않았습니다");
+  rows.forEach(p=>{ p.off = true; save("products", p); });
+  logAudit("품목 사용중지", `${rows.length}개`, rows.slice(0,5).map(p=>p.name).join(", "));
+  SEL.products.clear(); renderAll(); toast(`${rows.length}개 사용중지 (이력은 그대로)`);
+}
 function renderBase(){
-  tbl("tProd", ["No","CFE 코드","구분","채널","원두","제품명","규격(g)","분쇄도","표준투입(g)","안전재고","CFE현재고","풀패키지","기본 라벨","묶음","이카전용","사용",""],
-    DB.products.map((p,i)=>`<tr class="${p.off?"offrow":""}"><td class="rowno">${i+1}</td>
+  SHOWN.products = DB.products.map(p=>p.id);
+  tbl("tProd", [selAllBox("products"),"CFE 코드","구분","채널","원두","제품명","규격(g)","분쇄도","표준투입(g)","안전재고","CFE현재고","풀패키지","기본 라벨","묶음","이카전용","사용",""],
+    DB.products.map((p,i)=>`<tr class="${p.off?"offrow":""}${SEL.products.has(p.id)?" selrow":""}"><td class="rowno">${selBox("products",p.id,i)}${i+1}</td>
       <td class="l">${inp("products",p.id,"code",p.code)}</td>
       <td class="c">${inp("products",p.id,"category",p.category)}</td>
       <td class="c"><select data-t="products" data-id="${p.id}" data-k="channel">${CHANNELS.map(c=>`<option ${c===(p.channel||"일반")?"selected":""}>${c}</option>`).join("")}</select></td>
@@ -10072,15 +10227,16 @@ function renderBase(){
     [["live",`사용중 ${liveB.length}`],["off",`종료 ${offB.length}`],["all",`전체 ${DB.beans.length}`]]
       .map(([v,t])=>`<button class="btn ${beanView===v?"primary":""}" onclick="setBeanView('${v}')">${t}</button>`).join(" ");
   const bshow = beanView==="off" ? offB : beanView==="all" ? DB.beans : liveB;
-  tbl("tBeans", ["No","상태","MMS 코드","머신 종류","원두명",
+  SHOWN.beans = bshow.map(b=>b.id);
+  tbl("tBeans", [selAllBox("beans"),"상태","MMS 코드","머신 종류","원두명",
       '<span class="fix">컬러</span>','<span class="fix">품목보고번호</span>','<span class="fix">원산지</span>',
       "적요","출시일","종료일","MMS 재고(kg)","배치 수","연결 완제품","처리",""],
     bshow.map((b,i)=>{
       const live = DB.mms.filter(m=>m.bean===b.name && Number(m.stock_kg)>0);
       const off = beanOff(b);
       const bad = !off && (!b.color || !b.report_no || !b.compose);
-      return `<tr class="${bad?"heldrow":""}" style="${off?"opacity:.62":""}">
-        <td class="rowno">${i+1}</td>
+      return `<tr class="${bad?"heldrow":""}${SEL.beans.has(b.id)?" selrow":""}" style="${off?"opacity:.62":""}">
+        <td class="rowno">${selBox("beans",b.id,i)}${i+1}</td>
         <td class="c">${off ? '<span class="tag">종료</span>' : '<span class="tag ok">사용중</span>'}</td>
         <td class="l wrap">${inp("beans",b.id,"mms_code",b.mms_code)}</td>
         <td class="l wrap">${inp("beans",b.id,"machine",b.machine)}</td>
@@ -10099,6 +10255,8 @@ function renderBase(){
     `<td colspan="11" class="c">${beanView==="off"?"종료":beanView==="all"?"전체":"사용중"} · ${bshow.length}종</td>
      <td>${fmt(bshow.reduce((t,b)=>t+DB.mms.filter(m=>m.bean===b.name).reduce((s,m)=>s+Number(m.stock_kg||0),0),0))}</td>
      <td colspan="4"></td>`);
+
+  selBar("products"); selBar("beans");
 
   // ── 부자재 재고 ──
   const mats = matKindFilter ? matsOf(matKindFilter) : DB.materials;
@@ -10513,20 +10671,35 @@ const WIPE_SETS = {
 async function wipe(kind){
   const set = WIPE_SETS[kind]; if(!set) return;
   if (!(await requireUser())) return;
-  /* ★ 운영 DB 에 연결된 상태에서는 쓰지 않습니다 (지시 16번).
-     이 기능은 재고 숫자를 0 으로 만들고 행을 지웁니다 —
-     수불 원장(stock_moves)을 기준으로 삼는 구조와 맞지 않습니다.
-     개발·초기 세팅용으로만 남겨 두고, 연결된 상태에서는 막습니다.
-     운영에서 재고를 0 으로 만들어야 한다면 실측(count_stock)이나
-     폐기(scrap_batch)로 처리해야 이유가 남습니다. */
+  const WIPE_DESC = {
+    tx:"작업지시 · 생산실적 · 원두사용 · 로스팅 · 품질 · 검수 · 출고 · 집계 · 실측 · 수불 · 라벨작업 · 재작업 · 일정 · 생산계획",
+    stock:"CFE 현재고 · MMS 배치 kg · 부자재 현재고를 0 으로 (수불 원장도 비움)",
+    master:"품목 · 원두 · BOM · MMS 배치 · 원두별 로스터기 기준",
+    all:"위 전부 — 실적·이력 + 품목·원두 + 재고 0" };
+  /* ── 서버에 연결돼 있으면 서버 함수(admin_wipe)가 한 번에 처리합니다 ──
+     화면에서 줄마다 지우면 권한(RLS)에 막혀 일부만 지워지고 남습니다.
+     관리자만 · 확인 문구 · 한 트랜잭션 · 변경이력에 남김 (028_admin_wipe.sql) */
   if (sb) {
-    await ask(
-      "연결된 상태에서는 초기화를 쓸 수 없습니다.\n\n" +
-      "이 기능은 재고를 0 으로 만들고 기록을 지웁니다 — 왜 그렇게 됐는지가 남지 않습니다.\n" +
-      "재고를 맞추려면 [재고 실측] 을, 못 쓰게 된 원두는 [폐기] 를 쓰세요.\n\n" +
-      "데이터를 정말 비워야 한다면 관리자가 DB 에서 직접 해야 합니다.",
-      { title:"초기화를 쓸 수 없습니다", yes:"확인" });
-    return;
+    if (!isSystemAdmin() && loginRole() !== "admin")
+      return ask("초기화는 관리자 계정만 할 수 있습니다.", { title:"초기화", yes:"확인" });
+    if (!(await ask(`[${set.label}] 초기화 — 서버의 실제 데이터를 지웁니다.\n\n지우는 것: ${WIPE_DESC[kind]}\n\n` +
+        `유지: 기계 · 생산자 · 로스터기 · 라벨/부자재 목록 · 권한 · 계정 · 변경이력\n\n되돌릴 수 없습니다. 먼저 [백업]을 받으세요.`,
+        { title:"초기화", yes:"계속", danger:true }))) return;
+    const typed = await askText('확인을 위해 아래 문구를 그대로 입력하세요:\n초기화', "", "초기화 확인");
+    if (String(typed||"").trim() !== "초기화") return toast("입력이 달라 취소되었습니다");
+    const r = await rpc("admin_wipe", { p_kind:kind, p_confirm:"초기화", p_user_name:CURRENT_USER || LOGIN_USER?.name || "" }, ()=>null);
+    if (!r || !r.ok) {
+      const m = r?.message || "";
+      return ask(/admin_wipe|function|schema cache/i.test(m)
+          ? "서버에 초기화 기능이 아직 없습니다.\n\nSupabase SQL Editor 에서 028_admin_wipe.sql 을 한 번 실행한 뒤 다시 누르세요."
+          : `초기화하지 못했습니다 — ${m || "알 수 없는 오류"}\n\n아무것도 지워지지 않았습니다.`,
+        { title:"초기화 실패", yes:"확인" });
+    }
+    if (kind!=="master") { planEA = {}; reqRows = []; actual = { cfe:{}, mms:{} }; }
+    if (typeof SEL !== "undefined") { SEL.products.clear(); SEL.beans.clear(); }
+    await reloadDB({ silent:true });
+    renderAll();
+    return toast(`${set.label} 초기화 완료 — ${fmt(r.deleted||0)}줄 삭제${kind==="stock"||kind==="all"?" · 재고 0":""}`);
   }
   const msg = kind==="stock"
     ? "CFE 현재고와 MMS 배치 재고를 모두 0으로 만듭니다.\n되돌릴 수 없습니다. 계속할까요?"
@@ -10591,16 +10764,145 @@ function seedBadge(){
 }
 
 /* ── 다시 불러오기 (동시 작업 대비) ── */
-async function reloadDB(){
-  if (!sb) { renderAll(); return toast("로컬 모드 — 화면만 새로 그렸습니다 (DB 미연결)"); }
-  try {
-    for (const t of TABLES) {
-      const { data, error } = await sb.from(tb(t)).select("*");
-      if (error) throw error;
-      DB[t] = data;
+/* ══ 서버에서 표 받기 — 여러 표를 동시에, 표마다 1000행씩 끝까지 ══
+   · 동시에 8개씩 받습니다 (한꺼번에 41개를 보내면 서버가 막을 수 있어 나눠서)
+   · 멱등키 표는 서버 연결 중에는 쓰지 않으므로 받지 않습니다 (계속 쌓이는 표라 가장 무거움) */
+const LOAD_SKIP = ["idempotency_keys"];
+async function fetchTable(t){
+  const out = [];
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await sb.from(tb(t)).select("*").range(from, from + 999);
+    if (error) throw error;
+    out.push(...data);
+    if (data.length < 1000) break;
+  }
+  return out;
+}
+async function loadTables(onProgress){
+  const t0 = performance.now();
+  const list = TABLES.filter(t => !LOAD_SKIP.includes(t));
+  const loaded = {}; LOAD_SKIP.forEach(t => loaded[t] = []);
+  let next = 0, done = 0;
+  const worker = async () => {
+    while (next < list.length) {
+      const t = list[next++];
+      loaded[t] = await fetchTable(t);
+      done++; if (onProgress) onProgress(done, list.length);
     }
-    renderAll(); toast("모든 화면을 최신 데이터로 갱신했습니다");
-  } catch(e){ console.warn(e); toast("불러오기 실패 — 연결을 확인하세요"); }
+  };
+  await Promise.all(Array.from({ length: Math.min(8, list.length) }, worker));
+  console.info(`[MES] 표 ${list.length}개 불러옴 — ${Math.round(performance.now() - t0)}ms`);
+  return loaded;
+}
+async function reloadDB(opt = {}){
+  if (!sb) { renderAll(); if (!opt.silent) toast("로컬 모드 — 화면만 새로 그렸습니다 (DB 미연결)"); return; }
+  try {
+    /* ★ 1000행씩 끝까지 받습니다 — 처음 불러올 때와 같게 (전에는 1000행에서 잘렸습니다) */
+    const loaded = await loadTables();
+    TABLES.forEach(t => {
+      /* 기본 로스터기는 화면에서 채운 것이라 빈 표로 덮지 않는다 (initDB 와 같은 규칙) */
+      if (t === "roasters" && !loaded[t].length && DB.roasters?.length) return;
+      DB[t] = loaded[t];
+    });
+    if (opt.silent) liveRender(); else { renderAll(); toast("모든 화면을 최신 데이터로 갱신했습니다"); }
+  } catch(e){ console.warn(e); if (!opt.silent) toast("불러오기 실패 — 연결을 확인하세요"); }
+}
+
+/* ══════════════════════════════════════════════════════════════
+   실시간 반영 — 누가 어디서 저장하든 열려 있는 모든 화면에 바로 뜹니다
+   · Supabase Realtime(postgres_changes) 으로 바뀐 줄만 받아 DB 에 끼워 넣습니다
+   · 서버에 027_realtime.sql 을 한 번 실행해야 신호가 옵니다
+   · 읽기 권한(RLS)은 그대로 — 볼 수 있는 줄만 옵니다
+   · 끊겼다 다시 붙으면 그 사이 놓친 것을 한 번에 다시 받습니다
+   ══════════════════════════════════════════════════════════════ */
+let RT_CH = null, RT_STATE = "off", RT_TIMER = null, RT_WAS_DOWN = false, RT_HIDDEN_AT = 0;
+const RT_SKIP = ["idempotency_keys"];          // 화면에 안 쓰는 표 — 받지 않는다
+function rtBadge(){
+  const el = $("stLive"); if (!el) return;
+  const m = { on:['<span class="dot g"></span>실시간', "다른 화면에서 저장한 것이 바로 반영됩니다"],
+              wait:['<span class="dot o"></span>실시간 연결 중…', "실시간 연결 중"],
+              down:['<span class="dot r"></span>실시간 끊김 — 다시 붙는 중', "끊긴 동안의 변경은 다시 붙을 때 한 번에 받습니다"],
+              off:["", ""] }[RT_STATE] || ["",""];
+  el.innerHTML = m[0]; el.title = m[1]; el.style.display = m[0] ? "" : "none";
+}
+/* 받은 변경을 화면에 — 빠르게
+   · 전에는 화면 17개를 전부 다시 그려서, 데이터가 많으면 다른 PC의 변경이 늦게 떴다
+   · 이제 지금 보고 있는 화면만 바로 그리고, 나머지는 쉬는 틈에 하나씩 그린다
+   · 지금 화면에서 숫자를 치고 있을 때만 손을 뗄 때까지 기다린다 */
+const SCREENS = ["dash","plan","roast","req","log","stock","pqc","cal","loss","base",
+                 "work","qc","ship","order","trace","rw","mt"];
+const curScreen = () => (document.querySelector(".screen.on")?.id || "s-dash").replace(/^s-/, "");
+const idle = f => (window.requestIdleCallback ? requestIdleCallback(f, { timeout:600 }) : setTimeout(f, 30));
+let RT_REST = null;
+function liveRender(){
+  clearTimeout(RT_TIMER);
+  RT_TIMER = setTimeout(()=>{
+    const cur = curScreen(), a = document.activeElement;
+    const typing = a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && a.type !== "checkbox" && a.type !== "button"
+                   && !!a.closest("#s-" + cur);
+    const modal = $("overlay")?.style.display === "block";
+    if (typing || modal) { RT_TIMER = null; RT_PENDING = true; return; }
+    RT_PENDING = false;
+    const t0 = performance.now();
+    keepFocus(()=>{ fillBeanList(); render(cur); });
+    if (RT_REST) RT_REST.cancel = true;                // 앞에 남은 뒷작업은 버린다 — 새 데이터로 다시
+    const job = { cancel:false }, rest = SCREENS.filter(x => x !== cur); RT_REST = job;
+    const step = () => {
+      if (job.cancel) return;
+      if (!rest.length) { try { syncUserUI(); } catch(_){} return; }
+      try { renderOne(rest.shift()); } catch(e){ console.warn(e); }
+      idle(step);
+    };
+    idle(step);
+    console.debug(`[MES] 실시간 반영 ${cur} ${Math.round(performance.now() - t0)}ms`);
+  }, 120);
+}
+let RT_PENDING = false;
+document.addEventListener("focusout", ()=>{ if (RT_PENDING) setTimeout(()=>{ if (RT_PENDING) liveRender(); }, 60); });
+function rtApply(t, ev, row, old){
+  if (!Array.isArray(DB[t])) DB[t] = [];
+  const key = (row && row.id != null) || (old && old.id != null) ? "id"
+            : (row && row.key != null) || (old && old.key != null) ? "key" : null;
+  if (!key) { reloadDB({ silent:true }); return; }   // 기본키가 id 가 아닌 표 — 통째로 다시
+  if (ev === "DELETE") {
+    const id = old && old[key]; if (id == null) return;
+    const i = DB[t].findIndex(x => x[key] === id);
+    if (i >= 0) DB[t].splice(i, 1);
+    return;
+  }
+  if (!row) return;
+  const cur = DB[t].find(x => x[key] === row[key]);
+  if (cur) Object.assign(cur, row);       // 같은 객체를 고쳐 쓴다 — 다른 곳이 잡고 있는 참조도 함께 바뀐다
+  else DB[t].push(row);
+}
+function startRealtime(){
+  if (!sb || RT_CH || typeof sb.channel !== "function") return;
+  const byName = {}; TABLES.filter(t=>!RT_SKIP.includes(t)).forEach(t => byName[tb(t)] = t);
+  RT_STATE = "wait"; rtBadge();
+  RT_CH = sb.channel("momos-mes-live")
+    .on("postgres_changes", { event:"*", schema:"public" }, p => {
+      const t = byName[p.table]; if (!t) return;
+      try { rtApply(t, p.eventType, p.new && Object.keys(p.new).length ? p.new : null, p.old); }
+      catch(e){ console.warn("실시간 반영 실패", e); }
+      liveRender();
+    })
+    .subscribe(st => {
+      if (st === "SUBSCRIBED") {
+        if (RT_WAS_DOWN) reloadDB({ silent:true });   // 끊긴 사이 놓친 변경 받기
+        RT_WAS_DOWN = false; RT_STATE = "on";
+      } else if (st === "CHANNEL_ERROR" || st === "TIMED_OUT" || st === "CLOSED") {
+        RT_WAS_DOWN = true; RT_STATE = "down";
+      }
+      rtBadge();
+    });
+  /* 화면을 오래 내려 뒀다 돌아오면(태블릿 잠금 등) 한 번 새로 받는다 */
+  document.addEventListener("visibilitychange", ()=>{
+    if (document.hidden) { RT_HIDDEN_AT = Date.now(); return; }
+    if (RT_HIDDEN_AT && Date.now() - RT_HIDDEN_AT > 60000) reloadDB({ silent:true });
+    RT_HIDDEN_AT = 0;
+  });
+  /* 로그인 토큰이 갱신되면 실시간 연결에도 알려 준다 */
+  try { sb.auth.onAuthStateChange((_e, sess)=>{ if (sess?.access_token && sb.realtime?.setAuth) sb.realtime.setAuth(sess.access_token); }); } catch(_){}
 }
 
 function csvBeans(){
@@ -10675,6 +10977,7 @@ const HELP = {
   stock_mms:"실제 보유수량(kg)을 넣으면 재고확인 화면에서 차이를 보여줍니다.",
   cfecode:"[코드 | 품목명 | (수량)] 형식. 예) CFE0002  원두 에스쇼콜라 200g [분쇄안함]  8 — 목록에 없는 품목은 이름에서 원두·규격·분쇄도를 읽어 새로 등록합니다(안전재고 0). 수량이 있으면 재고확인에 함께 반영할 수 있습니다.",
   mmscode:"[코드 | 원두명 | (수량)] 형식. 목록에 없는 원두는 새로 추가됩니다.",
+  beanmaster:"원두 마스터 표를 머리글째 그대로 붙여넣으세요 — 원두코드 · 머신종류 · 품목명 · 컬러 · 품목보고번호 · 조성 · 적요 · 출시일 · 종료일. 칸 안 줄바꿈도 그대로 읽습니다. 코드나 이름이 같으면 갱신, 없으면 새로 등록합니다. 빈칸은 기존 값을 지우지 않습니다.",
   beanroaster:"[원두명 | S35 | S70 | P60] 형식. 첫 줄에 로스터기 이름이 있으면 그 순서를 따르고, 빈칸·0은 생산 불가로 저장됩니다.",
 };
 let pRows = [];
@@ -10682,6 +10985,16 @@ const normName = s => String(s||"").replace(/[\[(].*?[\])]/g,"").replace(/\s+/g,
 function grindInName(s){
   const m = String(s||"").match(/[\[(]\s*([^\])]*?)\s*[\])]/);
   return m ? (GRIND_ALIAS[m[1].replace(/\s+/g,"")] || null) : null;
+}
+/* 코드로 품목 찾기 — 대소문자·하이픈·공백 무시 (CFE0002 = cfe-0002 = CFE 0002) */
+const codeKey = c => String(c||"").replace(/[\s\-_.]/g,"").toUpperCase();
+function productByCode(code){
+  const k = codeKey(code); if (!k) return null;
+  return DB.products.find(p=>p.code && codeKey(p.code)===k) || null;
+}
+function beanByCode(code){
+  const k = codeKey(code); if (!k) return null;
+  return DB.beans.find(b=>b.mms_code && codeKey(b.mms_code)===k) || null;
 }
 function matchProduct(nameRaw){
   const n = normName(nameRaw), g = grindInName(nameRaw);
@@ -10780,7 +11093,8 @@ $("pFile").addEventListener("change", async e=>{
       if (!window.XLSX) await new Promise((res,rej)=>{ const s=document.createElement("script");
         s.src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"; s.onload=res; s.onerror=rej; document.head.appendChild(s); });
       const wb = XLSX.read(await f.arrayBuffer());
-      $("pText").value = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], {header:1}).map(r=>r.join("\t")).join("\n");
+      const qc = v => { const t = String(v ?? ""); return /[\t\n"]/.test(t) ? `"${t.replace(/"/g,'""')}"` : t; };
+      $("pText").value = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], {header:1, defval:""}).map(r=>r.map(qc).join("\t")).join("\n");
     } else {
       const t = await f.text();
       $("pText").value = t.includes("\t") ? t : t.split(/\r?\n/).map(l=>l.split(",").join("\t")).join("\n");
@@ -10917,7 +11231,31 @@ $("pText").addEventListener("paste", e=>{
   const f = it.getAsFile(); if (f) readImage(f);
 });
 
-function lines(){ return $("pText").value.split(/\r?\n/).map(l=>(l.includes("\t")?l.split("\t"):l.split(/ {2,}/)).map(c=>c.trim())); }
+/* 엑셀에서 복사한 표 읽기 — 칸 안에 줄바꿈이 있으면 엑셀이 "..." 로 감싸서 준다.
+   전에는 줄 단위로만 잘라서 "2010014↵7027120" 같은 칸이 두 줄로 쪼개져 표가 무너졌다. */
+function parseTSV(text){
+  const rows = []; let row = [], cell = "", q = false, start = true;
+  const t = String(text||"").replace(/\r\n?/g, "\n");
+  for (let i = 0; i < t.length; i++){
+    const ch = t[i];
+    if (q) {
+      if (ch === '"') { if (t[i+1] === '"') { cell += '"'; i++; } else q = false; }
+      else cell += ch;
+      continue;
+    }
+    if (ch === '"' && start) { q = true; start = false; continue; }
+    if (ch === "\t") { row.push(cell); cell = ""; start = true; continue; }
+    if (ch === "\n") { row.push(cell); rows.push(row); row = []; cell = ""; start = true; continue; }
+    cell += ch; start = false;
+  }
+  if (cell !== "" || row.length) { row.push(cell); rows.push(row); }
+  return rows;
+}
+function lines(){
+  const v = $("pText").value;
+  if (v.includes("\t")) return parseTSV(v).map(r=>r.map(c=>c.replace(/\s*\n\s*/g," ").trim()));
+  return v.split(/\r?\n/).map(l=>l.split(/ {2,}/).map(c=>c.trim()));
+}
 const isCode = s => /^[A-Za-z]{1,5}[-_]?\d{2,6}$/.test(s) || (/^[A-Za-z0-9][A-Za-z0-9\-_.]*$/.test(s) && /[A-Za-z]/.test(s) && /\d/.test(s) && s.length<=16);
 
 /* ── 첫 줄이 머리글이면 코드·이름·수량 열 위치를 잡아둔다 (이카운트 재고현황 등) ── */
@@ -10928,12 +11266,16 @@ function headerMap(cols){
   const idx = { code:-1, name:-1, qty:-1 };
   cols.forEach((c,i)=>{
     const t = String(c||"").replace(/\s+/g,"");
-    if (!t || H_BAD.test(t)) return;
+    if (!t) return;
+    // 출고수량·주문수량 처럼 '출고' 가 들어가도 수량 열이면 받는다
+    if (idx.qty<0 && /^(출고수량|주문수량|생산수량|계획수량|지시수량|집계수량|수량\(ea\)|ea|개수)$/i.test(t)) { idx.qty = i; return; }
+    if (H_BAD.test(t)) return;
     if (idx.code<0 && /코드|품번/.test(t)) idx.code = i;
     else if (idx.name<0 && H_NAME.test(t)) idx.name = i;
     else if (idx.qty<0 && H_QTY.test(t)) idx.qty = i;
   });
-  return (idx.name>=0 && (idx.code>=0 || idx.qty>=0)) ? idx : null;
+  // 이름 열이 없어도 [코드 | 수량] 이면 머리글로 본다 — 코드만으로 집계
+  return ((idx.name>=0 && (idx.code>=0 || idx.qty>=0)) || (idx.code>=0 && idx.qty>=0)) ? idx : null;
 }
 /* 수량으로 쓸 만한 열 후보 (머리글이 있을 때 직접 고를 수 있게) */
 function qtyChoices(cols){
@@ -10963,7 +11305,7 @@ function hdrRow(all){
 function qtyPickHTML(){
   if (!pHdr) return "";
   return `<div class="hint" style="padding:0 0 8px">
-    <b>머리글 인식:</b> ${pHdr.idx.code>=0?`코드 = <b>${pHdr.cols[pHdr.idx.code]}</b> · `:""}이름 = <b>${pHdr.cols[pHdr.idx.name]}</b> · 수량 열
+    <b>머리글 인식:</b> ${pHdr.idx.code>=0?`코드 = <b>${pHdr.cols[pHdr.idx.code]}</b> · `:""}${pHdr.idx.name>=0?`이름 = <b>${pHdr.cols[pHdr.idx.name]}</b> · `:"이름 열 없음(코드로 찾음) · "}수량 열
     <select id="pQtyCol" data-sig="${pHdr.sig.replace(/"/g,"&quot;")}" onchange="preview()"
       style="height:28px;font-weight:700;margin-left:4px">
       <option value="-1" ${pHdr.idx.qty<0?"selected":""}>— 사용 안 함 —</option>
@@ -10977,11 +11319,88 @@ function applyQtyPick(){
   if (pHdr && q && q.dataset.sig === pHdr.sig) pHdr.idx.qty = Number(q.value);
 }
 
+/* ══ 원두 마스터 붙여넣기 ══ */
+const BM_COLS = [   // [필드, 머리글 패턴]  — 머리글은 띄어쓰기·줄바꿈을 뗀 뒤 본다
+  ["mms_code", /원두코드|mms코드|^코드$|^mms$/i],
+  ["machine",  /머신|로스터/],
+  ["name",     /품목명|원두명|제품명/],
+  ["color",    /컬러|color|agtron/i],
+  ["report_no",/품목보고|보고번호/],
+  ["compose",  /조성|원산지|원료/],
+  ["note",     /적요|비고|메모/],
+  ["launch",   /출시/],
+  ["end_date", /종료/],
+];
+function bmHeader(R){
+  for (let i=0;i<Math.min(R.length,6);i++){
+    const idx = {};
+    R[i].forEach((c,j)=>{ const t = String(c||"").replace(/\s+/g,"");
+      if (!t) return;
+      for (const [k,re] of BM_COLS) if (idx[k]==null && re.test(t)) { idx[k]=j; break; } });
+    // 이름 + 마스터에만 있는 열(품목보고번호·조성·컬러·머신 중 둘 이상) 이 있어야 원두 마스터로 본다
+    const extra = ["report_no","compose","color","machine"].filter(k=>idx[k]!=null).length;
+    if (idx.name!=null && extra>=2) return { idx, start:i+1, rows:R };
+  }
+  return null;
+}
+const bmCell = (r,j,k) => {
+  if (j==null) return "";
+  let v = String(r[j]??"").trim();
+  if (k==="machine")   return v.split(/\s*\n\s*/).filter(Boolean).join(" / ");   // 칸 안 두 줄 → "P60_… / S70_…"
+  if (k==="report_no") return v.replace(/\s+/g,"");                            // "2010014↵7027120" → 붙여서
+  return v.replace(/\s*\n\s*/g," ").trim();
+};
+function previewBeanMaster(BM){
+  pRows = [];
+  if (!BM) {
+    $("pPrev").innerHTML = `<div class="hint bad" style="padding:0"><b>머리글을 찾지 못했습니다.</b>
+      엑셀에서 <b>머리글 줄까지 포함해</b> 복사해 주세요 — 품목명과 함께 머신종류·컬러·품목보고번호·조성 중 두 개 이상이 있어야 합니다.
+      <br>사진(스크린샷)은 칸 안 줄바꿈이 많은 이 표에서는 잘 안 읽힙니다 — 엑셀에서 직접 복사해 주세요.</div>`;
+    $("pApply").style.display = "none"; return;
+  }
+  const { idx, start, rows } = BM;
+  rows.slice(start).forEach(r=>{
+    const v = {}; BM_COLS.forEach(([k])=>{ v[k] = bmCell(r, idx[k], k); });
+    if (!v.name || /^(품목명|원두명|합계)$/.test(v.name)) return;
+    const code = v.mms_code && isCode(v.mms_code) ? v.mms_code : "";
+    let b = code ? beanByCode(code) : null, how = b ? "코드" : "";
+    if (!b) { b = DB.beans.find(x=>beanNrm(x.name)===beanNrm(v.name)) || null; if (b) how = "이름"; }
+    const ch = b ? BM_COLS.filter(([k])=>k!=="mms_code" || code).filter(([k])=>{
+        const nv = k==="mms_code" ? code : v[k]; return nv && String(b[k]??"") !== nv; }).map(([k])=>k) : [];
+    pRows.push({ v, code, b, how, ch });
+  });
+  const LBL = { mms_code:"코드", machine:"머신", name:"이름", color:"컬러", report_no:"품목보고번호",
+                compose:"조성", note:"적요", launch:"출시일", end_date:"종료일" };
+  const nNew = pRows.filter(r=>!r.b).length, nUpd = pRows.filter(r=>r.b && r.ch.length).length;
+  const found = BM_COLS.filter(([k])=>idx[k]!=null).map(([k])=>LBL[k]).join(" · ");
+  $("pPrev").innerHTML = `<div class="hint" style="padding:0 0 6px"><b>원두 마스터 표로 인식</b> — 읽은 열: ${found}</div>
+    <div style="overflow-x:auto"><table style="min-width:900px"><thead><tr><th>코드</th><th>원두명</th><th>머신</th><th>컬러</th><th>품목보고번호</th><th>조성</th><th>출시일</th><th>상태</th></tr></thead><tbody>` +
+    pRows.map(r=>`<tr><td class="l"><b>${r.code||'<span class="hint" style="padding:0">없음</span>'}</b></td>
+      <td class="l">${r.v.name}${r.b && r.b.name!==r.v.name ? `<br><span class="hint" style="padding:0;font-size:11px">등록명: ${r.b.name}</span>`:""}</td>
+      <td class="l" style="font-size:12px">${r.v.machine||"—"}</td><td class="c">${r.v.color||"—"}</td>
+      <td class="c">${r.v.report_no||"—"}</td><td class="l" style="font-size:12px">${r.v.compose||"—"}</td>
+      <td class="c">${r.v.launch||"—"}</td>
+      <td class="c">${!r.b ? '<span class="tag warn">신규</span>'
+        : r.ch.length ? `<span class="tag ok">갱신</span><br><span class="hint" style="padding:0;font-size:11px">${r.ch.map(k=>LBL[k]).join("·")}</span>`
+        : '<span class="tag">변경 없음</span>'}</td></tr>`).join("") +
+    `</tbody><tfoot><tr><td colspan="8" class="c">전체 ${pRows.length}종 · 신규 ${nNew} · 갱신 ${nUpd} · 변경 없음 ${pRows.length-nNew-nUpd}${
+      pRows.some(r=>!r.code)?` · 코드 없는 ${pRows.filter(r=>!r.code).length}종은 이름으로 등록 (코드는 나중에 넣으면 됩니다)`:""}</td></tr></tfoot></table></div>`;
+  $("pApply").style.display = (nNew + nUpd) ? "block" : "none";
+}
 function preview(){
   pRows = []; pHdr = null;
   const mode = $("pMode").value;
   $("pHelp").textContent = HELP[mode] || "";
   const L = lines();
+
+  // ── 원두 마스터 표 — MMS코드 모드로 붙여넣어도 머리글을 보고 알아서 넘어온다 ──
+  const BM = bmHeader(parseTSV($("pText").value));
+  if (BM && mode !== "beanmaster" && ["mmscode","cfecode","roast","stock_mms"].includes(mode)) {
+    $("pMode").value = "beanmaster";
+    toast("원두 마스터 표로 보여 [기준등록 · 원두 마스터] 모드로 바꿨습니다");
+    return preview();
+  }
+  if (mode==="beanmaster") return previewBeanMaster(BM);
 
   // ── 원두별 로스터기 배치수량 기준 ──
   if (mode==="beanroaster") {
@@ -11072,14 +11491,27 @@ function preview(){
   if (mode==="roast" || mode==="stock_mms") {
     const D = detectHeader(L); pHdr = D.hdr; applyQtyPick();
     (pHdr ? L.slice(D.start) : L).forEach(all=>{
-      let nameRaw="", qty=null;
-      if (pHdr) { const h = hdrRow(all); nameRaw = h.nameRaw; qty = h.qty; }
+      let nameRaw="", qty=null, code="";
+      if (pHdr) { const h = hdrRow(all); nameRaw = h.nameRaw; qty = h.qty; code = h.code; }
       else {
         const cols = all.filter(c=>c!=="" && c!=="-");
         if (!cols.length) return;
         for (let i=cols.length-1;i>=0;i--){ const v=Number(cols[i].replace(/,|kg/gi,""));
           if (!isNaN(v) && cols[i]!=="") { qty=v; cols.splice(i,1); break; } }
+        for (let i=0;i<cols.length;i++){
+          if (isCode(cols[i]) && beanByCode(cols[i])) { code=cols[i]; cols.splice(i,1); break; }
+          const m = cols[i].match(/^(\S+)\s+(.+)$/);
+          if (m && isCode(m[1]) && beanByCode(m[1])) { code=m[1]; cols[i]=m[2]; break; }
+        }
         nameRaw = cols.join(" ");
+      }
+      /* ★ MMS 코드가 등록된 원두면 코드만으로 찾는다 */
+      const bc = code ? beanByCode(code) : null;
+      if (bc) {
+        const ex = pRows.find(r=>r.bean===bc.name);
+        if (ex && qty!=null) { ex.qty = (Number(ex.qty)||0) + qty; ex.dup = (ex.dup||1)+1; }
+        else pRows.push({ nameRaw: nameRaw || code, qty, bean:bc.name, near:null, mkBean:null, code, viaCode:true });
+        return;
       }
       if (!nameRaw || /총\s*합\s*계|총\s*수\s*량|소\s*계|^합계|원두명/.test(nameRaw.replace(/\s+/g,""))) return;
       let bean = matchBean(nameRaw), near = null;
@@ -11087,6 +11519,8 @@ function preview(){
       // 그래도 없으면 이름 그대로 새로 등록
       const nb = bean ? null : String(nameRaw).replace(/[\[(].*?[\])]/g," ").replace(SPEC_RE," ")
                         .replace(/\s+/g," ").trim().replace(/^원두\s*/,"").trim();
+      const ex = bean && pRows.find(r=>r.bean===bean);       // 같은 원두 여러 줄 → 합산
+      if (ex && qty!=null) { ex.qty = (Number(ex.qty)||0) + qty; ex.dup = (ex.dup||1)+1; return; }
       pRows.push({ nameRaw, qty, bean, near, mkBean: bean ? null : (nb || null) });
     });
     const okN = pRows.filter(r=>(r.bean||r.mkBean) && r.qty!=null).length;
@@ -11096,9 +11530,10 @@ function preview(){
       pRows.map(r=>{
         const good = (r.bean||r.mkBean) && r.qty!=null;
         const tag = !good ? '<span class="tag bad">미매칭</span>'
+          : r.viaCode ? '<span class="tag ok">코드 매칭</span>'
           : r.near ? `<span class="tag warn">비슷한 이름 ${r.near}%</span>`
           : r.bean ? '<span class="tag ok">반영</span>' : '<span class="tag warn">신규 원두</span>';
-        return `<tr><td class="l">${r.nameRaw}</td><td class="l">${r.bean||r.mkBean||"—"}</td><td>${r.qty??"—"}</td>
+        return `<tr><td class="l">${r.code?`<b>${r.code}</b> `:""}${r.nameRaw===r.code?"":r.nameRaw}</td><td class="l">${r.bean||r.mkBean||"—"}</td><td>${r.qty??"—"}${r.dup>1?` <span class="hint" style="padding:0;font-size:11px">(${r.dup}줄 합산)</span>`:""}</td>
         <td class="c">${tag}</td></tr>`; }).join("") +
       `</tbody><tfoot><tr><td colspan="4" class="c">${okN}건 반영 가능 / 전체 ${pRows.length}건${mkN?` · 이 중 <b>${mkN}건은 원두를 새로 등록합니다</b>`:""}</td></tr></tfoot></table>`;
     $("pApply").style.display = okN ? "block" : "none";
@@ -11149,8 +11584,17 @@ function preview(){
         if (!cols.length) return;
         for (let i=cols.length-1;i>=0;i--){ const v=Number(cols[i].replace(/,/g,""));
           if (!isNaN(v) && cols[i]!=="") { qty=v; cols.splice(i,1); break; } }
+        // 코드 칸을 따로 떼어 둔다 — 코드만 있어도 품목을 찾는다
+        for (let i=0;i<cols.length;i++){
+          if (isCode(cols[i]) && productByCode(cols[i])) { code=cols[i]; cols.splice(i,1); break; }
+          const m = cols[i].match(/^(\S+)\s+(.+)$/);           // "CFE0002 원두 ..." 처럼 한 칸에 붙어 온 코드
+          if (m && isCode(m[1]) && productByCode(m[1])) { code=m[1]; cols[i]=m[2]; break; }
+        }
         nameRaw = cols.join(" ");
       }
+      /* ★ 코드가 등록된 품목이면 이름이 없거나 달라도 그 품목으로 본다 (코드가 이름보다 우선) */
+      const byCode = code ? productByCode(code) : null;
+      if (byCode) { pRows.push({ nameRaw: nameRaw || code, qty, p:byCode, mk:null, near:null, code, viaCode:true }); return; }
       if (!nameRaw || TOTAL_RE.test(nameRaw.replace(/\s+/g,"")) || /품목명/.test(nameRaw)) return;
       let p = matchProduct(nameRaw), mk = null, near = null;
       if (!p) {                                      // 목록에 없는 품목 → 이름에서 해석해 새로 만들 준비
@@ -11160,6 +11604,14 @@ function preview(){
       }
       pRows.push({ nameRaw, qty, p, mk, near, code });
     });
+    /* 같은 품목(같은 코드)이 여러 줄이면 수량을 자동으로 합친다 */
+    const agg={}, order=[];
+    pRows.forEach(r=>{
+      const k = r.p ? r.p.id : (r.mk ? `mk:${r.mk.bean}|${r.mk.spec}|${r.mk.grind}` : "x:"+order.length);
+      if (agg[k] && r.qty!=null) { agg[k].qty = (Number(agg[k].qty)||0) + Number(r.qty); agg[k].dup = (agg[k].dup||1) + 1; }
+      else if (!agg[k]) { agg[k] = {...r}; order.push(k); }
+    });
+    pRows = order.map(k=>agg[k]);
   }
   const okN = pRows.filter(r=>(r.p||r.mk) && r.qty!=null).length;
   const mkN2 = pRows.filter(r=>!r.p && r.mk && r.qty!=null).length;
@@ -11175,9 +11627,10 @@ function preview(){
            — 그 열의 수량은 <b>빠집니다</b>. 위 칸에서 머리글을 <b>1kg / 500g / 200g / 100g</b> 으로 고치고 [미리보기]를 다시 누르세요.` : "") +
         `</div>`; })() : "") +
     `<table><thead><tr><th>입력 품목명</th><th>매칭 품목</th><th>분쇄도</th><th>수량</th><th>상태</th></tr></thead><tbody>` +
-    pRows.map(r=>`<tr><td class="l">${r.nameRaw}</td><td class="l">${r.p?.name||(r.mk?r.mk.name:"")||"—"}</td>
-      <td class="c">${r.p?.grind||r.mk?.grind||"—"}</td><td>${r.qty??"—"}</td>
+    pRows.map(r=>`<tr><td class="l">${r.code?`<b>${r.code}</b> `:""}${r.nameRaw===r.code?"":r.nameRaw}</td><td class="l">${r.p?.name||(r.mk?r.mk.name:"")||"—"}</td>
+      <td class="c">${r.p?.grind||r.mk?.grind||"—"}</td><td>${r.qty??"—"}${r.dup>1?` <span class="hint" style="padding:0;font-size:11px">(${r.dup}줄 합산)</span>`:""}</td>
       <td class="c">${r.qty==null ? '<span class="tag bad">수량없음</span>'
+        : r.viaCode ? '<span class="tag ok">코드 매칭</span>'
         : r.p ? (r.near ? `<span class="tag warn">비슷한 이름 ${r.near}%</span>` : '<span class="tag ok">반영</span>')
         : r.mk ? (r.mk.near ? `<span class="tag warn">비슷한 이름 ${r.mk.near}%</span>` : '<span class="tag warn">신규 등록</span>')
         : '<span class="tag bad">미매칭</span>'}</td></tr>`).join("") +
@@ -11186,7 +11639,7 @@ function preview(){
   $("pApply").style.display = okN ? "block" : "none";
 }
 
-const PASTE_MODES = ["tally","ship","plan","cfe","roast","stock_cfe","stock_mms","cfecode","mmscode","beanroaster"];
+const PASTE_MODES = ["tally","ship","plan","cfe","roast","stock_cfe","stock_mms","cfecode","mmscode","beanroaster","beanmaster"];
 async function applyPaste(){
   const mode = $("pMode").value, withQty = $("pQty")?.checked;
   /* 모드를 못 읽으면 멈춘다 — 예전에 여기서 CFE 현재고를 말없이 덮어쓴 적이 있다 */
@@ -11210,6 +11663,24 @@ async function applyPaste(){
     });
     closePaste(); renderAll(); go("req");
     return toast(`${n}개 원두 로스터기 기준 등록`);
+  }
+  if (mode==="beanmaster") {
+    let made = 0, upd = 0;
+    pRows.forEach(r=>{
+      if (r.b && !r.ch.length) return;
+      const b = r.b || { id:uid(), name:r.v.name, mms_code:"", machine:"", color:"", report_no:"",
+                         compose:"", note:"", launch:"", end_date:"" };
+      BM_COLS.forEach(([k])=>{
+        if (k === "name") { if (!r.b) b.name = r.v.name; return; }      // 등록된 이름은 바꾸지 않는다 (품목·배치가 이름으로 묶여 있음)
+        const nv = k==="mms_code" ? r.code : r.v[k];
+        if (nv) b[k] = nv;                                               // 빈칸은 기존 값을 지우지 않는다
+      });
+      if (!r.b) { DB.beans.push(b); made++; } else upd++;
+      save("beans", b);
+    });
+    logAudit("원두 마스터 붙여넣기", `${made+upd}종`, `신규 ${made} · 갱신 ${upd}`);
+    closePaste(); renderAll(); go("base");
+    return toast(`원두 마스터 반영 — 신규 ${made}종 · 갱신 ${upd}종`);
   }
   if (mode==="mmscode") {
     if (withQty) actual.mms = {};
@@ -11536,6 +12007,7 @@ async function makeOrders(){
     toast(`${res.duplicates.map(x=>`${x.product_name} ${x.existing}건`).join(" · ")} 이(가) ` +
           `오늘 이미 대기 중입니다 — 추가로 냈습니다`);
   }
+  if (specAuto()) await sortOrdersBySpec(d, { silent:true });   // 1kg → 500g → 200g → 100g
   await syncMatTasks(rows, d);                 // 라벨 작업지시도 같이 만든다
   const mt = mtOf(d).filter(t=>t.status!=="작업완료");
   /* 감사이력은 create_orders · sync_material_tasks 가 서버에서 남깁니다 */
@@ -12137,6 +12609,8 @@ function renderOrder(){
     return `<div class="st"><div class="k">${st}</div><div class="v ${n?(WOST_TAG[st]||""):""}">${n}</div></div>`;
   }).join("");
 
+  $("woSortBar").innerHTML = sortBarHTML();
+  list.sort((a,b)=>String(a.machine||"~").localeCompare(String(b.machine||"~")) || byPriority(a,b));
   tbl("woTbl", ["순서","지시번호","품목","출고처","설비","계획","생산","부적합","진행","상태","담당",""],
     list.map(o=>{
       const p = prodById(o.product_id);
@@ -12145,7 +12619,7 @@ function renderOrder(){
         <td class="l"><b>${o.order_no}</b>${o.serial?`<br><span class="hint" style="padding:0;font-size:11px">${o.serial}</span>`:""}${
           o.batch_of>1?`<br><span class="tag" style="font-size:10px">배치 ${o.batch_seq}/${o.batch_of}</span>`:""}${
           isMixedOrder(o)?`<br><span class="tag bad" style="font-size:10px">배치 ${batchParts(o.batch_plan).length}개 섞임</span>`:""}</td>
-        <td class="l">${lock ? (p?.name||"—") : `<select onchange="setOrd('${o.id}','product_id',this.value)">${
+        <td class="l" style="white-space:nowrap">${specChip(specOf(o))}${lock ? (p?.name||"—") : `<select style="width:auto;max-width:calc(100% - 56px)" onchange="setOrd('${o.id}','product_id',this.value)">${
           PRODS().map(x=>`<option value="${x.id}" ${x.id===o.product_id?"selected":""}>${x.name}</option>`).join("")}</select>`}</td>
         <td class="c">${lock ? o.channel : `<select onchange="setOrd('${o.id}','channel',this.value)">${
           SHIP_CH.map(c=>`<option ${c===o.channel?"selected":""}>${c}</option>`).join("")}</select>`}</td>
@@ -12197,6 +12671,57 @@ async function renumberOrders(d, machine){
   if (!rows.length) return { ok:true, moved:0 };
   return mesReorderOrders({ rows, idem:`ord-n-${uid()}` });
 }
+/* ══ 규격순 우선순위 — 하나하나 ▲▼ 하지 않고 한 번에 ══
+   기계마다: 생산중 → 규격(1kg→500g→200g→100g) → 같은 원두끼리 → 홀빈 먼저
+   방향·자동정렬 여부는 이 기기에만 기억합니다 (설정 화면이 따로 없어도 되게) */
+const SPEC_KEY = "momos.specOrder", SPEC_AUTO_KEY = "momos.specAuto";
+function specDir(){ try { return localStorage.getItem(SPEC_KEY)==="asc" ? "asc" : "desc"; } catch(_){ return "desc"; } }
+function specAuto(){ try { return localStorage.getItem(SPEC_AUTO_KEY)!=="off"; } catch(_){ return true; } }
+function setSpecDir(){ try { localStorage.setItem(SPEC_KEY, specDir()==="asc"?"desc":"asc"); } catch(_){}
+  renderOrder(); renderWork(); toast(`규격 순서: ${specDir()==="asc"?"100g → 1kg (작은 것부터)":"1kg → 100g (큰 것부터)"}`); }
+function setSpecAuto(on){ try { localStorage.setItem(SPEC_AUTO_KEY, on?"on":"off"); } catch(_){}
+  toast(on ? "새 작업지시를 만들면 규격순으로 자동 정렬합니다" : "자동 정렬을 껐습니다"); }
+const specOf = o => Number(o.product_spec ?? prodById(o.product_id)?.spec_g) || 0;
+const specChip = g => g ? `<span class="specb s${bucketOf(g)}">${specLabel(g)}</span>` : "";
+function sortBarHTML(){
+  if (!can("plan")) return "";
+  const asc = specDir()==="asc";
+  return `<button class="btn primary" onclick="sortOrdersBySpec($('woDate').value||today())"
+      title="기계마다 규격순으로 순서를 한 번에 다시 매깁니다 (생산중인 지시는 맨 위에 둡니다)">규격순 정렬</button>
+    <button class="btn" onclick="setSpecDir()" title="큰 것부터 / 작은 것부터">${asc?"100g → 1kg":"1kg → 100g"} ⇅</button>
+    <label title="생산계획에서 작업지시를 만들 때 바로 규격순으로 정렬"><input type="checkbox" ${specAuto()?"checked":""}
+      onchange="setSpecAuto(this.checked)"> 새 지시 자동 정렬</label>`;
+}
+async function sortOrdersBySpec(d, opt = {}){
+  if (!opt.silent && !(await requireUser())) return;
+  if (!can("plan")) return opt.silent ? null : deny("plan");
+  const asc = specDir()==="asc";
+  const open = ordsOf(d).filter(o=>stIdx(o) < 2);
+  const machines = [...new Set(open.map(o=>o.machine||""))];
+  const rows = [];
+  machines.forEach(m=>{
+    open.filter(o=>(o.machine||"")===m).sort((a,b)=>{
+      const ra = a.status==="생산중" ? 0 : 1, rb = b.status==="생산중" ? 0 : 1;
+      if (ra !== rb) return ra - rb;                               // 하고 있는 건 그대로 맨 위
+      const sa = bucketOf(specOf(a)||100), sb2 = bucketOf(specOf(b)||100);
+      if (sa !== sb2) return asc ? sa - sb2 : sb2 - sa;
+      const pa = prodById(a.product_id), pb = prodById(b.product_id);
+      const bn = String(pa?.bean||"").localeCompare(String(pb?.bean||""), "ko");
+      if (bn) return bn;                                           // 같은 원두는 붙여서 — 청소·교체 줄이기
+      const ga = (pa?.grind||"홀빈")==="홀빈" ? 0 : 1, gb = (pb?.grind||"홀빈")==="홀빈" ? 0 : 1;
+      if (ga !== gb) return ga - gb;                               // 홀빈 먼저, 분쇄는 뒤
+      return (Number(a.batch_seq)||0) - (Number(b.batch_seq)||0) || byPriority(a,b);
+    }).forEach((o,k)=>{ if (Number(o.priority) !== k+1) rows.push({ id:o.id, priority:k+1 }); });
+  });
+  if (rows.length) {
+    const res = await mesReorderOrders({ rows, idem:`ord-spec-${uid()}` });
+    if (!res || !res.ok) { if (!opt.silent) toast(res?.message || "순서를 바꾸지 못했습니다"); return res; }
+  }
+  if (!opt.silent) { renderWork(); renderOrder();
+    toast(rows.length ? `규격순으로 정렬했습니다 — ${asc?"100g → 1kg":"1kg → 100g"} · ${rows.length}건 순서 변경`
+                      : "이미 규격순입니다"); }
+  return { ok:true, moved:rows.length };
+}
 const byPriority = (a,b) =>
   (Number(a.priority)||9999) - (Number(b.priority)||9999)
   || String(a.order_no).localeCompare(String(b.order_no));
@@ -12230,6 +12755,8 @@ function renderWork(){
   const canEdit = can("plan") && all.some(o=>o.status==="대기");
   $("wkMachBtn").innerHTML =
     (canEdit ? `<button class="btn ${wkLabelEdit?"primary":""}" onclick="setWkLabelEdit()">라벨 바꾸기</button>` : "") +
+    (canEdit ? `<button class="btn" onclick="sortOrdersBySpec($('wkDate').value||today())"
+       title="기계마다 규격순으로 순서를 한 번에 다시 매깁니다">규격순 정렬 (${specDir()==="asc"?"100g→1kg":"1kg→100g"})</button>` : "") +
     (mixedAll.length && can("plan") ? `<button class="btn primary" onclick="splitAllOrders()"
        title="배치가 여러 개 묶인 지시를 배치마다 한 장씩 나눕니다">배치별로 나누기 ${mixedAll.length}건</button>` : "") +
     (groups.length > 1
@@ -12247,7 +12774,7 @@ function renderWork(){
     const pct = pctOf(o), run = o.status==="생산중";
     return `<div class="wc ${run?"run":""}">
       <div class="hd">
-        <div class="nm"><span class="pri">${o.priority||"-"}</span>${p?.name||"품목 없음"}${
+        <div class="nm"><span class="pri">${o.priority||"-"}</span>${specChip(specOf(o))}${p?.name||"품목 없음"}${
           can("plan") ? `<span class="prib">
             <button onclick="moveOrd('${o.id}',-1)" title="먼저 하기">▲</button>
             <button onclick="moveOrd('${o.id}',1)" title="나중에 하기">▼</button></span>` : ""}</div>
@@ -12595,7 +13122,7 @@ function resetCaps(){
   renderAll(); toast("권한을 기본값으로 되돌렸습니다");
 }
 const PASTE_CAP = { ship:"plan", plan:"plan", tally:"plan", cfe:"base", roast:"roast",
-  stock_cfe:"stock", stock_mms:"stock", cfecode:"base", mmscode:"base", beanroaster:"base" };
+  stock_cfe:"stock", stock_mms:"stock", cfecode:"base", mmscode:"base", beanroaster:"base", beanmaster:"base" };
 const CAP_NAME = { plan:"생산계획·작업지시", work:"현장 생산", qc:"검수", ship:"출고",
   pqc:"품질(부적합)", base:"기준정보", stock:"재고확인", roast:"로스팅", log:"생산실적", sys:"초기화·백업" };
 const CAP_HELP = {
@@ -12823,7 +13350,7 @@ guard(["toggleProdOff","addLabel","addMaterial","scrapMat","autoLabels","inLabel
        "toggleBeanOff","setFullPack","setPackQty"], "base");
 guard(["setPlanSet","applyAlt","clearAlt"], "plan");
 guard(["addProduct","addBean","addBom","addMms","addMachine","addWorker","addRoaster",
-       "fillCodes","setBeanRoaster","setBeanAllow","resetBeanRule","delRow"], "base");
+       "fillCodes","setBeanRoaster","setBeanAllow","resetBeanRule","delRow","delSelected","offSelected"], "base");
 guard(["holdBatch","freeBatch","scrapBatch","takeHold"], "roast");
 guard(["applyStock","applyAllStock","setCount","assignUse","delUse","shiftAsOf","setMachState",
        "openCount","setCnt","cntFillBook","cntClear","cntFix","cntFixAll"], "stock");
@@ -12858,30 +13385,10 @@ $("fDate").value = today();
 $("wkDate").value = today();
 $("woDate").value = today();
 applyGuide();
-initDB().then(firstRun);
+initDB().then(()=>{ applyLoginChrome(); return firstRun(); });
 </script>
 
 <script>
-window.addEventListener("load",()=>{
-  // Gate is intentionally visible in HTML/CSS before JS. initDB hides it only after auth + app_users validation.
-  setTimeout(()=>{
-    if(dbMode==="supabase" && LOGIN_USER){
-      hidePersonalLogin();
-      const r=document.querySelector(".topbar .right");
-      if(r && !document.getElementById("loginIdentity")){
-        const x=document.createElement("span"); x.id="loginIdentity";
-        x.textContent=`로그인: ${LOGIN_USER.name} · ${isSystemAdmin()?"시스템 관리자":"일반 계정"} · ${ROLES[loginRole()]||loginRole()}`;
-        r.prepend(x);
-      }
-      if(r && !document.getElementById("personalLogoutBtn")){
-        const b=document.createElement("button");
-        b.id="personalLogoutBtn"; b.className="btn"; b.textContent="로그아웃";
-        b.onclick=connLogout;
-        r.appendChild(b);
-      }
-    } else if(dbMode!=="supabase") showPersonalLogin();
-  },150);
-});
 </script>
 
 </body>
