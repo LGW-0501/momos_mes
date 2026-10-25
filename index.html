@@ -63,6 +63,7 @@
   .gnb{width:84px; flex-shrink:0; background:var(--card); border-right:1px solid var(--line);
     display:flex; flex-direction:column; padding:12px 0; overflow-y:auto;}
   .gnb .menu{display:flex; flex-direction:column; gap:2px;}
+  .gnb .gnbOut{margin-top:auto; padding-top:8px; border-top:1px solid var(--line);}
   .gnb .menu button{background:transparent; border:none; color:var(--soft); font:inherit;
     padding:11px 4px 9px; cursor:pointer; display:flex; flex-direction:column; align-items:center; gap:5px;
     position:relative; transition:color .12s,background .12s;}
@@ -660,6 +661,7 @@
     .topbar .sysname{display:none;}
     .topbar .right{gap:8px;}
     .topbar .right .st{display:none;}
+    #loginIdentity{display:none;}
     .topbar .right select{max-width:108px; height:34px;}
     /* 역할 선택이 들어오면서 상단이 좁아짐 — 로고는 햄버거로 대신한다 */
     .topbar .wordmark{display:none;}
@@ -869,6 +871,9 @@
     <button data-s="cal" data-r="admin"><span class="ico">▩</span><span class="lb">캘린더</span></button>
     <button data-s="base" data-r="admin"><span class="ico">◇</span><span class="lb">기준정보</span></button>
   </nav>
+  <div class="menu gnbOut" id="gnbLogout" style="display:none">
+    <button onclick="askLogout()" title="로그아웃"><span class="ico">⏻</span><span class="lb">로그아웃</span></button>
+  </div>
 </div>
 
 <div class="main">
@@ -1008,6 +1013,7 @@
     <div class="panel">
       <div class="panel-h" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">작업지시 목록
         <span class="sortbar" id="woSortBar"></span></div>
+      <div class="selbar" id="selBar-orders"></div>
       <div class="panel-b"><table id="woTbl"></table></div>
     </div>
   </div>
@@ -1067,6 +1073,7 @@
     </div>
     <div class="panel">
       <div class="panel-h">집계 입력 내역 <span class="r hint">넣은 순서대로 · 지우면 계획이 바로 줄어듭니다</span></div>
+      <div class="selbar" id="selBar-tallies"></div>
       <div class="panel-b"><table id="tallyLog"></table></div>
     </div>
     <div class="panel">
@@ -1194,6 +1201,7 @@
           <li><b>계획(kg)</b>과 <b>배치수</b>를 넣으면 배치 줄이 그만큼 위에 펼쳐집니다</li>
           <li>맨 위에서 배치마다 <b>날짜·kg</b>만 확인하고 [받음]</li></ol>
       </div>
+      <div class="selbar" id="selBar-roasting"></div>
       <div class="panel-b"><table id="roastTbl"></table></div>
     </div>
     <div class="panel">
@@ -1262,7 +1270,9 @@
 <section class="screen" id="s-req">
   <div class="cond">
     <label>요청일</label><input type="date" id="rqDate">
-    <label>희망 로스팅일</label><input type="date" id="rqWant">
+    <label>희망 로스팅일</label><input type="date" id="rqWant" onchange="renderReq()">
+    <button class="btn" onclick="$('rqWant').value=today();renderReq()" title="당일 로스팅">오늘</button>
+    <button class="btn" onclick="$('rqWant').value=dayAfter(1);renderReq()" title="다음날 로스팅">내일</button>
     <label>요청자</label><select id="rqBy"></select>
     <button class="btn primary" onclick="loadNeed()">부족분 불러오기</button>
     <span class="seg">
@@ -1357,6 +1367,7 @@
     </div>
     <div class="panel">
       <div class="panel-h">전체 작업 현황 <span class="r hint">완료한 것까지</span></div>
+      <div class="selbar" id="selBar-material_tasks"></div>
       <div class="panel-b"><table id="mtTbl"></table></div>
     </div>
   </div>
@@ -1655,6 +1666,7 @@
           <span id="matAddBtn"></span>
           <button class="btn" onclick="csvLabel()">엑셀 다운로드</button>
         </div>
+        <div class="selbar" id="selBar-materials"></div>
         <div class="panel-b"><table id="tMat"></table></div>
       </div>
       <div class="panel">
@@ -1688,6 +1700,7 @@
       <div class="panel">
         <div class="panel-h">MMS 원두재고 (배치별) <span class="r"><button class="btn" onclick="addMms()">행추가</button></span></div>
         <div class="hint">보통 입고처리로 자동 등록됩니다 · 생산 시 오래된 배치부터 차감(선입선출)</div>
+        <div class="selbar" id="selBar-mms"></div>
         <div class="panel-b"><table id="tMms"></table></div>
       </div>
     </div>
@@ -2182,6 +2195,9 @@ function hidePersonalLogin(){ const g=$("personalLoginGate"); if(g){ g.classList
 /* 로그인된 사람 표시 + 로그아웃 버튼 — 데이터를 다 받은 뒤에 붙인다
    (전에는 화면이 뜨고 0.15초 뒤에 붙였는데, 그때 아직 불러오는 중이면 버튼이 안 생기고
     로그인 화면이 다시 떴다 — F5 를 누르면 로그아웃된 것처럼 보이던 원인) */
+async function askLogout(){
+  if (await ask(`${LOGIN_USER?.name || ""} 계정에서 로그아웃할까요?`, { title:"로그아웃", yes:"로그아웃" })) connLogout();
+}
 function applyLoginChrome(){
   if (dbMode === "supabase" && LOGIN_USER) {
     hidePersonalLogin();
@@ -2195,9 +2211,13 @@ function applyLoginChrome(){
     if (r && !$("personalLogoutBtn")) {
       const b = document.createElement("button");
       b.id = "personalLogoutBtn"; b.className = "btn"; b.textContent = "로그아웃";
-      b.onclick = async () => { if (await ask("로그아웃할까요?", { title:"로그아웃", yes:"로그아웃" })) connLogout(); };
+      b.onclick = askLogout;
       const av = $("avatar"); av ? r.insertBefore(b, av) : r.appendChild(b);
     }
+    /* 화면이 좁아 위쪽 버튼이 밀려나도 찾을 수 있게 — 왼쪽 메뉴 맨 아래 · 오른쪽 동그라미 */
+    const g = $("gnbLogout"); if (g) g.style.display = "";
+    const av = $("avatar");
+    if (av) { av.style.cursor = "pointer"; av.title = `${LOGIN_USER.name} — 눌러서 로그아웃`; av.onclick = askLogout; }
   } else {
     showPersonalLogin(dbMode === "conn_fail" ? `서버에 연결하지 못했습니다 — ${CONN_ERR || "인터넷 연결을 확인하세요"}`
       : (dbMode === "need_login" && CONN_ERR ? CONN_ERR : undefined));
@@ -2249,7 +2269,11 @@ function uid(){
   return "id" + Date.now().toString(36) + Math.random().toString(36).slice(2,10);
 }
 const fmt = n => (Math.round((Number(n)||0)*100)/100).toLocaleString();
-const today = () => new Date().toISOString().slice(0,10);
+/* ★ 날짜는 이 컴퓨터의 시계(한국 시간) 기준 — 전에는 세계표준시(UTC)라
+     아침 9시 전에는 "오늘"이 어제 날짜로 잡혔다 */
+const ymd = d => { const z = new Date(d.getTime() - d.getTimezoneOffset()*60000); return z.toISOString().slice(0,10); };
+const today = () => ymd(new Date());
+const dayAfter = (n=1) => { const d = new Date(); d.setDate(d.getDate()+n); return ymd(d); };
 const monthKey = d => String(d||"").slice(0,7);
 const specLabel = g => g>=1000 ? (g/1000)+"kg" : g+"g";
 /* 숫자 카드 한 장 (대시보드·라벨작업 공용) */
@@ -5790,7 +5814,7 @@ function renderDash(){
       <td class="bad"><b>${fmt(x.v)} ${x.u}</b></td>
       <td class="l">${x.t==="CFE"?"생산 미등록 또는 출고 과다":"입고 누락 또는 투입량 과다"}</td></tr>`));
 
-  const days = [...Array(14)].map((_,i)=>{ const d=new Date(); d.setDate(d.getDate()-13+i); return d.toISOString().slice(0,10); });
+  const days = [...Array(14)].map((_,i)=>dayAfter(-13+i));
   const pd={}, ld={};
   DB.logs.forEach(l=>{ pd[l.work_date]=(pd[l.work_date]||0)+Number(l.qty_ea||0); ld[l.work_date]=(ld[l.work_date]||0)+lossOf(l); });
   const mmsAgg={}; DB.mms.forEach(m=>{ if(Number(m.stock_kg)>0) mmsAgg[m.bean]=(mmsAgg[m.bean]||0)+Number(m.stock_kg); });
@@ -6063,8 +6087,9 @@ function renderTally(){
   /* 집계 입력 내역 */
   const log = [...talliesOf(d)].sort((a,b)=>
     (TALLY_ROUNDS.indexOf(a.round)-TALLY_ROUNDS.indexOf(b.round)) || String(a.at).localeCompare(String(b.at)));
-  tbl("tallyLog", ["No","차수","품목","수량(EA)","비고","넣은 사람","넣은 시각",""],
-    log.map((t,i)=>`<tr><td class="rowno">${i+1}</td>
+  SHOWN.tallies = log.map(t=>t.id);
+  tbl("tallyLog", [selAllBox("tallies"),"차수","품목","수량(EA)","비고","넣은 사람","넣은 시각",""],
+    log.map((t,i)=>`<tr class="${SEL.tallies.has(t.id)?"selrow":""}"><td class="rowno" style="white-space:nowrap">${selBox("tallies",t.id,i)}${i+1}</td>
       <td class="c"><select data-t="tallies" data-id="${t.id}" data-k="round" style="font-weight:800"
           onchange="setTally('${t.id}','round',this.value)">
         ${TALLY_ROUNDS.map(r=>`<option ${r===t.round?"selected":""}>${r}</option>`).join("")}</select></td>
@@ -6080,6 +6105,7 @@ function renderTally(){
     log.length ? `<td colspan="3" class="c">합 계 · ${log.length}건</td>
       <td><b>${fmt(log.reduce((s,t)=>s+Number(t.qty||0),0))}</b></td><td colspan="4"></td>` : null);
 
+  selBar("tallies");
   if ($("tallyRoundBtn")) $("tallyRoundBtn").innerHTML = rounds.map(r=>
     `<button class="btn danger" onclick="clearRound('${r}')">${r} 지우기</button>`).join(" ");
 }
@@ -6684,15 +6710,16 @@ function renderMt(){
     : "";
 
   // ── 전체 표 ──
-  tbl("mtTbl", ["상태","제품명","규격","생산수량","라벨 필요수량","작업지시","작업단위","보유수량","작업 후 예상","실제 작업","폐기","실제 차감","작업자","시작","완료","걸린 시간",'<span class="fix">처리</span>'],
-    list.map(t=>{
+  SHOWN.material_tasks = list.map(t=>t.id);
+  tbl("mtTbl", [selAllBox("material_tasks"),"상태","제품명","규격","생산수량","라벨 필요수량","작업지시","작업단위","보유수량","작업 후 예상","실제 작업","폐기","실제 차감","작업자","시작","완료","걸린 시간",'<span class="fix">처리</span>'],
+    list.map((t,ti)=>{
       const M = matById(t.material_id);
       const stock = Number(M?.stock||0);
       const after = Math.round((stock - (t.status==="작업완료" ? Number(t.used_qty||0) : Number(t.order_qty||0)))*100)/100;
       /* 이미 작업한 수량이 지금 계획보다 많으면 "라벨 붙은 봉투"가 남는다 */
       const made = t.status==="작업완료" ? Number(t.done_qty||0) : Number(t.order_qty||0);
       const over = Math.round((made - Number(t.need_qty||0))*100)/100;
-      return `<tr class="${t.status==="작업완료"?"":"wait"}">
+      return `<tr class="${t.status==="작업완료"?"":"wait"}${SEL.material_tasks.has(t.id)?" selrow":""}">${selTd("material_tasks",t.id,ti)}
         <td class="c"><span class="tag ${MT_TAG[t.status]}">${t.status}</span></td>
         <td class="l"><b>${t.product_name}</b><br><span class="hint" style="padding:0;font-size:11px">${t.material_name}</span></td>
         <td class="c">${specLabel(t.spec_g)}</td>
@@ -6729,7 +6756,7 @@ function renderMt(){
           <button class="btn" onclick="addRound('${t.product_id}','${t.material_id}')">추가 작업</button>
           <button class="btn danger" onclick="delRow('material_tasks','${t.id}')">삭제</button></td></tr>`;
     }),
-    list.length ? `<td colspan="3" class="c">합 계 · ${list.length}건</td>
+    list.length ? `<td colspan="4" class="c">합 계 · ${list.length}건</td>
       <td>${fmt(list.reduce((s,t)=>s+Number(t.plan_ea||0),0))}</td>
       <td><b>${fmt(list.reduce((s,t)=>s+Number(t.need_qty||0),0))}</b></td>
       <td><b>${fmt(list.reduce((s,t)=>s+Number(t.order_qty||0),0))}</b></td>
@@ -6739,6 +6766,7 @@ function renderMt(){
       <td><b>${fmt(list.reduce((s,t)=>s+Number(t.used_qty||0),0))}</b></td>
       <td colspan="3" class="c">걸린 시간 합 <b>${durText(list.reduce((s,t)=>s+(minsSince(t.start_at,t.end_at)||0),0))}</b></td>
       <td colspan="2"></td>` : null);
+  selBar("material_tasks");
 }
 function csvMt(){
   const d = $("mtDate")?.value || today();
@@ -7227,7 +7255,8 @@ function renderRoast(){
     ? `<span class="tag warn">입고 대기 ${waitN}건</span>`
     : `<span class="tag ok">입고 대기 없음</span>`;
 
-  tbl("roastTbl", ["No","로스팅일","원두","계획(kg)","입고(kg)","배치수","생길 배치번호","상태","",""],
+  SHOWN.roasting = rs.map(r=>r.id);
+  tbl("roastTbl", [selAllBox("roasting"),"로스팅일","원두","계획(kg)","입고(kg)","배치수","생길 배치번호","상태","",""],
     rs.map((r,i)=>{
       const kg = Number(r.received_kg) || Number(r.plan_kg) || 0;
       const n  = Math.max(1, Math.round(Number(r.batches)||1));
@@ -7239,7 +7268,7 @@ function renderRoast(){
       const nos = r.done
         ? mine.map(m=>batchNo(m))
         : Array.from({length:Math.min(n,6)}, (_,k)=>batchNo({roast_date:d, batch:start+k+1}));
-      return `<tr class="${r.done?"":"wait"}"><td class="rowno">${i+1}</td>
+      return `<tr class="${r.done?"":"wait"}${SEL.roasting.has(r.id)?" selrow":""}"><td class="rowno" style="white-space:nowrap">${selBox("roasting",r.id,i)}${i+1}</td>
       <td class="c">${inp("roasting",r.id,"plan_date",r.plan_date,"date")}</td>
       <td>${inp("roasting",r.id,"bean",r.bean,"text",'list="beanDL" data-bean="1" placeholder="쇼콜라 처럼 일부만"')}
           <div style="font-size:11px;margin-top:2px">${beanHelp(r.bean)}</div></td>
@@ -7257,6 +7286,7 @@ function renderRoast(){
       <td class="c"><button class="btn danger" onclick="delRow('roasting','${r.id}')">삭제</button></td></tr>`;
     }));
 
+  selBar("roasting");
   renderIn();                         // 받을 배치 줄을 계획에서 펼친다
   renderHold();                       // 보류 중인 배치
   renderHoldLog();                    // 보류 이력 (최근 90일)
@@ -8011,8 +8041,7 @@ const holdDays = h => h.held_at
 
 function renderHoldLog(){
   if (!$("hlogTbl")) return;
-  const from = new Date(); from.setDate(from.getDate()-90);
-  const F = from.toISOString().slice(0,10);
+  const F = dayAfter(-90);
   const list = DB.holds.filter(h=>String(h.held_at||"").slice(0,10) >= F)
     .sort((a,b)=>String(b.held_at).localeCompare(String(a.held_at)));
   const w = $("hlogWrap"); if (w) w.style.display = list.length ? "" : "none";
@@ -8696,7 +8725,8 @@ function clearManual(id){
 function delReq(id){ reqRows = reqRows.filter(r=>r.id!==id); renderReq(); }
 function renderReq(){
   if (!$("rqDate").value) $("rqDate").value = today();
-  if (!$("rqWant").value) { const d=new Date(); d.setDate(d.getDate()+1); $("rqWant").value = d.toISOString().slice(0,10); }
+  /* 희망 로스팅일 — 기본은 당일 (전에는 무조건 다음날로 잡혔다). [오늘]·[내일] 로 바로 바꿀 수 있다 */
+  if (!$("rqWant").value) $("rqWant").value = today();
   const by = $("rqBy").value;
   $("rqBy").innerHTML = DB.workers.map(w=>`<option ${w.name===by?"selected":""}>${w.name}</option>`).join("");
 
@@ -9224,7 +9254,7 @@ function renderLog(){
      <td>${fmt(openLogs.reduce((s,l)=>s+Number(l.qty_diff||0),0))}</td><td colspan="3"></td>`);
 
   const WD = ["일","월","화","수","목","금","토"];
-  const week = [...Array(7)].map((_,i)=>{ const t=new Date(); t.setDate(t.getDate()-6+i); return t.toISOString().slice(0,10); });
+  const week = [...Array(7)].map((_,i)=>dayAfter(-6+i));
   const wl = DB.logs.filter(l=>week.includes(l.work_date));
   tbl("weekTbl", ["일자","생산(EA)","건수","투입(kg)","로스(kg)","잔량(kg)"],
     week.map(w=>{
@@ -9725,7 +9755,7 @@ function renderPqc(){
     <div class="card"><div class="lb">이달 발생률 (생산 대비)</div>
       <div class="vl">${monEA?fmt(sum(thisMon)/monEA*100):0}<small>% · 생산 ${fmt(monEA)}EA</small></div></div>`;
 
-  const days = [...Array(30)].map((_,i)=>{ const t=new Date(); t.setDate(t.getDate()-29+i); return t.toISOString().slice(0,10); });
+  const days = [...Array(30)].map((_,i)=>dayAfter(-29+i));
   const byDay = {}; PQCL().forEach(q=>{ byDay[q.date]=(byDay[q.date]||0)+Number(q.qty||0); });
   const byWeek = {}; PQCL().forEach(q=>{ const k=weekKey(q.date); byWeek[k]=(byWeek[k]||0)+Number(q.qty||0); });
   const wk = Object.keys(byWeek).sort().slice(-12);
@@ -10043,6 +10073,7 @@ async function toggleProdOff(id){
   logAudit(p.off?"품목 사용중지":"품목 사용재개", p.name, p.code||"");
   renderAll(); toast(p.off ? `${p.name} — 사용중지 (이력은 그대로)` : `${p.name} — 다시 사용합니다`);
 }
+const RPC_DEL = ["material_tasks", "mms", "roasting"];   // 직접 쓰기가 잠긴 표 — 서버 함수로 지운다
 async function delRow(t,id){
   if (t === "workers" && !isSystemAdmin()) return toast("생산자 삭제는 시스템 관리자 계정만 가능합니다");
   const row = DB[t].find(r=>r.id===id);
@@ -10068,6 +10099,20 @@ async function delRow(t,id){
   }
 
   if (!(await ask(`[${nm}] 항목을 삭제할까요?\n되돌릴 수 없습니다.`, {title:"삭제 확인", yes:"삭제"}))) return;
+  /* ★ 화면에서 직접 못 지우는 표(라벨작업·MMS 배치·로스팅 계획)는 서버 함수로 — 029_admin_delete.sql
+       전에는 직접 지우려다 "permission denied" 로 실패했습니다 */
+  if (sb && RPC_DEL.includes(t)) {
+    const r = await rpc("admin_delete_row", { p_table:t, p_id:id, p_user_name:CURRENT_USER || LOGIN_USER?.name || "" }, ()=>null);
+    if (!r || !r.ok) {
+      const m = r?.message || "";
+      return ask(/admin_delete_row|schema cache/i.test(m)
+        ? "서버에 삭제 기능이 아직 없습니다.\n\nSupabase SQL Editor 에서 029_admin_delete.sql 을 한 번 실행한 뒤 다시 누르세요."
+        : `지우지 못했습니다 — ${m || "알 수 없는 오류"}`, { title:"삭제 실패", yes:"확인" });
+    }
+    DB[t] = DB[t].filter(r=>r.id!==id);
+    if (t === "roasting") DB.roast_lines = (DB.roast_lines||[]).filter(l=>l.plan_id!==id);
+    renderAll(); return toast("삭제했습니다");
+  }
   DB[t] = DB[t].filter(r=>r.id!==id); del(t,id);
   logAudit("삭제", nm, t);
   renderAll(); toast("삭제했습니다");
@@ -10076,12 +10121,26 @@ async function delRow(t,id){
    · 줄 왼쪽 네모를 누르면 선택 · Shift 를 누른 채 다른 줄을 누르면 그 사이를 전부 선택
    · 머리글 네모 = 지금 보이는 줄 전체
    · [코드 없는 줄 선택] — 잘못 들어간 빈 줄을 한 번에 고를 때 */
-const SEL = { products:new Set(), beans:new Set() }, SHOWN = { products:[], beans:[] }, SEL_LAST = {};
-const SEL_TBL = { products:"tProd", beans:"tBeans" };
+/* 표마다 [화면의 표 id · 지울 수 있는 권한 · 이름 표시] */
+const SEL_CFG = {
+  products:       { tbl:"tProd",    cap:"base",  nm:r=>r.name || r.code || "(빈 줄)" },
+  beans:          { tbl:"tBeans",   cap:"base",  nm:r=>r.name || r.mms_code || "(빈 줄)" },
+  tallies:        { tbl:"tallyLog", cap:"plan",  nm:r=>`${r.round} · ${prodById(r.product_id)?.name || r.product_name || "(품목 없음)"} ${fmt(r.qty)}EA` },
+  orders:         { tbl:"woTbl",    cap:"plan",  nm:r=>`${r.order_no} · ${r.product_name || prodById(r.product_id)?.name || ""} ${fmt(r.qty_plan||0)}EA` },
+  material_tasks: { tbl:"mtTbl",    cap:"plan",  nm:r=>`${r.product_name||""} · ${r.material_name||""} (${r.status})` },
+  roasting:       { tbl:"roastTbl", cap:"roast", nm:r=>`${r.plan_date||""} ${r.bean||""} ${fmt(r.plan_kg||0)}kg` },
+  materials:      { tbl:"tMat",     cap:"base",  nm:r=>`[${r.kind||""}] ${r.name||""}` },
+  mms:            { tbl:"tMms",     cap:"base",  nm:r=>`${batchLabel(r)} ${r.bean||""} ${fmt(r.stock_kg||0)}kg` },
+};
+const SEL = {}, SHOWN = {}, SEL_TBL = {}, SEL_CAP = {}, SEL_LAST = {};
+Object.entries(SEL_CFG).forEach(([k,c])=>{ SEL[k] = new Set(); SHOWN[k] = []; SEL_TBL[k] = c.tbl; SEL_CAP[k] = c.cap; });
+/* 줄 맨 앞 칸 — 표에 No 칸이 없으면 이 칸을 하나 더 붙인다 */
+const selTd = (t,id,i) => `<td class="c" style="width:34px;padding-right:0">${selBox(t,id,i)}</td>`;
 const selBox = (t,id,i) => `<input type="checkbox" class="selbox" data-sel="${t}" data-id="${id}" ${SEL[t].has(id)?"checked":""}
   onclick="selRow(event,'${t}','${id}',${i})" title="선택 (Shift+클릭 = 사이 전부)">`;
 const selAllBox = t => { const ids = SHOWN[t], all = ids.length && ids.every(id=>SEL[t].has(id));
-  return `<input type="checkbox" class="selbox" ${all?"checked":""} onclick="selAll('${t}',this.checked)" title="보이는 줄 전체 선택">No`; };
+  return `<input type="checkbox" class="selbox" ${all?"checked":""} onclick="selAll('${t}',this.checked)" title="보이는 줄 전체 선택">${
+    ["orders","material_tasks"].includes(t) ? "" : "No"}`; };
 function selSync(t){
   document.querySelectorAll(`#${SEL_TBL[t]} .selbox[data-sel="${t}"]`).forEach(cb=>{
     const on = SEL[t].has(cb.dataset.id); cb.checked = on; cb.closest("tr")?.classList.toggle("selrow", on); });
@@ -10099,6 +10158,12 @@ function selRow(e,t,id,i){
 }
 function selAll(t,on){ SHOWN[t].forEach(id=> on ? SEL[t].add(id) : SEL[t].delete(id)); selSync(t); }
 function selClear(t){ SEL[t].clear(); SEL_LAST[t] = null; selSync(t); }
+function selOrphan(){
+  const rows = DB.tallies.filter(r=>SHOWN.tallies.includes(r.id) && !prodById(r.product_id));
+  if (!rows.length) return toast("품목이 없어진 옛 기록이 없습니다");
+  rows.forEach(r=>SEL.tallies.add(r.id)); selSync("tallies");
+  toast(`옛 기록 ${rows.length}줄을 골랐습니다 — 확인 후 [선택 삭제]`);
+}
 function selNoCode(t){
   const k = t==="beans" ? "mms_code" : "code";
   const rows = DB[t].filter(r=>SHOWN[t].includes(r.id) && !String(r[k]||"").trim());
@@ -10110,13 +10175,16 @@ function selBar(t){
   const el = $("selBar-"+t); if (!el) return;
   [...SEL[t]].forEach(id=>{ if (!DB[t].some(r=>r.id===id)) SEL[t].delete(id); });   // 이미 지워진 것 정리
   const n = SEL[t].size;
-  el.innerHTML = can("base") ? (n
+  el.innerHTML = can(SEL_CAP[t]) ? (n
     ? `<span class="n">선택 ${n}개</span>
        <button class="btn danger" onclick="delSelected('${t}')">선택 삭제</button>
        ${t==="products" ? `<button class="btn" onclick="offSelected()">선택 사용중지</button>` : ""}
        <button class="btn" onclick="selClear('${t}')">선택 해제</button>`
     : `<span class="hint" style="padding:0">줄 왼쪽 네모로 여러 개 골라 한 번에 지울 수 있습니다 · Shift+클릭 = 사이 전부</span>`)
-    + `<button class="btn" style="margin-left:auto" onclick="selNoCode('${t}')">코드 없는 줄 선택</button>` : "";
+    + (t==="tallies"
+      ? `<button class="btn" style="margin-left:auto" onclick="selOrphan()" title="품목을 지워서 '옛 기록'으로 남은 줄">옛 기록 줄 선택</button>`
+      : (t==="products" || t==="beans")
+      ? `<button class="btn" style="margin-left:auto" onclick="selNoCode('${t}')">코드 없는 줄 선택</button>` : "") : "";
 }
 function delMany(t, ids){
   if (!ids.length) return;
@@ -10131,9 +10199,26 @@ function delMany(t, ids){
   }
 }
 async function delSelected(t){
+  if (!can(SEL_CAP[t])) return deny(SEL_CAP[t]);
   const rows = DB[t].filter(r=>SEL[t].has(r.id));
   if (!rows.length) return toast("고른 줄이 없습니다");
-  const nm = r => (t==="beans" ? r.name : r.name) || (t==="beans" ? r.mms_code : r.code) || "(빈 줄)";
+  if (t === "tallies") {
+    if (!(await requireUser())) return;
+    const sum = rows.reduce((a,r)=>a+Number(r.qty||0),0);
+    const msg = `집계 ${rows.length}줄 (합계 ${fmt(sum)}EA) 을 지웁니다. 지우면 계획이 바로 줄어듭니다.\n\n` +
+      rows.slice(0,12).map(r=>`· ${r.round} · ${prodById(r.product_id)?.name || r.product_name || "(품목 없음)"} ${fmt(r.qty)}EA`).join("\n") +
+      (rows.length>12 ? `\n… 외 ${rows.length-12}줄` : "");
+    if (!(await ask(msg, { title:"집계 선택 삭제", yes:`${rows.length}줄 삭제`, danger:true }))) return;
+    const drop = new Set(rows.map(r=>r.id));
+    DB.tallies = DB.tallies.filter(r=>!drop.has(r.id));
+    rows.forEach(r=>{ if (r.product_id in planEA) delete planEA[r.product_id]; });
+    delMany("tallies", [...drop]);
+    logAudit("집계 선택 삭제", `${rows.length}줄`, `합계 ${fmt(sum)}EA`);
+    SEL.tallies.clear(); SEL_LAST.tallies = null;
+    renderAll(); return toast(`집계 ${rows.length}줄을 지웠습니다`);
+  }
+  if (["orders","material_tasks","roasting","mms","materials"].includes(t)) return delSelectedRows(t, rows);
+  const nm = SEL_CFG[t].nm;
   const list = rows.slice(0,12).map(r=>`· ${nm(r)}`).join("\n") + (rows.length>12 ? `\n… 외 ${rows.length-12}개` : "");
   let note = "", dropIds = rows.map(r=>r.id);
   if (t === "products") {
@@ -10173,6 +10258,52 @@ async function delSelected(t){
   SEL[t].clear(); SEL_LAST[t] = null;
   renderAll();
   toast(`${dropIds.length}개 삭제${t==="products"?note:""}`);
+}
+/* 작업지시 · 라벨작업 · 로스팅 · MMS 배치 · 부자재 — 한 줄씩 서버 규칙대로 지우고, 안 되는 줄은 이유를 모아 보여준다 */
+async function delSelectedRows(t, rows){
+  if (!(await requireUser())) return;
+  const nm = SEL_CFG[t].nm;
+  let skip = [];
+  if (t === "orders") { skip = rows.filter(o=>stIdx(o) >= 2); rows = rows.filter(o=>stIdx(o) < 2); }
+  if (t === "material_tasks") { skip = rows.filter(x=>x.status!=="대기"); rows = rows.filter(x=>x.status==="대기"); }
+  if (!rows.length) return ask(`고른 줄은 모두 지울 수 없는 상태입니다.\n\n` +
+    (t==="orders" ? "생산이 끝난 지시는 생산실적에서 취소해야 합니다." : "시작했거나 끝난 라벨작업은 [되돌리기]를 먼저 하세요."),
+    { title:"선택 삭제", yes:"확인" });
+  let warn = "";
+  if (t === "materials") {
+    const linked = rows.filter(M=>DB.products.some(p=>p.label_id===M.id) || DB.bom.some(b=>b.material_id===M.id));
+    if (linked.length) warn = `\n\n※ ${linked.length}개는 품목 라벨·BOM 에 연결돼 있습니다 — 지우면 그 품목은 "라벨 미지정"이 됩니다.`;
+  }
+  const msg = `${rows.length}개를 삭제합니다. 되돌릴 수 없습니다.` +
+    (skip.length ? `\n(지울 수 없는 상태 ${skip.length}개는 건너뜁니다)` : "") + warn + `\n\n` +
+    rows.slice(0,12).map(r=>`· ${nm(r)}`).join("\n") + (rows.length>12 ? `\n… 외 ${rows.length-12}개` : "");
+  if (!(await ask(msg, { title:"선택 삭제", yes:`${rows.length}개 삭제`, danger:true }))) return;
+
+  const ok = [], fail = [];
+  toast(`지우는 중… 0 / ${rows.length}`);
+  for (const r of rows) {
+    let res;
+    if (t === "orders") res = await mesDeleteOrder({ order_id:r.id, idem:`od-${r.id}-${uid()}` });
+    else if (t === "materials" || !sb) { res = { ok:true }; }
+    else res = await rpc("admin_delete_row", { p_table:t, p_id:r.id, p_user_name:CURRENT_USER || LOGIN_USER?.name || "" }, ()=>({ ok:true }));
+    (res && res.ok ? ok : fail).push({ r, m:res?.message || "" });
+    if ((ok.length + fail.length) % 5 === 0) toast(`지우는 중… ${ok.length + fail.length} / ${rows.length}`);
+  }
+  const gone = new Set(ok.map(x=>x.r.id));
+  if (t === "materials") delMany("materials", [...gone]);
+  else if (!sb && t !== "orders") gone.forEach(id=>del(t, id));
+  DB[t] = DB[t].filter(r=>!gone.has(r.id));
+  if (t === "roasting") DB.roast_lines = (DB.roast_lines||[]).filter(l=>!gone.has(l.plan_id));
+  if (t !== "orders" && ok.length) logAudit("선택 삭제", `${ok.length}개`, `${t} · ${ok.slice(0,5).map(x=>nm(x.r)).join(", ")}${ok.length>5?" 외":""}`);
+  SEL[t].clear(); SEL_LAST[t] = null;
+  renderAll();
+  if (fail.length) {
+    const fn = fail.find(x=>/admin_delete_row|schema cache/i.test(x.m))
+      ? "\n\n서버에 삭제 기능이 아직 없습니다 — 029_admin_delete.sql 을 먼저 실행하세요." : "";
+    return ask(`${ok.length}개 삭제 · ${fail.length}개는 지우지 못했습니다.${fn}\n\n` +
+      fail.slice(0,8).map(x=>`· ${nm(x.r)} — ${x.m || "오류"}`).join("\n"), { title:"선택 삭제 결과", yes:"확인" });
+  }
+  toast(`${ok.length}개 삭제${skip.length ? ` · ${skip.length}개는 상태 때문에 건너뜀` : ""}`);
 }
 async function offSelected(){
   const rows = DB.products.filter(r=>SEL.products.has(r.id) && !r.off);
@@ -10257,6 +10388,7 @@ function renderBase(){
      <td colspan="4"></td>`);
 
   selBar("products"); selBar("beans");
+  setTimeout(()=>{ selBar("materials"); selBar("mms"); });
 
   // ── 부자재 재고 ──
   const mats = matKindFilter ? matsOf(matKindFilter) : DB.materials;
@@ -10273,14 +10405,15 @@ function renderBase(){
   if ($("matAddBtn")) $("matAddBtn").innerHTML =
     MAT_KINDS.map(k=>`<button class="btn ${matKindFilter===k?"primary":""}" onclick="addMaterial('${k}')">${k} 추가</button>`).join(" ");
 
-  tbl("tMat", ["No","구분","품목명","코드","규격","단위","1묶음","현재고","보유 묶음","안전재고","상태","최근 입고","최근 사용","연결 품목",'<span class="fix">처리</span>',""],
+  SHOWN.materials = mats.map(M=>M.id);
+  tbl("tMat", [selAllBox("materials"),"구분","품목명","코드","규격","단위","1묶음","현재고","보유 묶음","안전재고","상태","최근 입고","최근 사용","연결 품목",'<span class="fix">처리</span>',""],
     mats.map((M,i)=>{
       const pack = Math.max(1, Math.round(Number(M.pack_qty)||1));
       const st = Number(M.stock||0), low = st < Number(M.safety||0);
       const ps = DB.products.filter(p=>p.label_id===M.id);
       const used = DB.bom.filter(b=>b.material_id===M.id);
       const names = [...new Set([...ps.map(p=>p.name), ...used.map(b=>prodById(b.product_id)?.name).filter(Boolean)])];
-      return `<tr class="${low?"heldrow":""}"><td class="rowno">${i+1}</td>
+      return `<tr class="${low?"heldrow":""}${SEL.materials.has(M.id)?" selrow":""}"><td class="rowno" style="white-space:nowrap">${selBox("materials",M.id,i)}${i+1}</td>
         <td class="c"><select data-t="materials" data-id="${M.id}" data-k="kind" style="font-weight:800;min-width:96px">
           ${MAT_KINDS.map(k=>`<option ${k===M.kind?"selected":""}>${k}</option>`).join("")}</select>
           ${MAT_HINT[M.kind]?`<br><span class="hint" style="padding:0;font-size:10.5px">${MAT_HINT[M.kind]}</span>`:""}</td>
@@ -10376,9 +10509,10 @@ function renderBase(){
       : `<div class="hint" style="padding:14px 2px">품목을 먼저 등록하세요.</div>`;
   }
 
-  tbl("tMms", ["No","배치","원두","로스팅일","그날 몇 번째","재고(kg)","상미 잔여",""],
+  SHOWN.mms = DB.mms.map(m=>m.id);
+  tbl("tMms", [selAllBox("mms"),"배치","원두","로스팅일","그날 몇 번째","재고(kg)","상미 잔여",""],
     DB.mms.map((m,i)=>{ const st=shelfState(m.roast_date), live=Number(m.stock_kg)>0;
-      return `<tr><td class="rowno">${i+1}</td><td class="l"><b>${batchLabel(m)}</b></td>
+      return `<tr class="${SEL.mms.has(m.id)?"selrow":""}"><td class="rowno" style="white-space:nowrap">${selBox("mms",m.id,i)}${i+1}</td><td class="l"><b>${batchLabel(m)}</b></td>
         <td class="l">${inp("mms",m.id,"bean",m.bean,"text",'list="beanDL" data-bean="1"')}</td>
         <td class="c">${inp("mms",m.id,"roast_date",m.roast_date,"date")}</td>
         <td>${inp("mms",m.id,"batch",m.batch,"number")}</td>
@@ -12610,12 +12744,14 @@ function renderOrder(){
   }).join("");
 
   $("woSortBar").innerHTML = sortBarHTML();
+  setTimeout(()=>selBar("orders"));
   list.sort((a,b)=>String(a.machine||"~").localeCompare(String(b.machine||"~")) || byPriority(a,b));
-  tbl("woTbl", ["순서","지시번호","품목","출고처","설비","계획","생산","부적합","진행","상태","담당",""],
-    list.map(o=>{
+  SHOWN.orders = list.map(o=>o.id);
+  tbl("woTbl", [selAllBox("orders"),"순서","지시번호","품목","출고처","설비","계획","생산","부적합","진행","상태","담당",""],
+    list.map((o,oi)=>{
       const p = prodById(o.product_id);
       const lock = stIdx(o) >= 2;
-      return `<tr><td>${lock?o.priority:`<input type="number" class="num" style="width:52px" value="${o.priority||0}" onchange="setOrd('${o.id}','priority',this.value)">`}</td>
+      return `<tr class="${SEL.orders.has(o.id)?"selrow":""}">${selTd("orders",o.id,oi)}<td>${lock?o.priority:`<input type="number" class="num" style="width:52px" value="${o.priority||0}" onchange="setOrd('${o.id}','priority',this.value)">`}</td>
         <td class="l"><b>${o.order_no}</b>${o.serial?`<br><span class="hint" style="padding:0;font-size:11px">${o.serial}</span>`:""}${
           o.batch_of>1?`<br><span class="tag" style="font-size:10px">배치 ${o.batch_seq}/${o.batch_of}</span>`:""}${
           isMixedOrder(o)?`<br><span class="tag bad" style="font-size:10px">배치 ${batchParts(o.batch_plan).length}개 섞임</span>`:""}</td>
@@ -12635,7 +12771,7 @@ function renderOrder(){
             ? `<button class="btn primary" onclick="splitOrder('${o.id}')">배치별로 나누기</button> ` : ""}${
           lock?"":`<button class="btn danger" onclick="delOrder('${o.id}')">삭제</button>`}</td></tr>`;
     }),
-    `<td colspan="5" class="c">합 계 · ${list.length}건</td><td>${fmt(sum("qty_plan"))}</td>
+    `<td colspan="6" class="c">합 계 · ${list.length}건</td><td>${fmt(sum("qty_plan"))}</td>
      <td>${fmt(sum("qty_done"))}</td><td>${fmt(sum("qty_ng"))}</td><td colspan="4"></td>`);
 }
 
@@ -13350,7 +13486,7 @@ guard(["toggleProdOff","addLabel","addMaterial","scrapMat","autoLabels","inLabel
        "toggleBeanOff","setFullPack","setPackQty"], "base");
 guard(["setPlanSet","applyAlt","clearAlt"], "plan");
 guard(["addProduct","addBean","addBom","addMms","addMachine","addWorker","addRoaster",
-       "fillCodes","setBeanRoaster","setBeanAllow","resetBeanRule","delRow","delSelected","offSelected"], "base");
+       "fillCodes","setBeanRoaster","setBeanAllow","resetBeanRule","delRow","offSelected"], "base");
 guard(["holdBatch","freeBatch","scrapBatch","takeHold"], "roast");
 guard(["applyStock","applyAllStock","setCount","assignUse","delUse","shiftAsOf","setMachState",
        "openCount","setCnt","cntFillBook","cntClear","cntFix","cntFixAll"], "stock");
