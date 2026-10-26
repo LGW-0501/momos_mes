@@ -2371,7 +2371,7 @@
     <div class="panel-h">비밀번호 변경 <span class="r hint" id="pwWho"></span></div>
     <div class="pwf" style="padding:6px 18px 16px">
       <label>현재 비밀번호</label><input id="pwCur" type="password" autocomplete="current-password">
-      <label>새 비밀번호 (4자 이상)</label><input id="pwNew" type="password" autocomplete="new-password">
+      <label>새 비밀번호 (6자 이상)</label><input id="pwNew" type="password" autocomplete="new-password">
       <label>새 비밀번호 확인</label><input id="pwNew2" type="password" autocomplete="new-password">
     </div>
     <div style="padding:12px 18px;display:flex;gap:8px;justify-content:flex-end;border-top:1px solid var(--line)">
@@ -6134,6 +6134,7 @@ renderFavs();
 
 /* ══ 업데이트 내역 — 어디에 뭘 바꿨는지 (최근 것이 위) ══ */
 const CHANGELOG = [
+  ["2026-10-26", "비밀번호 변경", "실패 이유가 금방 사라지는 토스트 대신 창으로 남음 · 6자 이상(서버 규칙) · 성공도 창으로 확인"],
   ["2026-10-26", "상단 🔔 알림", "다른 기기에서 생긴 일이 역할에 맞게 뜸 — 생산 완료(검수에게) · 검수 반려+사유(현장에게) · 검수 완료(출고) · 라벨 완료 · 새 문의(관리자) · 문의 답변(쓴 사람). 토스트+소리+진동, 종 누르면 목록, 계정 메뉴에서 소리 끄기"],
   ["2026-10-26", "문의 (새 화면)", "오류·요청·질문을 적어 보내면 관리자가 접수→확인중→완료로 바꾸고 답변 — 메뉴에 접수 건수 뱃지"],
   ["2026-10-26", "기준정보 › 계정 관리", "[공용 (작업자 선택)] 체크 — 태블릿 하나를 여러 명이 쓰는 계정은 들어올 때 작업자를 고름 (기록은 고른 이름으로 남음)"],
@@ -12347,20 +12348,29 @@ async function changeMyPassword(){
 }
 /* 비밀번호 바꾸기 — 기준정보 표와 계정 메뉴 창이 같이 쓴다 */
 async function doChangePassword(cur, n1, n2){
-  if(!sb || !LOGIN_USER) { toast("개인 로그인이 필요합니다"); return false; }
-  if(!cur) { toast("현재 비밀번호를 입력해 주세요"); return false; }
-  if(n1.length<4) { toast("새 비밀번호는 4자 이상 입력해 주세요"); return false; }
-  if(n1!==n2) { toast("새 비밀번호 확인이 일치하지 않습니다"); return false; }
-  if(cur===n1) { toast("현재 비밀번호와 다른 비밀번호를 입력해 주세요"); return false; }
+  const fail = async m => { await ask(m, { title:"비밀번호 변경 안 됨", yes:"확인" }); return false; };
+  if(!sb || !LOGIN_USER) return fail("개인 로그인이 필요합니다");
+  if(!cur) return fail("현재 비밀번호를 입력해 주세요");
+  if(n1.length<6) return fail("새 비밀번호는 6자 이상이어야 합니다 (서버 규칙)");
+  if(n1!==n2) return fail("새 비밀번호 두 칸이 서로 다릅니다");
+  if(cur===n1) return fail("현재 비밀번호와 같습니다 — 다른 비밀번호를 적어 주세요");
   try{
     const email=LOGIN_USER.email || loginEmailOf(LOGIN_USER.login_id);
+    if(!email) throw new Error("로그인 ID에서 이메일을 만들지 못했습니다");
     const {error:reauthErr}=await sb.auth.signInWithPassword({email,password:cur});
     if(reauthErr) throw new Error("현재 비밀번호가 맞지 않습니다");
     const {error}=await sb.auth.updateUser({password:n1});
-    if(error) throw error;
-    toast("비밀번호를 변경했습니다");
+    if(error){
+      const m = String(error.message||"");
+      if (/reauthentication|nonce/i.test(m)) throw new Error("서버가 '비밀번호 변경 시 재인증(Secure password change)'을 요구합니다 — Supabase › Authentication › Settings 에서 그 옵션을 끄면 됩니다");
+      if (/same password|different from the old/i.test(m)) throw new Error("현재 비밀번호와 같습니다");
+      if (/at least|length|characters/i.test(m)) throw new Error("비밀번호가 서버 규칙(길이·문자)에 안 맞습니다 — " + m);
+      throw new Error(m);
+    }
+    logAudit("비밀번호 변경", LOGIN_USER.login_id||"", "본인");
+    await ask("비밀번호를 바꿨습니다.\n다음 로그인부터 새 비밀번호를 쓰세요.", { title:"비밀번호 변경", yes:"확인" });
     return true;
-  }catch(e){ toast(`비밀번호 변경 실패 — ${e?.message||e}`); return false; }
+  }catch(e){ return fail(`변경하지 못했습니다 — ${e?.message||e}`); }
 }
 function openPwDlg(){
   closeAcct();
