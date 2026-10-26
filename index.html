@@ -2059,7 +2059,7 @@
             <button class="btn primary" onclick="seedBeanMaster()">원두 마스터 다시 넣기</button>
             <button class="btn" onclick="openPaste('mmscode')">엑셀로 MMS코드 넣기</button>
             <button class="btn" onclick="openPaste('beanmaster')">엑셀로 원두 마스터 넣기</button>
-            <button class="btn" onclick="applyBeanRules()" title="머신 종류 칸이 '하바나 싱글'·'싱글'·'하바나'인 원두를 S35 전용으로, 1배치 kg을 하바나 싱글 10 · 싱글 20으로 채웁니다">싱글·하바나 세팅</button>
+            <button class="btn" onclick="applyBeanRules()" title="머신 종류 칸(S35_하바나 싱글 · S70_시그니처 블렌드 …)대로 로스터기 가능 칸과 1배치 kg(하바나 싱글 10 · 싱글 20)을 채웁니다">머신 종류대로 세팅</button>
             <button class="btn" onclick="addBean()">행추가</button>
             <button class="btn" onclick="csvBeans()">엑셀 다운로드</button></span></div>
         <div class="hint">포장 전 원두(반제품)입니다. <b class="bad">컬러 · 품목보고번호 · 원산지</b>는 한글표시사항(식품표시광고법)에 들어가는 값이라
@@ -6138,7 +6138,7 @@ const CHANGELOG = [
   ["2026-10-26", "상단 🔔 알림", "다른 기기에서 생긴 일이 역할에 맞게 뜸 — 생산 완료(검수에게) · 검수 반려+사유(현장에게) · 검수 완료(출고) · 라벨 완료 · 새 문의(관리자) · 문의 답변(쓴 사람). 토스트+소리+진동, 종 누르면 목록, 계정 메뉴에서 소리 끄기"],
   ["2026-10-26", "문의 (새 화면)", "오류·요청·질문을 적어 보내면 관리자가 접수→확인중→완료로 바꾸고 답변 — 메뉴에 접수 건수 뱃지"],
   ["2026-10-26", "기준정보 › 계정 관리", "[공용 (작업자 선택)] 체크 — 태블릿 하나를 여러 명이 쓰는 계정은 들어올 때 작업자를 고름 (기록은 고른 이름으로 남음)"],
-  ["2026-10-26", "기준정보 › 원두·MMS코드", "머신 종류 칸이 '하바나 싱글'이면 1배치 10kg·S35, '싱글'이면 20kg·S35 로 자동 (생산계획·로스팅 요청 둘 다) · [싱글·하바나 세팅] 누르면 로스터기 칸에도 그대로 적힘"],
+  ["2026-10-26", "기준정보 › 원두·MMS코드 › 머신 종류", "'S35_하바나 싱글' → S35만 · 10kg, 'S35_일반 싱글' → S35만 · 20kg, 'S70_시그니처 블렌드' → S70만 · 기본 kg, 'P60_… / S70_…' → 둘 다 — 자동 적용 (생산계획·배치 번호·로스팅 요청) · [머신 종류대로 세팅] 누르면 로스터기 칸에도 적힘"],
   ["2026-10-26", "생산계획 › [원두별 규칙]", "표에 kg이 안 적힌 원두만 이름 규칙(하바나 싱글 10·싱글 20·S35)으로 대신 잡음 — 표가 먼저"],
   ["2026-10-26", "기준정보 (품목·원두·부자재·기계·생산자 표)", "칸을 고치면 바로 저장되던 것 → 노란색으로 모아 두고 아래 [저장] 누르면 \"N건을 저장하시겠습니까?\" 묻고 저장 · [취소]로 되돌림 · 다른 화면으로 가면 저장할지 물어봄"],
   ["2026-10-26", "생산실적", "[엑셀로 지난 실적 넣기] — 날짜 · CFE코드 · 수량(·작업자·기계) 붙여넣으면 날짜순으로 등록, 배치·일련번호·봉투 LOT 자동"],
@@ -6883,7 +6883,9 @@ function virtBatchKg(bean){
   const own = rs.reduce((best, r)=>{ const row = brRow(bean, r.id); const kg = Number(row?.batch_kg||0);
     return kg > 0 ? Math.max(best, Math.round(kg * Number(r.yield_pct||100)/100 * 100)/100) : best; }, 0);
   if (own > 0) return own;
-  /* ② 머신 종류(하바나 싱글 10 · 싱글 20) 규칙 */
+  /* ② 머신 종류 칸(하바나 싱글 10 · 싱글 20) — 그 로스터기 수율로 */
+  const sp = machineSpec(bean);
+  if (sp.kg > 0) { const ro = machineRoasters(bean)[0]; return Math.round(sp.kg * Number(ro?.yield_pct||100)/100 * 100)/100; }
   const rule = ruleKgFor(bean); if (rule) { const ro = ruleRoasterFor(bean); return Math.round(rule.kg * Number(ro?.yield_pct||100)/100 * 100)/100; }
   /* ③ 로스터기 기본 1배치 kg  ④ 생산계획의 기본 kg */
   const v = rs.reduce((best, r)=>Math.max(best, Math.round(capFor(bean, r.id) * Number(r.yield_pct||100)/100 * 100)/100), 0);
@@ -9950,9 +9952,23 @@ let reqRows = [];   // {id, bean, need_kg, roaster_id, note}
 const roasterById = id => DB.roasters.find(r=>r.id===id);
 const brRow = (bean, rid) => DB.bean_roasters.find(x=>x.bean===bean && x.roaster_id===rid);
 const hasBeanRule = bean => DB.bean_roasters.some(x=>x.bean===bean);
-/* 이 원두를 이 로스터기에서 돌릴 수 있는지 — 기준 미등록 원두는 전체 가능 */
+/* ★ 원두 표의 "머신 종류" 칸 읽기 — "S35_하바나 싱글", "S70_시그니처 블렌드", "P60_코스트코 블렌드 / S70_코스트코 블렌드"
+     → 로스터기 목록 + 종류. 종류가 "하바나 싱글"이면 1배치 10kg, 그 외 "싱글"이면 20kg, 블렌드는 로스터기 기본 kg */
+function machineSpec(bean){
+  const b = beanInfo(bean); const raw = String(b?.machine||"").trim();
+  if (!raw) return { roasters:[], kg:0, kind:"", raw:"" };
+  const parts = raw.split(/[\/,;]/).map(x=>x.trim()).filter(Boolean);
+  const roasters = [], kinds = [];
+  parts.forEach(p=>{ const m = p.match(/^([A-Za-z]+\s*\d+)\s*[_\-:]?\s*(.*)$/); if (m) { roasters.push(m[1].replace(/\s+/g,"").toUpperCase()); if (m[2]) kinds.push(m[2].trim()); } else kinds.push(p); });
+  const kind = kinds.join(" / ");
+  const k = kind.replace(/\s+/g,"");
+  const kg = (k.includes("하바나") && k.includes("싱글")) ? 10 : k.includes("싱글") ? 20 : 0;
+  return { roasters:[...new Set(roasters)], kg, kind, raw };
+}
+const machineRoasters = bean => { const sp = machineSpec(bean); return sp.roasters.length ? DB.roasters.filter(r=>r.active!==false && sp.roasters.includes(String(r.name).replace(/\s+/g,"").toUpperCase())) : []; };
+/* 이 원두를 이 로스터기에서 돌릴 수 있는지 — 기준 미등록 원두는 머신 종류 칸을, 그것도 없으면 전체 가능 */
 function brAllowed(bean, rid){
-  if (!hasBeanRule(bean)) return true;
+  if (!hasBeanRule(bean)) { const mr = machineRoasters(bean); return mr.length ? mr.some(r=>r.id===rid) : true; }
   const row = brRow(bean, rid);
   if (!row) return false;
   if (row.allowed === undefined || row.allowed === null) return Number(row.batch_kg||0) > 0;  // 구버전 호환
@@ -9988,9 +10004,10 @@ const overCap = (r, l) => { const p = loadPct(r, l||{n:0,g:0}); return p!==null 
 
 /* 가능한 로스터기 중 하루 능력에 여유가 많은 쪽을 고름 (여유 없으면 버림수가 적은 쪽) */
 function pickRoaster(bean, kg, L){
-  const rr = ruleRoasterFor(bean);                  // 싱글·하바나 → S35 만
-  if (rr) return rr.id;
-  const cand = allowedRoasters(bean);
+  const mr = machineRoasters(bean);                 // 머신 종류 칸에 적힌 로스터기만 (S35_… → S35)
+  let cand = mr.length ? allowedRoasters(bean).filter(r=>mr.some(x=>x.id===r.id)) : [];
+  if (mr.length && !cand.length) cand = mr;
+  if (!cand.length) { const rr = ruleRoasterFor(bean); if (rr) return rr.id; cand = allowedRoasters(bean); }
   if (!cand.length) return null;
   const sc = cand.map(r=>{
     const cap = capFor(bean, r.id);
@@ -10506,30 +10523,23 @@ function setBeanRoaster(bean, rid, v){
      이미 적힌 값이 있어도 덮어쓴다 (확인창에서 목록을 보여준다) */
 async function applyBeanRules(){
   if (!(await requireUser())) return;
-  const s35 = DB.roasters.find(r=>r.active!==false && nrmBean(r.name)==="s35");
-  if (!s35) return ask("로스터기 목록에 S35 가 없습니다 — 기준정보 › 기계(로스터기)에 S35 를 먼저 등록하세요", { title:"싱글·하바나 세팅", yes:"확인" });
-  const others = DB.roasters.filter(r=>r.active!==false && r.id!==s35.id);
   const plan = [];
   BEANS_LIVE().forEach(b=>{
-    const n = nrmBean(b.machine) || nrmBean(b.name);        // 머신 종류 칸이 기준, 비어 있으면 이름
-    let kg = 0, why = "";
-    if (n.includes("하바나싱글") || (n.includes("하바나") && n.includes("싱글"))) { kg = 10; why = "하바나 싱글"; }
-    else if (n.includes("싱글")) { kg = 20; why = "싱글"; }
-    else if (n.includes("하바나")) { kg = 0; why = "하바나"; }
-    else return;
-    plan.push({ b, kg, why });
+    const sp = machineSpec(b.name); const rs = machineRoasters(b.name);
+    if (!rs.length) return;                                  // 머신 종류 칸에 로스터기가 없으면 건너뜀
+    plan.push({ b, rs, kg:sp.kg, why:sp.kind || sp.raw });
   });
-  if (!plan.length) return ask("머신 종류 칸(또는 이름)에 '싱글'이나 '하바나'가 적힌 원두가 없습니다 — 원두 표의 머신 종류 칸에 '싱글' / '하바나 싱글' 로 적어 주세요", { title:"싱글·하바나 세팅", yes:"확인" });
-  if (!(await ask(`${plan.length}개 원두를 S35 전용으로 맞춥니다 (다른 로스터기는 불가):\n\n` +
-    plan.map(x=>`· ${x.b.name} — S35 ${x.kg?`${x.kg}kg`:"(kg 기본값)"} [${x.why}]`).join("\n") + `\n\n기준정보 › 원두·MMS코드 표의 로스터기 칸에 그대로 적힙니다.`,
-    { title:"싱글·하바나 세팅", yes:"적용" }))) return;
+  if (!plan.length) return ask("머신 종류 칸에 'S35_하바나 싱글' 처럼 로스터기가 적힌 원두가 없습니다", { title:"머신 종류대로 세팅", yes:"확인" });
+  if (!(await ask(`${plan.length}개 원두의 로스터기 칸을 머신 종류 칸대로 맞춥니다 (적힌 로스터기만 가능, 나머지 불가):\n\n` +
+    plan.slice(0,20).map(x=>`· ${x.b.name} — ${x.rs.map(r=>r.name).join("·")} ${x.kg?`${x.kg}kg`:"(기본 kg)"} [${x.why}]`).join("\n") + (plan.length>20?`\n… 외 ${plan.length-20}개`:"") +
+    `\n\n기준정보 › 원두·MMS코드 표의 로스터기 칸에 그대로 적힙니다.`, { title:"머신 종류대로 세팅", yes:"적용" }))) return;
   plan.forEach(x=>{
     ensureBeanRows(x.b.name);
-    others.forEach(r=>{ const row = brRow(x.b.name, r.id); if (row) { row.allowed = false; row.batch_kg = 0; save("bean_roasters", row); } });
-    const row = brRow(x.b.name, s35.id); if (row) { row.allowed = true; row.batch_kg = x.kg; save("bean_roasters", row); }
+    DB.roasters.filter(r=>r.active!==false).forEach(r=>{ const row = brRow(x.b.name, r.id); if (!row) return;
+      const on = x.rs.some(y=>y.id===r.id); row.allowed = on; row.batch_kg = on ? x.kg : 0; save("bean_roasters", row); });
   });
-  logAudit("싱글·하바나 세팅", `${plan.length}개 원두`, "S35 전용 · 하바나 싱글 10kg · 싱글 20kg");
-  renderAll(); toast(`${plan.length}개 원두를 S35 전용으로 맞췄습니다`);
+  logAudit("머신 종류대로 세팅", `${plan.length}개 원두`, "로스터기 칸 · 하바나 싱글 10kg · 싱글 20kg");
+  renderAll(); toast(`${plan.length}개 원두의 로스터기 칸을 맞췄습니다`);
 }
 /* 그 원두 기준을 전체 가능으로 되돌림 */
 function resetBeanRule(bean){
