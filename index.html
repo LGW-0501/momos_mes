@@ -6173,6 +6173,7 @@ renderFavs();
 
 /* ══ 업데이트 내역 — 어디에 뭘 바꿨는지 (최근 것이 위) ══ */
 const CHANGELOG = [
+  ["2026-10-26", "전체 순서", "품목은 CFE 코드 번호순, 원두는 MMS 코드 번호순, 부자재는 구분→코드순, 배치는 원두 코드→로스팅일순 — 표·카드·계획·집계·여유분·재고 세기 전부 같은 순서 (코드 없는 건 이름순으로 맨 뒤)"],
   ["2026-10-26", "표 입력칸 전체", "Enter = 아래 칸, Tab = 옆 칸으로 이동 (여유분·집계·계획EA·재고 세기 등) — 저장되며 다시 그려져도 커서가 따라감"],
   ["2026-10-26", "생산계획 › 여유분", "여유 수량은 배치 잔량 안에서만 — 주문·안전재고 필요분을 뺀 남은 원두로만 만들고, 여유 때문에 로스팅은 안 잡음. 잔량이 모자라면 '못 채움'으로 표시 · 계획EA 밑에 수량 출처 표시"],
   ["2026-10-26", "비밀번호 변경", "실패 이유가 금방 사라지는 토스트 대신 창으로 남음 · 6자 이상(서버 규칙) · 성공도 창으로 확인"],
@@ -6414,7 +6415,18 @@ function renderOne(s){
      work:renderWork, qc:renderQc, ship:renderShip, order:renderOrder, trace:renderTrace,
      rw:renderRw, mt:renderMt, close:renderClose, count:renderCount, help:renderHelp })[s]?.();
 }
+/* ★ 기준 순서 — 품목은 CFE 코드 번호, 원두는 MMS 코드 번호, 부자재는 구분→코드→이름 순.
+     표·카드·계획·집계·여유분·재고 세기 전부 이 순서를 따른다 (머리글 정렬을 누르면 그게 우선) */
+const natCmp = (a, b) => String(a??"").localeCompare(String(b??""), "ko", { numeric:true, sensitivity:"base" });
+const codeOrd = c => { const k = codeKey(c); return k ? ("0" + k) : "1"; };   // 코드 있는 게 먼저
+function sortMasters(){
+  if (Array.isArray(DB.products)) DB.products.sort((a,b)=>natCmp(codeOrd(a.code), codeOrd(b.code)) || natCmp(a.name, b.name));
+  if (Array.isArray(DB.beans))    DB.beans.sort((a,b)=>natCmp(codeOrd(a.mms_code), codeOrd(b.mms_code)) || natCmp(a.name, b.name));
+  if (Array.isArray(DB.materials)) DB.materials.sort((a,b)=>(MAT_KINDS.indexOf(a.kind) - MAT_KINDS.indexOf(b.kind)) || natCmp(codeOrd(a.code), codeOrd(b.code)) || natCmp(a.name, b.name));
+  if (Array.isArray(DB.mms))      DB.mms.sort((a,b)=>natCmp(codeOrd(mmsCodeOf(a.bean)), codeOrd(mmsCodeOf(b.bean))) || natCmp(a.roast_date, b.roast_date) || (Number(a.batch)||0)-(Number(b.batch)||0));
+}
 function renderAll(){
+  sortMasters();                        // 코드 번호 순서로
   migrateMaterials();                   // 옛 라벨 표 → 부자재
   fillBeanList();                       // 원두 이름 자동완성 목록
   ["dash","plan","roast","req","log","stock","pqc","cal","loss","base",
@@ -6723,7 +6735,8 @@ const tallyLeft = (pid, d) => Math.max(0, tallyQty(pid, undefined, d) - madeQty(
 /* 집계가 들어온 품목 목록 — 집계 순서대로 */
 const tallyProds = d => { const seen = [];
   talliesOf(d).forEach(t=>{ if(!seen.includes(t.product_id)) seen.push(t.product_id); });
-  return seen.map(prodById).filter(Boolean); };
+  const ps = seen.map(prodById).filter(Boolean);
+  return ps.sort((a,b)=>natCmp(codeOrd(a.code), codeOrd(b.code)) || natCmp(a.name, b.name)); };
 
 let planEA = {};
 /* 계획 수량은 이 순서로 정해진다
@@ -12810,6 +12823,7 @@ let RT_REST = null;
 function liveRender(){
   clearTimeout(RT_TIMER);
   RT_TIMER = setTimeout(()=>{
+    sortMasters();
     const cur = curScreen(), a = document.activeElement;
     const typing = a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && a.type !== "checkbox" && a.type !== "button"
                    && !!a.closest("#s-" + cur);
