@@ -7211,7 +7211,7 @@ function renderPlan(){
         <td>${fmt(r.p.safety)}</td><td>${fmt(r.p.cfe)}</td>
         <td class="bufc">${(()=>{ const pc = planCalc(r.p); return (!(r.p.id in planEA) && pc.buf) ? `+${fmt(pc.buf)}<br><span class="hint" style="padding:0;font-size:10.5px">${fmt(eaKg(r.p,pc.buf))}kg</span>` : "—"; })()}</td>`}
         <td><input type="text" inputmode="numeric" class="num" value="${r.ea}" data-f="plan:${r.p.id}"
-          oninput="setPlan('${r.p.id}',this.value)"></td>
+          oninput="setPlan('${r.p.id}',this.value)"><div class="hint" style="padding:0;font-size:10.5px;white-space:nowrap">${planWhy(r.p)}</div></td>
         ${CX ? '' : `<td>${fmt(need)}</td>
         <td class="l" style="white-space:normal;line-height:1.7;padding:7px 14px">${
           r.picks.length
@@ -10160,6 +10160,16 @@ function beanStateText(bn){
   return `재고 ${fmt(mmsByBean(bn))}kg · <span class="${st}">${batchNo(o)} ${shelfLabel(o.roast_date)}</span>`;
 }
 /* 품목 하나의 계획 — 필요분(주문·안전재고) · 여유분 · 합계 */
+/* 이 수량이 어디서 왔는지 한 줄로 — "왜 36개지?" 를 표에서 바로 본다 */
+function planWhy(p, day){
+  const d = day || tallyDay();
+  if (p.id in planEA) return "손으로 고침";
+  const c = planCalc(p, d), parts = [];
+  if (c.mode === "tally") parts.push(`집계 ${fmt(tallyQty(p.id, undefined, d))}${madeQty(p.id, d) ? ` − 만든 ${fmt(madeQty(p.id, d))}` : ""}`);
+  else if (c.need > 0) parts.push(`안전재고 ${fmt(p.safety)} − 현재고 ${fmt(p.cfe)}`);
+  if (c.buf > 0) parts.push(`${bufOverride(p, d) != null ? "오늘 " : WD[dowOf(d)] + "요일 "}여유분 +${fmt(c.buf)}`);
+  return parts.join(" · ") || "—";
+}
 function planCalc(p, day){
   const d = day || tallyDay(), buf = bufEA(p, d);
   if (!hasTally(p.id, d)) { const need = shortage(p); return { need, buf, total: need + buf, mode:"safety" }; }
