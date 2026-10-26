@@ -115,6 +115,24 @@
   #cntSheet .cwrap small{color:var(--soft); font-weight:700;}
   #cntSheet tr.diff td{background:#FFF8F0;} #cntSheet tr.same td{background:#F2FBF5;}
   [data-t][data-id][data-k].dirty{background:#FFF7D6 !important; border-color:#E0A400 !important;}
+  /* ── 문의 센터 ── */
+  .hq{display:flex; gap:12px; padding:12px 18px; border-bottom:1px solid var(--line); align-items:flex-start;}
+  .hq:last-child{border-bottom:0;}
+  .hq .st{width:72px; flex:none;}
+  .hq .bd{flex:1; min-width:0;}
+  .hq .tx{font-size:14px; font-weight:600; white-space:pre-line; line-height:1.5;}
+  .hq .mt{font-size:12px; color:var(--soft); margin-top:4px;}
+  .hq .re{margin-top:8px; background:var(--blue-50); border-left:3px solid var(--blue-600); padding:8px 10px; border-radius:6px; font-size:13px; white-space:pre-line;}
+  .hq .ops{flex:none; display:flex; flex-direction:column; gap:6px;}
+  .hq.done .tx{color:var(--soft);}
+  body.mobile .hq{flex-wrap:wrap;} body.mobile #helpForm{grid-template-columns:1fr 1fr;}
+  .bellN{position:absolute; top:-4px; right:-4px; min-width:18px; height:18px; border-radius:9px; background:var(--bad); color:#fff;
+    font-size:11px; font-weight:800; display:flex; align-items:center; justify-content:center; padding:0 5px; border:2px solid var(--navy-900);}
+  .nt{display:flex; gap:10px; padding:10px 14px; border-bottom:1px solid var(--line); align-items:flex-start; cursor:pointer;}
+  .nt:hover{background:var(--blue-50);} .nt.unread{background:#FFF9E8;}
+  .nt .ic{font-size:18px; flex:none; width:24px; text-align:center;}
+  .nt .tx{font-size:13px; font-weight:600; line-height:1.4;} .nt .tm{font-size:11px; color:var(--soft); margin-top:2px;}
+  .toast.big{font-size:14px; padding:14px 20px; max-width:min(560px, 92vw); white-space:normal; line-height:1.45;}
   .shell{flex:1; display:flex; overflow:hidden; min-height:0;}
 
   /* ── 아이콘 사이드바 ── */
@@ -972,7 +990,7 @@
   body.mobile .topbar .right > button:not(#personalLogoutBtn), body.mobile .topbar .right #personalLogoutBtn,
   body.mobile .topbar .right #loginIdentity, body.mobile .topbar .right .st{display:none !important;}
   body.mobile .topbar .right #curUser{display:block; max-width:none; flex:1 1 0;}
-  body.mobile .topbar .right #favBtn{display:flex !important; width:32px; height:32px;}
+  body.mobile .topbar .right #favBtn, body.mobile .topbar .right #bellBtn{display:flex !important; width:32px; height:32px;}
   body.mobile .acct{top:62px; right:8px;}
   body.mobile .guide{display:none;}                       /* 설명은 서랍의 [설명 보기]로 */
   body.mobile.showguide .guide{display:block;}
@@ -1062,12 +1080,14 @@
     <button class="btn" id="reloadBtn" onclick="reloadDB()">새로고침</button>
     <span class="st" id="stDb"></span>
     <span class="st" id="stLive" style="display:none"></span>
+    <button class="favbtn" id="bellBtn" onclick="toggleBell()" title="알림" style="position:relative">🔔<span id="bellN" class="bellN" style="display:none">0</span></button>
     <button class="favbtn" id="favBtn" onclick="toggleFav()" title="이 화면을 즐겨찾기에 넣기 / 빼기">☆</button>
     <div class="avatar" id="avatar" onclick="toggleAcct()" title="계정 메뉴">—</div>
   </div>
 </div>
-<div class="acctScrim" onclick="closeAcct()"></div>
+<div class="acctScrim" onclick="closeAcct();closeBell()"></div>
 <div id="acctMenu" class="acct" style="display:none"></div>
+<div id="bellMenu" class="acct" style="display:none;width:360px"></div>
 
 <div class="navScrim" onclick="closeNav()"></div>
 
@@ -1082,6 +1102,7 @@
     <button data-s="ship" data-r="admin,qc"><span class="ico">▷</span><span class="lb">출고</span></button>
     <button data-s="count" data-r="admin,lead,floor,qc"><span class="ico">⊞</span><span class="lb">재고 세기</span></button>
     <button data-s="close" data-r="admin,lead,floor,qc"><span class="ico">☾</span><span class="lb">마감</span></button>
+    <button data-s="help" data-r="admin,lead,floor,qc"><span class="ico">✎</span><span class="lb">문의</span></button>
     <div class="grp" data-r="admin,qc,floor"></div>
     <button data-s="plan" data-r="admin"><span class="ico">▤</span><span class="lb">생산계획</span></button>
     <button data-s="order" data-r="admin"><span class="ico">≡</span><span class="lb">작업지시</span></button>
@@ -1279,6 +1300,39 @@
         <b>전체번호(2026-10-28-01)</b>나 <b>로스팅 날짜</b>로 찾아도 됩니다 —
         배치를 찾으면 <b>입고 → 생산사용 → 기타사용 → 실측 → 조정</b>이 날짜와 함께 한 줄씩 나옵니다.</div></div>
     <div id="trOut"></div>
+  </div>
+</section>
+
+<!-- ══════ 문의 센터 — 오류·요청·질문을 적어 두면 관리자가 보고 고친다 ══════ -->
+<section class="screen" id="s-help">
+  <div class="cond">
+    <span id="helpSum"></span>
+    <span style="margin-left:auto"></span>
+    <label style="cursor:pointer;margin-left:0"><input type="checkbox" id="helpAll" onchange="renderHelp()" style="width:auto;height:auto"> 완료된 것도 보기</label>
+  </div>
+  <div class="body">
+    <h2 class="page">문의 센터<small id="asof-help"></small></h2>
+    <div class="guide"><b>쓰다가 이상하거나 바꿨으면 하는 게 있으면 여기 적어 두세요.</b>
+      어느 화면에서 뭐가 어떻게 됐는지(눌렀을 때 뭐가 떴는지)까지 적어 주면 빨리 고칩니다 ·
+      관리자가 보고 <b>접수 → 확인중 → 완료</b>로 바꾸고 답을 달아 줍니다 · 다른 기기에서도 바로 보입니다.</div>
+    <div class="panel">
+      <div class="panel-h">새 문의</div>
+      <div style="padding:14px 18px;display:grid;grid-template-columns:140px 220px 1fr;gap:10px;align-items:start" id="helpForm">
+        <select id="hKind" style="font-weight:700"><option>오류</option><option>요청</option><option>질문</option><option>기타</option></select>
+        <select id="hScreen" style="font-weight:700"></select>
+        <div></div>
+        <textarea id="hText" rows="3" placeholder="예) 검수에서 체크 누르면 옆 항목이 체크돼요 / 라벨작업 카드에 삭제 버튼이 있었으면 좋겠어요"
+          style="grid-column:1/-1;width:100%;font:inherit;font-size:13.5px;border:1px solid var(--line-2);border-radius:8px;padding:10px 12px;resize:vertical"></textarea>
+        <div style="grid-column:1/-1;display:flex;gap:8px;align-items:center">
+          <span class="hint" style="padding:0" id="hWho"></span>
+          <button class="btn primary" style="margin-left:auto" onclick="sendHelp()">보내기</button>
+        </div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-h">문의 목록 <span class="r hint" id="helpHint"></span></div>
+      <div id="helpList" style="padding:4px 0"></div>
+    </div>
   </div>
 </section>
 
@@ -6080,6 +6134,8 @@ renderFavs();
 
 /* ══ 업데이트 내역 — 어디에 뭘 바꿨는지 (최근 것이 위) ══ */
 const CHANGELOG = [
+  ["2026-10-26", "상단 🔔 알림", "다른 기기에서 생긴 일이 역할에 맞게 뜸 — 생산 완료(검수에게) · 검수 반려+사유(현장에게) · 검수 완료(출고) · 라벨 완료 · 새 문의(관리자) · 문의 답변(쓴 사람). 토스트+소리+진동, 종 누르면 목록, 계정 메뉴에서 소리 끄기"],
+  ["2026-10-26", "문의 (새 화면)", "오류·요청·질문을 적어 보내면 관리자가 접수→확인중→완료로 바꾸고 답변 — 메뉴에 접수 건수 뱃지"],
   ["2026-10-26", "기준정보 › 계정 관리", "[공용 (작업자 선택)] 체크 — 태블릿 하나를 여러 명이 쓰는 계정은 들어올 때 작업자를 고름 (기록은 고른 이름으로 남음)"],
   ["2026-10-26", "생산계획 › [원두별 규칙]", "원두 이름으로 1배치 kg·로스터기 자동 — \"하바나 싱글\" 10kg·S35 · 그 외 \"싱글\" 20kg·S35 · \"하바나\" S35 · 나머지 기본 kg (규칙은 버튼에서 고칠 수 있음) · 로스팅 요청서도 이 규칙으로 로스터기를 고름"],
   ["2026-10-26", "기준정보 (품목·원두·부자재·기계·생산자 표)", "칸을 고치면 바로 저장되던 것 → 노란색으로 모아 두고 아래 [저장] 누르면 \"N건을 저장하시겠습니까?\" 묻고 저장 · [취소]로 되돌림 · 다른 화면으로 가면 저장할지 물어봄"],
@@ -6122,6 +6178,97 @@ function showChangelog(){
   const close = ()=>{ $("dlg").style.display="none"; $("dlgYes").removeEventListener("click", close); $("dlgNo").style.display=""; $("dlgMsg").innerHTML=""; seenChangelog(); };
   $("dlgYes").addEventListener("click", close);
 }
+/* ══════════════════════════════════════════════════════════════
+   알림 — 다른 기기에서 생긴 일을 내 역할에 맞게 띄운다 (실시간 변경에서 뽑아냄)
+   · 현장 → 생산 완료 : 검수·관리자에게      · 검수 반려 : 현장·관리자에게
+   · 검수 완료 : 출고·관리자                 · 라벨 완료 : 관리자
+   · 문의 접수 : 관리자                     · 문의 답변·상태 : 쓴 사람
+   내가 한 일은 나한테 안 뜬다. 이 기기에 50개까지 남는다.
+   ══════════════════════════════════════════════════════════════ */
+let NOTIFS = []; try { NOTIFS = JSON.parse(localStorage.getItem("momos.notifs") || "[]") || []; } catch(_){}
+const notifSound = () => { try { return localStorage.getItem("momos.notif.sound") !== "off"; } catch(_){ return true; } };
+function setNotifSound(on){ try { localStorage.setItem("momos.notif.sound", on ? "on" : "off"); } catch(_){} openAcct(); toast(on ? "알림 소리 켬" : "알림 소리 끔"); }
+const me = () => CURRENT_USER || LOGIN_USER?.name || "";
+const roleIn = (...rs) => ROLE === "admin" || rs.includes(ROLE);
+function pushNotif(n){
+  if (!n) return;
+  NOTIFS.unshift({ id:uid(), at:nowISO(), read:false, ...n }); NOTIFS = NOTIFS.slice(0,50);
+  try { localStorage.setItem("momos.notifs", JSON.stringify(NOTIFS)); } catch(_){}
+  bellUpdate();
+  /* 화면 위 토스트 (길게) */
+  const t = $("toast"); if (t) { t.textContent = `${n.ic||"🔔"} ${n.tx}`; t.classList.add("show","big"); clearTimeout(t._nt); t._nt = setTimeout(()=>t.classList.remove("show","big"), 4500); }
+  if (notifSound()) beep();
+  try { if (navigator.vibrate) navigator.vibrate([80,40,80]); } catch(_){}
+  /* 다른 탭 보고 있을 때는 브라우저 알림 */
+  try { if (document.hidden && "Notification" in window && Notification.permission === "granted") new Notification("모모스 생산관리", { body:n.tx, tag:n.id }); } catch(_){}
+}
+function beep(){ try { const C = window.AudioContext || window.webkitAudioContext; if (!C) return; const ctx = beep.ctx || (beep.ctx = new C());
+  const o = ctx.createOscillator(), g = ctx.createGain(); o.type = "sine"; o.frequency.value = 880; g.gain.value = 0.08;
+  o.connect(g); g.connect(ctx.destination); o.start(); o.frequency.setValueAtTime(1175, ctx.currentTime + 0.12); o.stop(ctx.currentTime + 0.25); } catch(_){} }
+function askNotifPermission(){ try { if ("Notification" in window && Notification.permission === "default") Notification.requestPermission(); } catch(_){} }
+function bellUpdate(){
+  const n = NOTIFS.filter(x=>!x.read).length, b = $("bellN"); if (!b) return;
+  b.style.display = n ? "flex" : "none"; b.textContent = n > 99 ? "99+" : n;
+}
+function toggleBell(){ const m = $("bellMenu"); if (m.style.display === "none") openBell(); else closeBell(); }
+function closeBell(){ const m = $("bellMenu"); if (m) m.style.display = "none"; if ($("acctMenu").style.display === "none") document.body.classList.remove("acctopen"); }
+function openBell(){
+  closeAcct(); askNotifPermission();
+  const m = $("bellMenu");
+  m.innerHTML = `<div class="ah" style="display:flex;align-items:center;gap:8px"><b style="margin:0;flex:1">알림</b>
+      <button class="btn" style="height:28px;padding:0 10px;font-size:12px" onclick="readAllNotif()">모두 읽음</button>
+      <button class="btn" style="height:28px;padding:0 10px;font-size:12px" onclick="clearNotif()">비우기</button></div>` +
+    (NOTIFS.length ? NOTIFS.map(n=>`<div class="nt ${n.read?"":"unread"}" onclick="openNotif('${n.id}')">
+        <div class="ic">${n.ic||"🔔"}</div><div><div class="tx">${n.tx}</div><div class="tm">${fmtTime(n.at)}${n.s?` · ${n.sn||n.s} 열기 ›`:""}</div></div></div>`).join("")
+      : `<div class="hint" style="padding:18px">아직 알림이 없습니다<br>다른 사람이 생산 완료·반려·문의를 하면 여기 뜹니다</div>`);
+  m.style.display = ""; document.body.classList.add("acctopen");
+}
+function openNotif(id){ const n = NOTIFS.find(x=>x.id===id); if (!n) return; n.read = true; try { localStorage.setItem("momos.notifs", JSON.stringify(NOTIFS)); } catch(_){} bellUpdate(); closeBell(); if (n.s) goTo(n.s, n.tab||""); }
+function readAllNotif(){ NOTIFS.forEach(n=>n.read=true); try { localStorage.setItem("momos.notifs", JSON.stringify(NOTIFS)); } catch(_){} bellUpdate(); openBell(); }
+function clearNotif(){ NOTIFS = []; try { localStorage.removeItem("momos.notifs"); } catch(_){} bellUpdate(); openBell(); }
+bellUpdate();
+/* 표 변경 → 알림으로 */
+function notifyChange(t, prev, row, ev){
+  if (!row) return;
+  const nm = o => o.product_name || prodById(o.product_id)?.name || "품목";
+  if (t === "orders") {
+    const was = prev?.status, now = row.status; if (!prev || was === now) return;
+    if (now === "생산완료" && row.done_by !== me() && roleIn("qc","lead"))
+      return pushNotif({ ic:"✅", tx:`${nm(row)} ${fmt(row.qty_done)}개 생산 완료 — 검수 대기 (${row.done_by||"—"}${row.machine?` · ${row.machine}`:""})`, s:"qc", sn:"검수" });
+    if (now === "검수완료" && row.qc_by !== me() && roleIn("qc"))
+      return pushNotif({ ic:"📦", tx:`${nm(row)} ${fmt(row.qty_done)}개 검수 완료 — 출고 대기 (${row.qc_by||"—"})`, s:"ship", sn:"출고" });
+    if (now === "출고완료" && row.ship_by !== me() && ROLE === "admin")
+      return pushNotif({ ic:"🚚", tx:`${nm(row)} ${fmt(row.qty_done)}개 출고 완료 — ${row.channel||""} (${row.ship_by||"—"})`, s:"ship", sn:"출고" });
+    return;
+  }
+  if (t === "order_events" && ev === "INSERT" && row.event === "qc_reject" && row.user_name !== me()) {
+    const o = ordById(row.order_id);
+    /* 반려는 그 건을 만든 작업자(done_by)에게만 — 현장관리자·관리자는 전부 */
+    const mine = o && (o.done_by === me() || o.started_by === me());
+    if (!(ROLE === "admin" || ROLE === "lead" || (ROLE === "floor" && mine))) return;
+    return pushNotif({ ic:"⛔", tx:`반려 — ${o ? nm(o) : ""}${o?.serial?` (${o.serial})`:""} · 사유: ${row.note || "없음"} (검수 ${row.user_name||"—"}) — 현장 작업에서 확인하세요`, s:"work", sn:"현장 작업" });
+  }
+  if (t === "material_tasks") {
+    const was = prev?.status, now = row.status; if (!prev || was === now) return;
+    if (now === "작업완료" && row.worker !== me() && roleIn("lead"))
+      return pushNotif({ ic:"🏷", tx:`라벨 작업 완료 — ${row.product_name} ${fmt(row.done_qty ?? row.order_qty)}${row.unit||"장"} (${row.worker||"—"})`, s:"mt", sn:"라벨작업" });
+    return;
+  }
+  if (t === "logs" && ev === "INSERT" && row.source === "manual" && row.entered_by !== me() && ROLE === "admin")
+    return pushNotif({ ic:"📝", tx:`생산실적 수기 등록 — ${nm(row)} ${fmt(row.qty_ea)}개 · ${row.work_date} (${row.entered_by||"—"})`, s:"log", sn:"생산실적" });
+}
+/* 공용 설정 변경 → 문의 알림 */
+function notifySetting(key, before, after){
+  if (key !== HELP_KEY) return;
+  const B = Array.isArray(before) ? before : [], A = Array.isArray(after) ? after : [];
+  const bm = {}; B.forEach(t=>bm[t.id]=t);
+  A.forEach(t=>{
+    const p = bm[t.id];
+    if (!p) { if (t.by !== me() && ROLE === "admin") pushNotif({ ic:"✎", tx:`새 문의 — ${t.by}: ${t.text.slice(0,60)}${t.text.length>60?"…":""}`, s:"help", sn:"문의" }); return; }
+    if (t.by === me() && ((t.reply && t.reply !== p.reply) || t.st !== p.st) && (t.reply_by || t.st_by) !== me())
+      pushNotif({ ic:"💬", tx:`내 문의 ${t.st !== p.st ? `→ ${t.st}` : ""}${t.reply && t.reply !== p.reply ? ` · 답변: ${t.reply.slice(0,60)}` : ""}`, s:"help", sn:"문의" });
+  });
+}
 /* ══ 계정 메뉴 — 오른쪽 위 동그라미를 누르면 ══ */
 function toggleAcct(){ const m = $("acctMenu"); if (m.style.display === "none") openAcct(); else closeAcct(); }
 function closeAcct(){ $("acctMenu").style.display = "none"; document.body.classList.remove("acctopen"); }
@@ -6142,6 +6289,7 @@ function openAcct(){
       <button class="it" onclick="closeAcct();toggleGuide()"><span class="ico">?</span>${guideOn ? "설명 접기" : "설명 보기"}</button>
       <button class="it" onclick="closeAcct();toggleMobile()"><span class="ico">${mobile ? "🖥" : "📱"}</span>${mobile ? "PC 보기" : "모바일 보기"}</button>
       <button class="it" onclick="closeAcct();toggleFav()"><span class="ico">★</span>${isFav(curCtx().k) ? "이 화면 즐겨찾기 빼기" : "이 화면 즐겨찾기"}</button>
+      <button class="it" onclick="setNotifSound(${notifSound()?"false":"true"})"><span class="ico">🔔</span>알림 소리 ${notifSound() ? "끄기" : "켜기"}</button>
     </div>
     <div class="sec" style="padding:6px 0">
       <button class="it" onclick="closeAcct();showChangelog()"><span class="ico">✎</span>업데이트 내역</button>
@@ -6221,13 +6369,13 @@ function renderOne(s){
   ({ dash:renderDash, plan:renderPlan, roast:renderRoast, req:renderReq, log:renderLog,
      stock:renderStock, pqc:renderPqc, cal:renderCal, loss:renderLoss, base:renderBase,
      work:renderWork, qc:renderQc, ship:renderShip, order:renderOrder, trace:renderTrace,
-     rw:renderRw, mt:renderMt, close:renderClose, count:renderCount })[s]?.();
+     rw:renderRw, mt:renderMt, close:renderClose, count:renderCount, help:renderHelp })[s]?.();
 }
 function renderAll(){
   migrateMaterials();                   // 옛 라벨 표 → 부자재
   fillBeanList();                       // 원두 이름 자동완성 목록
   ["dash","plan","roast","req","log","stock","pqc","cal","loss","base",
-   "work","qc","ship","order","trace","rw","mt","close","count"].forEach(renderOne);
+   "work","qc","ship","order","trace","rw","mt","close","count","help"].forEach(renderOne);
   syncUserUI();
   if (typeof applyRoleLock === "function") applyRoleLock();
 }
@@ -12564,8 +12712,10 @@ function rtApply(t, ev, row, old){
   }
   if (!row) return;
   const cur = DB[t].find(x => x[key] === row[key]);
+  const prev = cur ? { ...cur } : null;
   if (cur) Object.assign(cur, row);       // 같은 객체를 고쳐 쓴다 — 다른 곳이 잡고 있는 참조도 함께 바뀐다
   else DB[t].push(row);
+  try { notifyChange(t, prev, cur || row, ev); } catch(e){ console.warn("알림", e); }
 }
 function startRealtime(){
   if (!sb || RT_CH || typeof sb.channel !== "function") return;
@@ -12573,7 +12723,7 @@ function startRealtime(){
   RT_STATE = "wait"; rtBadge();
   RT_CH = sb.channel("momos-mes-live")
     .on("postgres_changes", { event:"*", schema:"public" }, p => {
-      if (p.table === tb("settings")) { if (p.new && p.new.key) applySetting(p.new.key, p.new.value); liveRender(); return; }
+      if (p.table === tb("settings")) { if (p.new && p.new.key) { const before = SETTINGS[p.new.key]; applySetting(p.new.key, p.new.value); try { notifySetting(p.new.key, before, p.new.value); } catch(e){} } liveRender(); return; }
       const t = byName[p.table]; if (!t) return;
       try { rtApply(t, p.eventType, p.new && Object.keys(p.new).length ? p.new : null, p.old); }
       catch(e){ console.warn("실시간 반영 실패", e); }
@@ -14939,6 +15089,89 @@ function renderTrace(){
 }
 
 /* ══════════════════════════════════════════════════════════════
+   문의 센터 — 공용 설정(help_tickets)에 쌓인다. 관리자가 상태·답변을 단다.
+   ══════════════════════════════════════════════════════════════ */
+const HELP_KEY = "help_tickets";
+const HELP_ST = ["접수","확인중","완료","보류"];
+const HELP_ST_CLS = { "접수":"bad", "확인중":"warn", "완료":"ok", "보류":"" };
+const helpTickets = () => { const v = SETTINGS[HELP_KEY]; return Array.isArray(v) ? v : []; };
+async function saveHelp(list){
+  SETTINGS[HELP_KEY] = list.slice(-300); renderHelp(); helpBadge();
+  const r = await saveSetting(HELP_KEY, SETTINGS[HELP_KEY]); if (r && r.ok === false) toast("저장 실패 — 서버 연결 확인");
+}
+const helpIsAdmin = () => isSystemAdmin() || loginRole() === "admin";
+function helpScreens(){
+  return [...document.querySelectorAll("#menu button[data-s]")].map(b=>({ s:b.dataset.s, n:b.querySelector(".lb")?.textContent.trim()||b.dataset.s }));
+}
+async function sendHelp(){
+  const who = CURRENT_USER || LOGIN_USER?.name || "";
+  if (!who) return toast("상단에서 본인 이름을 먼저 고르세요");
+  const text = ($("hText").value||"").trim(); if (!text) return toast("내용을 적어 주세요");
+  const t = { id:uid(), kind:$("hKind").value, screen:$("hScreen").value, text, by:who, at:nowISO(), st:"접수", reply:"", reply_by:"", reply_at:"" };
+  await saveHelp([...helpTickets(), t]);
+  $("hText").value = ""; toast("보냈습니다 — 관리자가 확인합니다");
+}
+async function setHelpSt(id, st){
+  if (!helpIsAdmin()) return toast("관리자만 바꿀 수 있습니다");
+  const list = helpTickets().map(t=>t.id===id ? { ...t, st, st_by:CURRENT_USER||"", st_at:nowISO() } : t);
+  await saveHelp(list);
+}
+async function replyHelp(id){
+  if (!helpIsAdmin()) return toast("관리자만 답할 수 있습니다");
+  const t = helpTickets().find(x=>x.id===id); if (!t) return;
+  const v = await ask(`${t.by} · ${t.kind} · ${t.screen}\n${t.text}`, { prompt:true, multi:true, value:t.reply||"", title:"답변" });
+  if (v == null) return;
+  const list = helpTickets().map(x=>x.id===id ? { ...x, reply:String(v).trim(), reply_by:CURRENT_USER||"", reply_at:nowISO(), st: x.st==="접수" && String(v).trim() ? "확인중" : x.st } : x);
+  await saveHelp(list);
+}
+async function delHelp(id){
+  const t = helpTickets().find(x=>x.id===id); if (!t) return;
+  const mine = t.by === (CURRENT_USER || LOGIN_USER?.name);
+  if (!helpIsAdmin() && !mine) return toast("본인 문의만 지울 수 있습니다");
+  if (!(await ask(`이 문의를 지울까요?\n\n${t.text.slice(0,80)}`, { title:"문의 삭제", yes:"삭제", danger:true }))) return;
+  await saveHelp(helpTickets().filter(x=>x.id!==id));
+}
+function helpBadge(){
+  const b = document.querySelector('#menu button[data-s="help"]'); if (!b) return;
+  const n = helpIsAdmin() ? helpTickets().filter(t=>t.st==="접수").length : 0;
+  let el = b.querySelector(".badge");
+  if (!n) { if (el) el.remove(); return; }
+  if (!el) { el = document.createElement("span"); el.className = "badge"; b.appendChild(el); }
+  el.textContent = n;
+}
+function renderHelp(){
+  if (!$("helpList")) return;
+  const sel = $("hScreen");
+  if (sel && !sel.options.length) {
+    const cur = document.querySelector(".screen.on")?.id?.replace(/^s-/,"") || "";
+    sel.innerHTML = `<option value="(전체)">화면 — 전체·모름</option>` + helpScreens().filter(x=>x.s!=="help").map(x=>`<option value="${x.n}">${x.n}</option>`).join("");
+  }
+  $("hWho").textContent = (CURRENT_USER || LOGIN_USER?.name) ? `보내는 사람: ${CURRENT_USER || LOGIN_USER?.name}` : "상단에서 본인 이름을 고르세요";
+  const all = [...helpTickets()].sort((a,b)=>String(b.at).localeCompare(String(a.at)));
+  const showAll = $("helpAll")?.checked;
+  const list = showAll ? all : all.filter(t=>t.st!=="완료");
+  const n = { 접수:0, 확인중:0, 완료:0, 보류:0 }; all.forEach(t=>{ n[t.st] = (n[t.st]||0)+1; });
+  $("helpSum").innerHTML = HELP_ST.map(k=>`<span class="tag ${HELP_ST_CLS[k]}">${k} ${n[k]||0}</span>`).join(" ");
+  $("helpHint").textContent = showAll ? `전체 ${all.length}건` : `안 끝난 것 ${list.length}건 · 완료 ${n["완료"]||0}건은 접힘`;
+  helpBadge();
+  const me = CURRENT_USER || LOGIN_USER?.name || "";
+  $("helpList").innerHTML = list.length ? list.map(t=>`<div class="hq ${t.st==="완료"?"done":""}">
+      <div class="st"><span class="tag ${HELP_ST_CLS[t.st]||""}">${t.st}</span></div>
+      <div class="bd">
+        <div class="tx"><span class="tag" style="margin-right:6px">${t.kind}</span><span class="tag" style="margin-right:6px">${t.screen||"전체"}</span>${t.text}</div>
+        <div class="mt">${t.by} · ${fmtTime(t.at)}${t.st_at?` · ${t.st} ${fmtTime(t.st_at)}`:""}</div>
+        ${t.reply ? `<div class="re"><b>답변</b> ${t.reply}<div class="hint" style="padding:4px 0 0;font-size:11.5px">${t.reply_by||"—"} · ${fmtTime(t.reply_at)}</div></div>` : ""}
+      </div>
+      <div class="ops">
+        ${helpIsAdmin() ? `<select onchange="setHelpSt('${t.id}',this.value)" style="height:30px;font-weight:700">${HELP_ST.map(k=>`<option ${k===t.st?"selected":""}>${k}</option>`).join("")}</select>
+        <button class="btn" style="height:30px" onclick="replyHelp('${t.id}')">${t.reply?"답변 수정":"답변"}</button>` : ""}
+        ${(helpIsAdmin() || t.by===me) ? `<button class="btn danger" style="height:30px" onclick="delHelp('${t.id}')">삭제</button>` : ""}
+      </div>
+    </div>`).join("")
+    : `<div class="wempty" style="padding:30px">${showAll ? "문의가 없습니다" : "안 끝난 문의가 없습니다"}<br><span>위에서 적어 보내면 여기 쌓입니다</span></div>`;
+}
+
+/* ══════════════════════════════════════════════════════════════
    재고 세기 — 부자재·라벨 / CFE 완제품을 화면에서 바로 적는다 (엑셀 없이)
    적은 값은 이 기기에만 임시로 남고, [차이 전체 반영]을 눌러야 장부에 들어간다
    ══════════════════════════════════════════════════════════════ */
@@ -15266,7 +15499,7 @@ const CAP_HELP = {
 /* 화면 → 그 화면을 고치려면 필요한 권한 (null = 누구나 보기만 하는 화면) */
 const SCREEN_CAP = { plan:"plan", order:"plan", work:"work", qc:"qc", ship:"ship",
   log:"log", rw:"log", mt:"work", pqc:"pqc", stock:"stock", roast:"roast", req:"roast", base:"base",
-  dash:null, loss:null, cal:null, trace:null, close:null, count:null };
+  dash:null, loss:null, cal:null, trace:null, close:null, count:null, help:null };
 /* 내 역할이 주로 쓰는 화면 (메뉴에서 강조만 함 — 나머지도 다 보인다) */
 /* 내가 "쓸 수 있는" 화면인가 — 권한설정을 바꾸면 메뉴 색도 따라 바뀐다.
    SCREEN_CAP 이 null 인 화면(대시보드·캘린더 등)은 누구나 쓰는 화면으로 본다. */
