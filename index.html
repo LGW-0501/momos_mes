@@ -114,6 +114,7 @@
   #cntSheet .cwrap{display:inline-flex; align-items:center; gap:4px; white-space:nowrap;}
   #cntSheet .cwrap small{color:var(--soft); font-weight:700;}
   #cntSheet tr.diff td{background:#FFF8F0;} #cntSheet tr.same td{background:#F2FBF5;}
+  [data-t][data-id][data-k].dirty{background:#FFF7D6 !important; border-color:#E0A400 !important;}
   .shell{flex:1; display:flex; overflow:hidden; min-height:0;}
 
   /* ── 아이콘 사이드바 ── */
@@ -1115,9 +1116,15 @@
   <button class="btn primary" style="height:28px;padding:0 10px" onclick="showChangelog()">뭐가 바뀌었는지 보기</button>
   <button class="btn" style="height:28px;padding:0 10px;margin-left:auto" onclick="seenChangelog()">닫기</button>
 </div>
+<div id="baseSaveBar" style="display:none;position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:96;background:var(--navy-900);color:#fff;
+  padding:10px 14px 10px 18px;border-radius:12px;box-shadow:0 12px 36px rgba(0,0,0,.35);font-weight:800;font-size:13.5px;align-items:center;gap:12px">
+  <span id="baseSaveTxt">저장 안 된 변경 0건</span>
+  <button class="btn primary" style="height:34px;padding:0 16px" onclick="baseSave()">저장</button>
+  <button class="btn" style="height:34px;padding:0 12px" onclick="baseDiscard()">취소</button>
+</div>
 <div id="userWarn" style="display:none;background:var(--bad-soft);border-bottom:2px solid var(--bad);color:var(--bad);
   padding:11px 24px;font-weight:800;font-size:13px;flex-shrink:0;cursor:pointer" onclick="pickUser()">
-  ⚠ 상단에서 본인 이름을 선택하세요 — 선택 전에는 수령·검수·재고반영이 되지 않습니다.
+  ⚠ 상단에서 본인 이름을 선택하세요 — 선택 전에는 수령·검수·재고반영이 되지 않습니다. (공용 태블릿은 교대할 때마다 이름을 바꾸세요)
 </div>
 
 <!-- ══════ 1. 대시보드 ══════ -->
@@ -1797,6 +1804,7 @@
     <label>LOT</label><input type="text" id="fLot" style="width:110px" placeholder="봉투 LOT">
     <label>입력자</label><select id="fEnter"></select>
     <button class="btn primary" onclick="addLog()">등록</button>
+    <button class="btn" onclick="openPaste('log')" title="지난 날짜 생산을 엑셀로 한 번에 — 날짜 · CFE코드 · 수량">엑셀로 지난 실적 넣기</button>
     <span class="hint" id="fCalc" style="padding:0 0 0 6px"></span>
     <span style="margin-left:auto"></span>
     <button class="btn" onclick="csvLog()">엑셀 다운로드</button>
@@ -2411,6 +2419,7 @@
     <div class="inner">
       <div>모드 <select id="pMode" onchange="preview()">
         <option value="tally">집계 — 당일 1차·2차 주문수량 (쌓임 · 덮어쓰지 않음)</option>
+        <option value="log">생산실적 — 지난 날짜 생산 한 번에 등록 (날짜 · CFE코드 · 수량)</option>
         <option value="ship">출고지시서 — CFE 차감 + 부족분 자동 계획</option>
         <option value="plan">계획EA — 당일 필요수량</option>
         <option value="cfe">CFE 현재고 — 덮어쓰기</option>
@@ -2433,7 +2442,7 @@
       <div id="pShot" style="display:none"></div>
       <div class="hint" style="padding:0">사진은 <b>표가 화면에 꽉 차게</b> 찍거나 캡처할수록 정확합니다 · 인식 후 위 사진과 숫자를 대조한 뒤 적용하세요</div>
       <div id="pPrev"></div>
-      <button class="btn primary" id="pApply" style="display:none" onclick="applyPaste()">적용</button>
+      <button class="btn primary" id="pApply" style="display:none" onclick="applyPaste()">저장</button>
     </div>
   </div>
 </div>
@@ -6014,6 +6023,11 @@ function del(t,id){
    ⑥ 화면 전환
    ══════════════════════════════════════════════════════════════ */
 function go(s){
+  if (typeof basePendCount === "function" && basePendCount() && s !== "base" && document.querySelector(".screen.on")?.id === "s-base") {
+    (async()=>{ const c = await ask(`기준정보에 저장 안 한 변경 ${basePendCount()}건이 있습니다.`, { title:"저장할까요?", choices:[ { label:"저장", v:"save", cls:"primary" }, { label:"버리고 이동", v:"drop" }, { label:"머무르기", v:null } ] });
+      if (c === "save") { await baseSave(); go(s); } else if (c === "drop") { for (const k in BASE_PEND) delete BASE_PEND[k]; baseSaveBarUpdate(); renderBase(); go(s); } })();
+    return;
+  }
   document.querySelectorAll("#menu button").forEach(b=>b.classList.toggle("on", b.dataset.s===s));
   document.querySelectorAll(".screen").forEach(x=>x.classList.toggle("on", x.id==="s-"+s));
   render(s);
@@ -6066,6 +6080,10 @@ renderFavs();
 
 /* ══ 업데이트 내역 — 어디에 뭘 바꿨는지 (최근 것이 위) ══ */
 const CHANGELOG = [
+  ["2026-10-26", "기준정보 › 계정 관리", "[공용 (작업자 선택)] 체크 — 태블릿 하나를 여러 명이 쓰는 계정은 들어올 때 작업자를 고름 (기록은 고른 이름으로 남음)"],
+  ["2026-10-26", "생산계획 › [원두별 규칙]", "원두 이름으로 1배치 kg·로스터기 자동 — \"하바나 싱글\" 10kg·S35 · 그 외 \"싱글\" 20kg·S35 · \"하바나\" S35 · 나머지 기본 kg (규칙은 버튼에서 고칠 수 있음) · 로스팅 요청서도 이 규칙으로 로스터기를 고름"],
+  ["2026-10-26", "기준정보 (품목·원두·부자재·기계·생산자 표)", "칸을 고치면 바로 저장되던 것 → 노란색으로 모아 두고 아래 [저장] 누르면 \"N건을 저장하시겠습니까?\" 묻고 저장 · [취소]로 되돌림 · 다른 화면으로 가면 저장할지 물어봄"],
+  ["2026-10-26", "생산실적", "[엑셀로 지난 실적 넣기] — 날짜 · CFE코드 · 수량(·작업자·기계) 붙여넣으면 날짜순으로 등록, 배치·일련번호·봉투 LOT 자동"],
   ["2026-10-26", "라벨작업 표 선택 삭제", "[대기로] 눌렀던 작업도 지워짐 (037 SQL) · 지운 건 오늘 다시 안 생김 · 끝난 작업만 못 지움"],
   ["2026-10-26", "라벨작업 카드", "[안 함 · 삭제] — 안 할 라벨 작업을 지움. 지운 건 오늘은 자동으로 다시 안 생기고, 화면 위 주황 태그(↺)로 되돌릴 수 있음"],
   ["2026-10-26", "검수", "체크 항목 누를 때 화면 전체가 다시 그려지면서 옆 항목이 눌리던 것 고침 — 그 카드만 바로 바뀜 · 치던 확인수량 안 지워짐 · 전부 체크 전엔 [검수 완료] 안 눌림"],
@@ -6248,12 +6266,12 @@ function syncUserUI(){
   if (av) av.textContent = CURRENT_USER ? CURRENT_USER.slice(-2) : "—";
   const cu = $("curUser");
   if (cu) {
-    const own = loginWorker();
-    const list = isSystemAdmin() ? DB.workers : (own ? [own] : []);
-    cu.innerHTML = (isSystemAdmin() ? `<option value="">작업자 선택</option>` : ``) +
+    const own = loginWorker(), shared = isSharedLogin();
+    const list = (isSystemAdmin() || shared) ? DB.workers : (own ? [own] : []);
+    cu.innerHTML = ((isSystemAdmin() || shared) ? `<option value="">작업자 선택</option>` : ``) +
       list.map(w=>`<option ${w.name===CURRENT_USER?"selected":""}>${w.name}</option>`).join("");
-    cu.disabled = !!LOGIN_USER && !isSystemAdmin();
-    cu.title = isSystemAdmin() ? "시스템 관리자 계정 — 실제 작업자를 변경할 수 있습니다" : "일반 계정 — 본인 작업자로 고정됩니다";
+    cu.disabled = !!LOGIN_USER && !isSystemAdmin() && !shared;
+    cu.title = isSystemAdmin() ? "시스템 관리자 계정 — 실제 작업자를 변경할 수 있습니다" : shared ? "공용 계정 — 본인 이름을 고르세요" : "일반 계정 — 본인 작업자로 고정됩니다";
   }
   const warn = $("userWarn");
   if (warn) warn.style.display = CURRENT_USER ? "none" : "block";
@@ -6681,11 +6699,38 @@ function allToMach(mid){
 const BKG_KEY = "batch_kg_default";
 const batchKgDefault = () => { const v = Number(SETTINGS[BKG_KEY]); return v > 0 ? v : 57; };
 function setBatchKgDefault(v){ const n = Math.max(0, Number(v)||0); SETTINGS[BKG_KEY] = n; renderPlan(); renderWork(); saveSetting(BKG_KEY, n); toast(`1배치 기본 ${n||57}kg`); }
-/* 원두별 1배치 산출 kg — 기준정보에 로스터기별 kg이 있으면 그것(× 수율), 없으면 생산계획의 "1배치 기본 kg" */
+/* 원두 이름으로 정하는 1배치 kg 규칙 — 위에서부터 먼저 맞는 것. 예) "하바나 싱글" 10 · "싱글" 20 · 나머지는 기본 kg */
+const BKR_KEY = "batch_kg_rules";
+const BKR_DEFAULT = [ { match:"하바나 싱글", kg:10, roaster:"S35" }, { match:"싱글", kg:20, roaster:"S35" }, { match:"하바나", kg:0, roaster:"S35" } ];
+const batchKgRules = () => { const v = SETTINGS[BKR_KEY]; return Array.isArray(v) ? v : BKR_DEFAULT; };
+const nrmBean = s => String(s||"").replace(/\s+/g,"").toLowerCase();
+function ruleKgFor(bean){
+  const n = nrmBean(bean);
+  for (const r of batchKgRules()) { const m = nrmBean(r.match); if (m && n.includes(m) && Number(r.kg) > 0) return { kg:Number(r.kg), why:r.match }; }
+  return null;
+}
+/* 이름 규칙으로 정해진 로스터기 (예: 싱글·하바나 → S35 만) */
+function ruleRoasterFor(bean){
+  const n = nrmBean(bean);
+  for (const r of batchKgRules()) { const m = nrmBean(r.match); if (m && n.includes(m) && r.roaster) {
+    const ro = DB.roasters.find(x=>x.active!==false && nrmBean(x.name)===nrmBean(r.roaster)); if (ro) return ro; } }
+  return null;
+}
+async function editBatchKgRules(){
+  const txt = batchKgRules().map(r=>`${r.match} ${r.kg||0}${r.roaster?` ${r.roaster}`:""}`).join("\n");
+  const v = await ask(`한 줄에 [원두 이름에 들어가는 말] [1배치 kg] [로스터기(선택)]. 위에서부터 먼저 맞는 규칙을 씁니다.\n예) 하바나 싱글 10 S35 → 10kg · S35에서만 / 싱글 20 S35 / 하바나 0 S35 → kg은 기본값, 로스터기만 S35\n안 맞으면 기본 ${fmt(batchKgDefault())}kg · 로스터기는 능력 여유 있는 쪽\n(기준정보 › 원두·MMS코드에 로스터기별 kg을 적어 둔 원두는 그 값이 먼저입니다)`,
+    { prompt:true, multi:true, value:txt, title:"원두별 규칙 (1배치 kg · 로스터기)" });
+  if (v == null) return;
+  const out = []; v.split("\n").map(x=>x.trim()).filter(Boolean).forEach(line=>{ const m = line.match(/^(.*?)\s+(\d+(?:\.\d+)?)\s*(?:kg)?(?:\s+(\S+))?$/i); if (m) out.push({ match:m[1].trim(), kg:Number(m[2]), roaster:(m[3]||"").trim() }); });
+  SETTINGS[BKR_KEY] = out; renderPlan(); renderWork(); saveSetting(BKR_KEY, out); toast(`1배치 kg 규칙 ${out.length}개 저장`);
+}
+/* 원두별 1배치 산출 kg — ① 기준정보 로스터기별 kg(× 수율) ② 이름 규칙(하바나 싱글 10 · 싱글 20) ③ 생산계획의 "1배치 기본 kg" */
 function virtBatchKg(bean){
   const rs = allowedRoasters(bean);
   const v = rs.reduce((best, r)=>Math.max(best, Math.round(capFor(bean, r.id) * Number(r.yield_pct||100)/100 * 100)/100), 0);
-  return v > 0 ? v : batchKgDefault();
+  if (v > 0) return v;
+  const rule = ruleKgFor(bean); if (rule) return rule.kg;
+  return batchKgDefault();
 }
 /* 그날 그 원두의 다음 배치번호 — 등록된 배치와 이미 지시에 적힌 예정 배치 둘 다 보고 */
 function nextBatchNo(bean, d){
@@ -6967,7 +7012,8 @@ function renderPlan(){
     ` <button class="btn ${isCompact()?"primary":""}" style="margin-left:4px" title="칸을 줄여서 옆으로 안 넘기고 봅니다"
         onclick="setPlanCompact(${isCompact()?"false":"true"})">간단히 보기 ${isCompact()?"켬":"끔"}</button>` +
     ` <label style="margin-left:8px" title="재고 배치가 없을 때 이 kg 단위로 예정 배치를 나눕니다 · 원두별로 기준정보에 1배치 kg이 있으면 그 값이 먼저">1배치 기본
-        <input type="text" inputmode="decimal" class="num" style="width:56px" value="${fmt(batchKgDefault())}" onchange="setBatchKgDefault(this.value)"> kg</label>`;
+        <input type="text" inputmode="decimal" class="num" style="width:56px" value="${fmt(batchKgDefault())}" onchange="setBatchKgDefault(this.value)"> kg</label>` +
+    ` <button class="btn" style="height:28px;padding:0 9px;font-size:12px" onclick="editBatchKgRules()" title="${batchKgRules().map(r=>`${r.match} ${r.kg}kg`).join(" · ")||"규칙 없음"}">원두별 규칙 ${batchKgRules().length}</button>`;
   const CX = isCompact();
   if (CX) tbl("planMach", ["기계","가용(h)","사용(h)","여유(h)","배정 EA"],
     DB.machines.map(m=>{
@@ -7016,7 +7062,7 @@ function renderPlan(){
                 return `<span class="tag ${st==="bad"?"bad":st==="warn"?"warn":"ok"}" title="${x.b.bean} · 로스팅 ${x.b.roast_date} · 잔여 ${fmt(x.b.stock_kg)}kg">
                   ${batchLabel(x.b)} <b>${fmt(x.kg)}kg</b>${st!=="ok"?` ${shelfLabel(x.b.roast_date)}`:""}</span>`; }).join(" ")
             : '<span class="hint" style="padding:0">사용 가능한 배치 없음</span>'
-        }${r.lack>0?` <span class="tag bad">로스팅요청 ${fmt(r.lack)}kg${r.picks.some(x=>x.virtual)?` · 예정 배치 ${r.picks.filter(x=>x.virtual).length}개`:" — 1배치 kg 미등록"}</span>`:""}</td>`}
+        }${r.lack>0?` <span class="tag bad">로스팅요청 ${fmt(r.lack)}kg${r.picks.some(x=>x.virtual)?` · 예정 배치 ${r.picks.filter(x=>x.virtual).length}개 (1배치 ${fmt(virtBatchKg(r.p.bean))}kg${ruleKgFor(r.p.bean)&&!allowedRoasters(r.p.bean).some(x=>capFor(r.p.bean,x.id)>0)?` · ${ruleKgFor(r.p.bean).why}`:""})`:" — 1배치 kg 미등록"}</span>`:""}</td>`}
         ${DB.machines.map(m=>{
           const v = r.alloc[m.id] || 0, f = r.flag[m.id];
           const ok = canRun(m, r.p);
@@ -9785,6 +9831,8 @@ const overCap = (r, l) => { const p = loadPct(r, l||{n:0,g:0}); return p!==null 
 
 /* 가능한 로스터기 중 하루 능력에 여유가 많은 쪽을 고름 (여유 없으면 버림수가 적은 쪽) */
 function pickRoaster(bean, kg, L){
+  const rr = ruleRoasterFor(bean);                  // 싱글·하바나 → S35 만
+  if (rr) return rr.id;
   const cand = allowedRoasters(bean);
   if (!cand.length) return null;
   const sc = cand.map(r=>{
@@ -11394,7 +11442,51 @@ document.addEventListener("change", e=>{
     return;
   }
 
-  row[k] = el.type==="checkbox" ? el.checked : (el.type==="number" ? Number(el.value)||0 : el.value);
+  const nv = el.type==="checkbox" ? el.checked : (el.type==="number" ? Number(el.value)||0 : el.value);
+  /* ★ 기준정보는 바로 저장하지 않는다 — 모아 두었다가 [저장] 을 누르면 "저장하시겠습니까?" 묻고 한 번에 */
+  if (nv === was || (nv === "" && (was === null || was === undefined))) { el.classList.remove("dirty"); basePendDrop(t,id,k); return; }
+  basePendPut(t, id, k, nv, was); el.classList.add("dirty"); return;
+});
+/* 기준정보 — 저장 전 변경 묶음 */
+const BASE_PEND = {};                        // "t|id|k" → { t, id, k, v, was }
+const basePendKey = (t,id,k) => `${t}|${id}|${k}`;
+function basePendPut(t,id,k,v,was){ BASE_PEND[basePendKey(t,id,k)] = { t,id,k,v,was }; baseSaveBarUpdate(); }
+function basePendDrop(t,id,k){ delete BASE_PEND[basePendKey(t,id,k)]; baseSaveBarUpdate(); }
+const basePendCount = () => Object.keys(BASE_PEND).length;
+function baseSaveBarUpdate(){
+  const b = $("baseSaveBar"); if (!b) return;
+  const n = basePendCount();
+  b.style.display = n ? "flex" : "none";
+  b.style.bottom = ($("saveFail") && $("saveFail").style.display !== "none") ? "78px" : "18px";
+  if (n) $("baseSaveTxt").textContent = `저장 안 된 변경 ${n}건`;
+}
+/* 다시 그려도 치던 값이 안 사라지게 — 표를 그린 뒤 되돌려 넣는다 */
+function basePendApplyDOM(){
+  Object.values(BASE_PEND).forEach(x=>{
+    const el = document.querySelector(`[data-t="${x.t}"][data-id="${x.id}"][data-k="${x.k}"]`); if (!el) return;
+    if (el.type === "checkbox") el.checked = !!x.v; else el.value = x.v;
+    el.classList.add("dirty");
+  });
+  baseSaveBarUpdate();
+}
+function baseDiscard(){
+  const n = basePendCount(); for (const k in BASE_PEND) delete BASE_PEND[k];
+  renderBase(); baseSaveBarUpdate(); toast(`변경 ${n}건을 취소했습니다`);
+}
+async function baseSave(){
+  const list = Object.values(BASE_PEND); if (!list.length) return;
+  const names = {}; list.forEach(x=>{ const r = DB[x.t]?.find(r=>r.id===x.id); const nm = r?.name || r?.bean || r?.code || ""; names[nm] = (names[nm]||0)+1; });
+  const nmTxt = Object.entries(names).slice(0,8).map(([n,c])=>`· ${n||"(이름 없음)"} ${c}칸`).join("\n");
+  if (!(await ask(`${list.length}건을 저장하시겠습니까?\n\n${nmTxt}${Object.keys(names).length>8?`\n… 외 ${Object.keys(names).length-8}줄`:""}`, { title:"기준정보 저장", yes:"저장" }))) return;
+  let n = 0;
+  list.forEach(x=>{ const row = DB[x.t]?.find(r=>r.id===x.id); if (!row) return; applyCellChange(x.t, row, x.k, x.v, x.was); n++; });
+  for (const k in BASE_PEND) delete BASE_PEND[k];
+  logAudit("기준정보 저장", `${n}건`, Object.keys(names).slice(0,5).join(", "));
+  renderAll(); baseSaveBarUpdate(); toast(`${n}건 저장했습니다`);
+}
+/* 칸 하나의 변경을 실제로 넣는다 (예전엔 change 때 바로 하던 일) */
+function applyCellChange(t, row, k, nv, was){
+  row[k] = nv;
   /* 부자재 구분을 바꾸면 — 단위를 그 구분 기본값으로 맞추고, 보던 화면이 그 줄을 놓치지 않게 따라간다 */
   if (t==="materials" && k==="kind" && was !== row.kind) {
     if (!row.unit || row.unit === MAT_UNIT[was]) row.unit = MAT_UNIT[row.kind] || "EA";
@@ -11421,7 +11513,7 @@ document.addEventListener("change", e=>{
   save(t, row);
   renderDash(); renderPlan(); renderRoast(); renderStock();
   if (t==="roasters" || t==="bean_roasters" || t==="beans") renderReq();
-});
+}
 /* 이 품목을 쓴 기록이 몇 건인지 */
 function prodUses(pid){
   return { 작업지시: DB.orders.filter(o=>o.product_id===pid).length,
@@ -11710,7 +11802,8 @@ async function offSelected(){
   logAudit("품목 사용중지", `${rows.length}개`, rows.slice(0,5).map(p=>p.name).join(", "));
   SEL.products.clear(); renderAll(); toast(`${rows.length}개 사용중지 (이력은 그대로)`);
 }
-function renderBase(){
+function renderBase(){ renderBaseInner(); basePendApplyDOM(); }
+function renderBaseInner(){
   const prodList = sorted("tProd", DB.products);
   SHOWN.products = prodList.map(p=>p.id);
   tbl("tProd", [selAllBox("products"),"CFE 코드","구분","채널","원두",'<span class="fixl">제품명</span>',"규격(g)","분쇄도","표준투입(g)","안전재고","CFE현재고","풀패키지","기본 라벨","묶음","이카전용","사용",""],
@@ -12017,6 +12110,19 @@ function renderBase(){
 
 }
 
+/* ══ 공용 계정 — 태블릿 하나를 여러 작업자가 같이 쓸 때. 관리자가 계정 관리에서 체크하면
+   그 계정으로 들어온 사람은 상단에서 작업자를 고를 수 있다 (고르기 전엔 수령·검수·재고반영 안 됨) ══ */
+const SHARED_KEY = "shared_accounts";
+const sharedLogins = () => { const v = SETTINGS[SHARED_KEY]; return Array.isArray(v) ? v : []; };
+const isSharedLogin = () => !!(LOGIN_USER && sharedLogins().includes(LOGIN_USER.login_id));
+async function setSharedAccount(loginId, on){
+  if (!isSystemAdmin()) return toast("시스템 관리자만 바꿀 수 있습니다");
+  const list = sharedLogins().filter(x=>x!==loginId); if (on) list.push(loginId);
+  SETTINGS[SHARED_KEY] = list; renderBase(); syncUserUI();
+  const r = await saveSetting(SHARED_KEY, list); if (r && r.ok === false) toast("저장 실패 — 서버 연결 확인");
+  logAudit("공용 계정", loginId, on ? "작업자 선택 허용" : "본인 고정");
+  toast(on ? `${loginId} — 공용 계정: 들어와서 작업자를 고릅니다` : `${loginId} — 본인 작업자로 고정`);
+}
 function accountForWorker(workerId){
   return (DB.app_users||[]).find(u=>u.worker_id===workerId && u.active!==false) || null;
 }
@@ -12024,9 +12130,10 @@ function renderAccountManagement(){
   if (!$("tAccounts")) return;
   const rankIdx = w => { const i=RANKS.indexOf(w.role); return i<0?RANKS.length:i; };
   const rows=[...DB.workers].sort((a,b)=>rankIdx(a)-rankIdx(b)||String(a.name).localeCompare(String(b.name)));
-  tbl("tAccounts", ["이름","직급","업무 역할","로그인 ID","계정 상태","관리"],
+  tbl("tAccounts", ["이름","직급","업무 역할","로그인 ID","계정 상태",'<span title="체크하면 이 계정으로 들어온 사람이 상단에서 작업자를 고릅니다 — 태블릿 공용 계정">공용 (작업자 선택)</span>',"관리"],
     rows.map(w=>{
       const a=accountForWorker(w.id);
+      const shared = a ? sharedLogins().includes(a.login_id) : false;
       const role=ROLES[permOf(w)]||permOf(w);
       const login=a?.login_id||"";
       const status=a ? `<span class="tag ok">사용중</span>` : `<span class="tag warn">미생성</span>`;
@@ -12045,10 +12152,11 @@ function renderAccountManagement(){
         <td class="c">${role}</td>
         <td class="c">${login ? `<b>${login}</b>` : "—"}</td>
         <td class="c">${status}</td>
+        <td class="c">${a ? `<label class="pchk${shared?" on":""}" style="cursor:pointer"><input type="checkbox" ${shared?"checked":""} ${isSystemAdmin()?"":"disabled"} onchange="setSharedAccount('${a.login_id}',this.checked)"> <span>${shared?"공용":"본인만"}</span></label>` : "—"}</td>
         <td class="c">${manage}</td>
       </tr>`;
     }),
-    `<td colspan="6" class="c">신규 계정 초기 비밀번호: <b>000000</b> · 생성 후 본인이 비밀번호를 변경하세요</td>`);
+    `<td colspan="7" class="c">신규 계정 초기 비밀번호: <b>000000</b> · 생성 후 본인이 비밀번호를 변경하세요 · 태블릿을 여러 명이 쓰면 그 계정을 <b>공용</b>으로 체크 — 들어올 때마다 작업자를 고릅니다</td>`);
   if ($("myLoginId")) $("myLoginId").value = LOGIN_USER?.login_id || "";
 }
 async function reloadAppUsers(){
@@ -12553,6 +12661,7 @@ const csvProducts = () => csv("품목기준정보", ["CFE코드","구분","채�
    ⑮ 엑셀 넣기 (설명서 10장)
    ══════════════════════════════════════════════════════════════ */
 const HELP = {
+  log:"[날짜 | CFE코드(또는 품목명) | 수량 | (작업자) | (기계)] 형식. 날짜순으로 생산실적을 등록합니다 — 배치·일련번호는 그 원두의 오래된 배치부터 저절로 붙고, 봉투 LOT 도 입고 기록대로 붙습니다. ※ 그 날짜 전에 로스팅 입고(배치)가 먼저 들어가 있어야 합니다. 원두가 모자란 줄은 등록되지 않고 이유를 보여줍니다.",
   ship:"출고지시서 — [품목명 | 출고수량] 형식. 나간 수량만큼 CFE 현재고에서 빼고, 모자라는 만큼(안전재고 − 현재고)을 생산계획으로 잡습니다. ※ 주문 수량 그대로 만들려면 [엑셀로 집계 추가]를 쓰세요.",
   plan:"품목별 생산수량을 계획EA에 그대로 반영합니다 (덮어쓰기).",
   tally:"[품목명 | 수량] 형식. 지금 고른 차수로 집계에 쌓입니다 — 이미 들어간 차수가 있어도 지우지 않고 더합니다.",
@@ -13072,6 +13181,77 @@ function preview(){
     return;
   }
 
+  // ── 생산실적 과거 등록 — 날짜 · 코드/품목 · 수량 · (작업자) · (기계) ──
+  if (mode==="log") {
+    const normDate = v => { const t = String(v||"").trim(); if (!t) return "";
+      let m = t.match(/^(\d{4})[.\-\/년]\s*(\d{1,2})[.\-\/월]\s*(\d{1,2})/); if (m) return `${m[1]}-${m[2].padStart(2,"0")}-${m[3].padStart(2,"0")}`;
+      m = t.match(/^(\d{2})[.\-\/]\s*(\d{1,2})[.\-\/]\s*(\d{1,2})$/); if (m) return `20${m[1]}-${m[2].padStart(2,"0")}-${m[3].padStart(2,"0")}`;
+      m = t.match(/^(\d{1,2})[.\/월]\s*(\d{1,2})일?$/); if (m) return `${today().slice(0,4)}-${m[1].padStart(2,"0")}-${m[2].padStart(2,"0")}`;
+      m = t.match(/^(\d{4})(\d{2})(\d{2})$/); if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+      const d = new Date(t); return isNaN(d) ? "" : ymd(d); };
+    /* 머리글 찾기 — 날짜·코드·이름·수량·작업자·기계 */
+    let hi = null, start = 0;
+    for (let i=0;i<Math.min(L.length,6);i++){
+      const idx = { date:-1, code:-1, name:-1, qty:-1, worker:-1, mach:-1 };
+      L[i].forEach((c,j)=>{ const t = String(c||"").replace(/\s+/g,"");
+        if (!t) return;
+        if (idx.date<0 && /날짜|일자|작업일|생산일|포장일/.test(t)) idx.date = j;
+        else if (idx.code<0 && /코드|품번/.test(t)) idx.code = j;
+        else if (idx.name<0 && H_NAME.test(t)) idx.name = j;
+        else if (idx.qty<0 && /^(수량|생산수량|생산ea|ea|개수|수량\(ea\))$/i.test(t)) idx.qty = j;
+        else if (idx.worker<0 && /작업자|생산자|담당/.test(t)) idx.worker = j;
+        else if (idx.mach<0 && /기계|설비|머신/.test(t)) idx.mach = j; });
+      if (idx.date>=0 && idx.qty>=0 && (idx.code>=0 || idx.name>=0)) { hi = idx; start = i+1; break; }
+    }
+    for (let i=start;i<L.length;i++){
+      const all = L[i]; let date="", code="", nameRaw="", qty=null, worker="", mach="";
+      if (hi) {
+        date = normDate(all[hi.date]); code = hi.code>=0 ? String(all[hi.code]||"").trim() : "";
+        nameRaw = hi.name>=0 ? String(all[hi.name]||"").trim() : "";
+        const q = String(all[hi.qty]||"").replace(/,/g,"").trim(); if (/^\d+(\.\d+)?$/.test(q)) qty = Number(q);
+        worker = hi.worker>=0 ? String(all[hi.worker]||"").trim() : ""; mach = hi.mach>=0 ? String(all[hi.mach]||"").trim() : "";
+      } else {
+        const cols = all.map(c=>String(c||"").trim()).filter(c=>c && c!=="-"); if (cols.length<3) continue;
+        date = normDate(cols[0]); if (!date) continue; cols.shift();
+        for (let k=cols.length-1;k>=0;k--){ const v=cols[k].replace(/,/g,""); if (/^\d+(\.\d+)?$/.test(v)) { qty=Number(v); cols.splice(k,1); break; } }
+        for (let k=0;k<cols.length;k++){ if (isCode(cols[k]) && productByCode(cols[k])) { code=cols[k]; cols.splice(k,1); break; } }
+        if (cols.length && workerByName(cols[cols.length-1])) worker = cols.pop();
+        if (cols.length && DB.machines.some(m=>m.name===cols[cols.length-1])) mach = cols.pop();
+        nameRaw = cols.join(" ");
+      }
+      if (!date && !code && !nameRaw) continue;
+      const p = (code && productByCode(code)) || (nameRaw && matchProduct(nameRaw)) || null;
+      let why = !date ? "날짜 없음" : !p ? "품목 못 찾음" : !(qty>0) ? "수량 없음" : "";
+      /* 같은 날 같은 품목 같은 수량이 이미 실적에 있으면 — 두 번 붙여넣은 것 */
+      if (!why && DB.logs.some(l=>logLive(l) && l.work_date===date && l.product_id===p.id && Number(l.qty_ea)===Number(qty))) why = "이미 있음";
+      let warn = "";
+      if (!why) {
+        if (!DB.mms.some(m=>m.bean===p.bean && Number(m.stock_kg)>0)) warn = "배치 재고 없음";
+        else if (!DB.mms.some(m=>m.bean===p.bean && Number(m.stock_kg)>0 && String(m.roast_date)<=date)) warn = "그 날짜 전 배치 없음";
+      }
+      pRows.push({ date, code, nameRaw, qty, worker, mach, p, why, warn });
+    }
+    pRows.sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+    /* 붙여넣은 안에서 똑같은 줄(날짜·품목·수량)이 또 있으면 — 두 번째부터는 건너뛴다 (진짜 두 번 만들었으면 수량을 합쳐 한 줄로) */
+    const seen = new Set();
+    pRows.forEach(r=>{ if (r.why) return; const k = `${r.date}|${r.p.id}|${r.qty}`; if (seen.has(k)) r.why = "중복 줄"; else seen.add(k); });
+    /* 원두가 모자라서 실패할 줄을 미리 표시 — 날짜순으로 누적해 본다 */
+    const left = {}; DB.mms.forEach(m=>{ if (Number(m.stock_kg)>0 && !isHeld(m)) left[m.bean] = (left[m.bean]||0) + Number(m.stock_kg); });
+    pRows.forEach(r=>{ if (r.why) return; const kg = stdKg(r.p, r.qty); const b = r.p.bean;
+      if ((left[b]||0) + 0.0001 < kg) { r.warn = `원두 부족 ${fmt(kg-(left[b]||0))}kg`; r.short = true; } left[b] = (left[b]||0) - kg; });
+    const okN = pRows.filter(r=>!r.why).length;
+    const days = [...new Set(pRows.filter(r=>!r.why).map(r=>r.date))];
+    $("pPrev").innerHTML = `<div class="hint" style="padding:0 0 8px">${hi ? "머리글 인식: 날짜 · " + (hi.code>=0?"코드 · ":"") + (hi.name>=0?"품목명 · ":"") + "수량" + (hi.worker>=0?" · 작업자":"") + (hi.mach>=0?" · 기계":"") : "머리글 없음 — [날짜 | 코드 | 품목명 | 수량] 순서로 읽음"} · 날짜순으로 등록됩니다 (${days.length}일)</div>` +
+      `<table><thead><tr><th>날짜</th><th>코드</th><th>입력 이름</th><th>품목</th><th>수량</th><th>작업자</th><th>기계</th><th>상태</th></tr></thead><tbody>` +
+      pRows.map(r=>`<tr><td class="c">${r.date||'<span class="bad">—</span>'}</td><td class="l">${r.code||"—"}</td><td class="l">${r.nameRaw||""}</td>
+        <td class="l">${r.p ? `<b>${r.p.name}</b><br><span class="hint" style="padding:0;font-size:11px">원두 ${r.p.bean}</span>` : "—"}</td>
+        <td>${r.qty??"—"}</td><td class="c">${r.worker||"—"}</td><td class="c">${r.mach||"—"}</td>
+        <td class="c">${r.why ? `<span class="tag ${r.why==="이미 있음"||r.why==="중복 줄"?"warn":"bad"}">${r.why}</span>` : r.warn ? `<span class="tag ${r.warn==="배치 재고 없음"||r.short?"bad":"warn"}" title="${r.short||r.warn==="배치 재고 없음"?"이 원두 배치가 모자라 등록이 실패합니다 — 로스팅 입고를 먼저 넣으세요":"이 날짜보다 늦게 로스팅된 배치가 붙게 됩니다 — 그 전 배치를 먼저 입고하세요"}">${r.warn}</span>` : '<span class="tag ok">등록</span>'}</td></tr>`).join("") +
+      `</tbody><tfoot><tr><td colspan="8" class="c">${okN}건 등록 가능 / 전체 ${pRows.length}건 · 합계 ${fmt(pRows.filter(r=>!r.why).reduce((s,r)=>s+r.qty,0))}EA${pRows.some(r=>r.why==="이미 있음")?` · <span class="warn">이미 있는 ${pRows.filter(r=>r.why==="이미 있음").length}건은 건너뜀</span>`:""}${pRows.some(r=>r.short)?` · <span class="bad">원두 부족 ${pRows.filter(r=>r.short).length}건 — 로스팅 입고 먼저</span>`:""}${pRows.some(r=>r.warn&&!r.short)?` · <span class="warn">배치 날짜 확인 ${pRows.filter(r=>r.warn&&!r.short).length}건</span>`:""}</td></tr></tfoot></table>`;
+    $("pApply").style.display = okN ? "block" : "none";
+    return;
+  }
+
   // ── 원두 단위 (로스팅 계획 / MMS 재고확인) ──
   if (mode==="roast" || mode==="stock_mms") {
     const D = detectHeader(L); pHdr = D.hdr; applyQtyPick();
@@ -13224,7 +13404,7 @@ function preview(){
   $("pApply").style.display = okN ? "block" : "none";
 }
 
-const PASTE_MODES = ["tally","ship","plan","cfe","roast","stock_cfe","stock_mms","cfecode","mmscode","beanroaster","beanmaster"];
+const PASTE_MODES = ["log","tally","ship","plan","cfe","roast","stock_cfe","stock_mms","cfecode","mmscode","beanroaster","beanmaster"];
 async function applyPaste(){
   const mode = $("pMode").value, withQty = $("pQty")?.checked;
   /* 모드를 못 읽으면 멈춘다 — 예전에 여기서 CFE 현재고를 말없이 덮어쓴 적이 있다 */
@@ -13232,6 +13412,13 @@ async function applyPaste(){
     return toast("붙여넣기 모드를 고르지 못했습니다 — 위 [모드]에서 직접 고르고 다시 누르세요");
   const need = PASTE_CAP[mode];
   if (need && !can(need)) { closePaste(); return deny(need); }
+  /* ★ 저장 전에 한 번 묻는다 — 모드마다 따로 묻는 것(생산실적·출고)은 거기서 묻는다 */
+  if (!["log","ship"].includes(mode)) {
+    const MODE_NAME = { tally:"집계", plan:"계획EA", cfe:"CFE 현재고", roast:"로스팅 계획", stock_cfe:"재고확인(CFE)", stock_mms:"재고확인(MMS)",
+      cfecode:"품목 CFE 코드", mmscode:"원두 MMS 코드", beanmaster:"원두 마스터", beanroaster:"원두별 로스터기 기준" };
+    const cnt = pRows.filter(r=>!r.why && !r.bad).length || pRows.length;
+    if (!(await ask(`${MODE_NAME[mode]||mode} ${cnt}건을 저장하시겠습니까?${mode==="cfe"?"\n\n(CFE 현재고를 덮어씁니다)":""}`, { title:"저장", yes:"저장" }))) return;
+  }
   let n = 0;
   if (mode==="beanroaster") {
     pRows.forEach(r=>{
@@ -13356,6 +13543,30 @@ async function applyPaste(){
     if (mkP) logAudit("품목 자동등록", `${mkP}건`, `재고확인 붙여넣기로 신규 품목 생성 (안전재고 0)`);
     closePaste(); $("stType").value="cfe"; renderAll(); go("stock");
     return toast(`${n}개 품목 보유수량 반영${mkMsg()} — 차이 확인`);
+  }
+  if (mode==="log") {
+    if (!(await requireUser())) return;
+    const rows = pRows.filter(r=>!r.why);
+    if (!rows.length) return toast("등록할 줄이 없습니다");
+    const noBatch = [...new Set(rows.map(r=>r.p.bean))].filter(b=>!DB.mms.some(m=>m.bean===b && Number(m.stock_kg)>0));
+    if (!(await ask(`${rows.length}건을 날짜순으로 생산실적에 등록합니다 (${rows[0].date} ~ ${rows[rows.length-1].date}).\n` +
+      `배치·일련번호는 오래된 배치부터 저절로 붙고, MMS 재고가 그만큼 줄고 CFE 완제품이 늘어납니다.` +
+      (noBatch.length ? `\n\n⚠ 재고 배치가 하나도 없는 원두: ${noBatch.join(", ")} — 이 원두 줄은 등록되지 않습니다. 로스팅 입고를 먼저 넣으세요.` : ""),
+      { title:"지난 실적 등록", yes:`${rows.length}건 등록` }))) return;
+    closePaste();
+    let okN = 0; const fail = [];
+    for (let i=0;i<rows.length;i++){
+      const r = rows[i];
+      toast(`등록 중… ${i+1} / ${rows.length}`);
+      const res = await mesRecordLogManual({ product_id:r.p.id, qty:r.qty, date:r.date,
+        machine:r.mach || "", worker:r.worker || "", lot: autoLotOf({ product_id:r.p.id }) || "",
+        label_id: labelPick(r.p), idem:`logx-${r.date}-${r.p.id}-${i}-${uid()}` });
+      if (res && res.ok) okN++; else fail.push(`${r.date} ${r.p.name} ${fmt(r.qty)} — ${res?.message||"?"}`);
+    }
+    logAudit("생산실적 엑셀 등록", `${okN}건`, `${rows[0].date}~${rows[rows.length-1].date}${fail.length?` · 실패 ${fail.length}`:""}`);
+    renderAll(); go("log");
+    if (fail.length) await ask(`${okN}건 등록 · ${fail.length}건 실패:\n\n${fail.slice(0,12).join("\n")}${fail.length>12?`\n… 외 ${fail.length-12}건`:""}\n\n실패한 줄은 로스팅 입고(배치)를 넣은 뒤 그 줄만 다시 붙여넣으세요.`, { title:"지난 실적 등록 결과", yes:"확인" });
+    return toast(`지난 생산실적 ${okN}건 등록${fail.length?` · 실패 ${fail.length}건`:""}`);
   }
   if (mode==="tally") {
     const d = tallyDay(), rd = tallyRound;
@@ -15036,7 +15247,7 @@ function resetCaps(){
   logAudit("권한설정 변경", "전체", "기본값으로 되돌림");
   renderAll(); toast("권한을 기본값으로 되돌렸습니다");
 }
-const PASTE_CAP = { ship:"plan", plan:"plan", tally:"plan", cfe:"base", roast:"roast",
+const PASTE_CAP = { log:"log", ship:"plan", plan:"plan", tally:"plan", cfe:"base", roast:"roast",
   stock_cfe:"stock", stock_mms:"stock", cfecode:"base", mmscode:"base", beanroaster:"base", beanmaster:"base" };
 const CAP_NAME = { plan:"생산계획·작업지시", work:"현장 생산", qc:"검수", ship:"출고",
   pqc:"품질(부적합)", base:"기준정보", stock:"재고확인", roast:"로스팅", log:"생산실적", sys:"초기화·백업" };
@@ -15151,7 +15362,7 @@ async function firstRun(){
     const own = loginWorker();
     // 로그인할 때는 이전 브라우저의 작업자 선택값을 재사용하지 않는다.
     // 시스템 관리자도 항상 자신의 연결된 생산자로 시작한다.
-    if (own) {
+    if (own && !isSharedLogin()) {
       CURRENT_USER = own.name;
       try { localStorage.setItem("momos_user", CURRENT_USER); } catch(e){}
     } else {
