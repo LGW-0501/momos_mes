@@ -6419,6 +6419,8 @@ function renderOne(s){
      표·카드·계획·집계·여유분·재고 세기 전부 이 순서를 따른다 (머리글 정렬을 누르면 그게 우선) */
 const natCmp = (a, b) => String(a??"").localeCompare(String(b??""), "ko", { numeric:true, sensitivity:"base" });
 const codeOrd = c => { const k = codeKey(c); return k ? ("0" + k) : "1"; };   // 코드 있는 게 먼저
+const prodCodeCmp = (pa, pb) => natCmp(codeOrd(pa?.code), codeOrd(pb?.code)) || natCmp(pa?.name, pb?.name);
+const beanCodeCmp = (a, b) => natCmp(codeOrd(mmsCodeOf(a)), codeOrd(mmsCodeOf(b))) || natCmp(a, b);
 function sortMasters(){
   if (Array.isArray(DB.products)) DB.products.sort((a,b)=>natCmp(codeOrd(a.code), codeOrd(b.code)) || natCmp(a.name, b.name));
   if (Array.isArray(DB.beans))    DB.beans.sort((a,b)=>natCmp(codeOrd(a.mms_code), codeOrd(b.mms_code)) || natCmp(a.name, b.name));
@@ -7495,7 +7497,7 @@ function packText(need, pack, unit){
 }
 const mtOf = d => DB.material_tasks.filter(t=>t.date===(d||today()))
   .sort((a,b)=> MT_ST.indexOf(a.status)-MT_ST.indexOf(b.status)
-    || String(a.product_name).localeCompare(String(b.product_name)));
+    || prodCodeCmp(prodById(a.product_id), prodById(b.product_id)));
 /* 그 자재를 쓰는 다른 작업이 이미 잡아 둔 수량 (예상재고 계산용) */
 const mtBooked = (d, mid, exceptId) => DB.material_tasks
   .filter(t=>t.date===d && t.material_id===mid && t.id!==exceptId && t.status!=="작업완료")
@@ -7891,12 +7893,12 @@ function renderMt(){
     : "원두별로 묶었습니다 — 같은 원두 라벨을 한 번에 붙일 때";
   const prioOf = t => { const os = DB.orders.filter(o=>o.work_date===d && o.product_id===t.product_id && stIdx(o)<2);
     return os.length ? Math.min(...os.map(o=>Number(o.priority)||9999)) : 9999; };
-  const byOrder = (a,b) => prioOf(a)-prioOf(b) || (Number(b.spec_g)||0)-(Number(a.spec_g)||0) || String(a.product_name).localeCompare(String(b.product_name),"ko");
+  const byOrder = (a,b) => prioOf(a)-prioOf(b) || (Number(b.spec_g)||0)-(Number(a.spec_g)||0) || prodCodeCmp(prodById(a.product_id), prodById(b.product_id));
   const groupsOf = arr => {
     if (mtView==="spec") { const m = {}; arr.forEach(t=>{ const k = specLabel(bucketOf(Number(t.spec_g)||100)); (m[k]=m[k]||[]).push(t); });
       return Object.entries(m).sort((x,y)=>bucketOf(Number(y[1][0].spec_g)||100)-bucketOf(Number(x[1][0].spec_g)||100)).map(([k,v])=>[k, v.sort(byOrder)]); }
     if (mtView==="bean") { const m = {}; arr.forEach(t=>{ const k = prodById(t.product_id)?.bean || "(원두 없음)"; (m[k]=m[k]||[]).push(t); });
-      return Object.entries(m).sort((x,y)=>String(x[0]).localeCompare(String(y[0]),"ko")).map(([k,v])=>[k, v.sort(byOrder)]); }
+      return Object.entries(m).sort((x,y)=>beanCodeCmp(x[0], y[0])).map(([k,v])=>[k, v.sort(byOrder)]); }
     return [["", [...arr].sort(byOrder)]];
   };
   const renderGrouped = (arr, cls) => groupsOf(arr).map(([k,v])=>
@@ -10462,10 +10464,10 @@ function renderBufPanel(){
   const prods = PRODS();
   const dead = prods.filter(p => c.items[p.id]?.on && !beanLive(p.bean));
   const show = prods.filter(p => beanLive(p.bean) && (bufShowAll || c.items[p.id]?.on));
-  const beans = [...new Set(show.map(p=>p.bean))].sort((a,b)=>String(a).localeCompare(String(b),"ko"));
+  const beans = [...new Set(show.map(p=>p.bean))].sort((a,b)=>natCmp(codeOrd(mmsCodeOf(a)), codeOrd(mmsCodeOf(b))) || natCmp(a, b));   // MMS 코드순
   const rows = [];
   beans.forEach(bn=>{
-    const ps = show.filter(p=>p.bean===bn).sort((a,b)=>Number(b.spec_g||0)-Number(a.spec_g||0));
+    const ps = show.filter(p=>p.bean===bn).sort((a,b)=>natCmp(codeOrd(a.code), codeOrd(b.code)) || Number(b.spec_g||0)-Number(a.spec_g||0));   // CFE 코드순
     ps.forEach(p=>{
       const it = c.items[p.id] || { on:false, ea:{} }, on = !!it.on;
       rows.push(`<tr class="${on?"":"offrow"}">
@@ -14887,8 +14889,8 @@ async function sortOrdersBySpec(d, opt = {}){
       const sa = bucketOf(specOf(a)||100), sb2 = bucketOf(specOf(b)||100);
       if (sa !== sb2) return asc ? sa - sb2 : sb2 - sa;
       const pa = prodById(a.product_id), pb = prodById(b.product_id);
-      const bn = String(pa?.bean||"").localeCompare(String(pb?.bean||""), "ko");
-      if (bn) return bn;                                           // 같은 원두는 붙여서 — 청소·교체 줄이기
+      const bn = beanCodeCmp(pa?.bean||"", pb?.bean||"");
+      if (bn) return bn;                                           // 같은 원두는 붙여서 (MMS 코드순) — 청소·교체 줄이기
       const ga = (pa?.grind||"홀빈")==="홀빈" ? 0 : 1, gb = (pb?.grind||"홀빈")==="홀빈" ? 0 : 1;
       if (ga !== gb) return ga - gb;                               // 홀빈 먼저, 분쇄는 뒤
       return (Number(a.batch_seq)||0) - (Number(b.batch_seq)||0) || byPriority(a,b);
