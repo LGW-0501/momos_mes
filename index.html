@@ -1102,7 +1102,6 @@
     <button data-s="ship" data-r="admin,qc"><span class="ico">▷</span><span class="lb">출고</span></button>
     <button data-s="count" data-r="admin,lead,floor,qc"><span class="ico">⊞</span><span class="lb">재고 세기</span></button>
     <button data-s="close" data-r="admin,lead,floor,qc"><span class="ico">☾</span><span class="lb">마감</span></button>
-    <button data-s="help" data-r="admin,lead,floor,qc"><span class="ico">✎</span><span class="lb">문의</span></button>
     <div class="grp" data-r="admin,qc,floor"></div>
     <button data-s="plan" data-r="admin"><span class="ico">▤</span><span class="lb">생산계획</span></button>
     <button data-s="order" data-r="admin"><span class="ico">≡</span><span class="lb">작업지시</span></button>
@@ -1119,6 +1118,8 @@
     <button data-s="loss" data-r="admin"><span class="ico">▽</span><span class="lb">로스관리</span></button>
     <button data-s="cal" data-r="admin"><span class="ico">▩</span><span class="lb">캘린더</span></button>
     <button data-s="base" data-r="admin"><span class="ico">◇</span><span class="lb">기준정보</span></button>
+    <div class="grp" data-r="admin,qc,floor,lead"></div>
+    <button data-s="help" data-r="admin,lead,floor,qc"><span class="ico">✎</span><span class="lb">문의</span></button>
   </nav>
   <div class="menu gnbOut" id="gnbTools">
     <button onclick="reloadDB();closeNav()"><span class="ico">↻</span><span class="lb">새로고침</span></button>
@@ -1306,9 +1307,7 @@
 <!-- ══════ 문의 센터 — 오류·요청·질문을 적어 두면 관리자가 보고 고친다 ══════ -->
 <section class="screen" id="s-help">
   <div class="cond">
-    <span id="helpSum"></span>
-    <span style="margin-left:auto"></span>
-    <label style="cursor:pointer;margin-left:0"><input type="checkbox" id="helpAll" onchange="renderHelp()" style="width:auto;height:auto"> 완료된 것도 보기</label>
+    <span class="hint" style="padding:0">보기</span><span id="helpSum"></span>
   </div>
   <div class="body">
     <h2 class="page">문의 센터<small id="asof-help"></small></h2>
@@ -15105,6 +15104,8 @@ const HELP_KEY = "help_tickets";
 const HELP_ST = ["접수","확인중","완료","보류"];
 const HELP_ST_CLS = { "접수":"bad", "확인중":"warn", "완료":"ok", "보류":"" };
 const helpTickets = () => { const v = SETTINGS[HELP_KEY]; return Array.isArray(v) ? v : []; };
+let helpFilter = "접수";
+function setHelpFilter(k){ helpFilter = k; renderHelp(); }
 async function saveHelp(list){
   SETTINGS[HELP_KEY] = list.slice(-300); renderHelp(); helpBadge();
   const r = await saveSetting(HELP_KEY, SETTINGS[HELP_KEY]); if (r && r.ok === false) toast("저장 실패 — 서버 연결 확인");
@@ -15158,11 +15159,12 @@ function renderHelp(){
   }
   $("hWho").textContent = (CURRENT_USER || LOGIN_USER?.name) ? `보내는 사람: ${CURRENT_USER || LOGIN_USER?.name}` : "상단에서 본인 이름을 고르세요";
   const all = [...helpTickets()].sort((a,b)=>String(b.at).localeCompare(String(a.at)));
-  const showAll = $("helpAll")?.checked;
-  const list = showAll ? all : all.filter(t=>t.st!=="완료");
+  const f = helpFilter;
+  const list = f === "전체" ? all : all.filter(t=>t.st===f);
   const n = { 접수:0, 확인중:0, 완료:0, 보류:0 }; all.forEach(t=>{ n[t.st] = (n[t.st]||0)+1; });
-  $("helpSum").innerHTML = HELP_ST.map(k=>`<span class="tag ${HELP_ST_CLS[k]}">${k} ${n[k]||0}</span>`).join(" ");
-  $("helpHint").textContent = showAll ? `전체 ${all.length}건` : `안 끝난 것 ${list.length}건 · 완료 ${n["완료"]||0}건은 접힘`;
+  $("helpSum").innerHTML = [["전체", all.length], ...HELP_ST.map(k=>[k, n[k]||0])].map(([k,c])=>
+    `<button class="btn ${f===k?"primary":""}" style="height:30px;padding:0 10px;margin-left:4px" onclick="setHelpFilter('${k}')">${k} ${c}</button>`).join("");
+  $("helpHint").textContent = f === "전체" ? `전체 ${all.length}건 (최근 것이 위)` : `${f} ${list.length}건`;
   helpBadge();
   const me = CURRENT_USER || LOGIN_USER?.name || "";
   $("helpList").innerHTML = list.length ? list.map(t=>`<div class="hq ${t.st==="완료"?"done":""}">
@@ -15178,7 +15180,7 @@ function renderHelp(){
         ${(helpIsAdmin() || t.by===me) ? `<button class="btn danger" style="height:30px" onclick="delHelp('${t.id}')">삭제</button>` : ""}
       </div>
     </div>`).join("")
-    : `<div class="wempty" style="padding:30px">${showAll ? "문의가 없습니다" : "안 끝난 문의가 없습니다"}<br><span>위에서 적어 보내면 여기 쌓입니다</span></div>`;
+    : `<div class="wempty" style="padding:30px">${f === "전체" ? "문의가 없습니다" : `${f} 상태인 문의가 없습니다`}<br><span>위에서 적어 보내면 여기 쌓입니다</span></div>`;
 }
 
 /* ══════════════════════════════════════════════════════════════
