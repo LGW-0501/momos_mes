@@ -2972,7 +2972,12 @@ const halfTyped = v => { const t = String(v??"").trim();
 const numOf = v => { const n = parseFloat(String(v??"").replace(/,/g,"")); return isFinite(n) ? n : 0; };
 
 function keepFocus(fn){
-  const el = document.activeElement;
+  let el = document.activeElement;
+  /* Tab 으로 넘어가는 순간(blur→change→focus 사이)엔 아직 다음 칸에 커서가 없다 — 한 박자 뒤에 그리면 다음 칸이 잡힌다 */
+  if (!el || el === document.body || !(el.dataset && el.dataset.f)) {
+    if (PENDING_FOCUS_TARGET) el = PENDING_FOCUS_TARGET;
+    else { setTimeout(()=>keepFocus(fn), 0); return; }
+  }
   const key = (el && el.dataset) ? el.dataset.f : null;
   let sel = null;
   if (key && el.selectionStart != null) { try { sel = [el.selectionStart, el.selectionEnd]; } catch(e){} }
@@ -6087,6 +6092,40 @@ function go(s){
   render(s);
   updateFavBtn();
 }
+/* ══ 표 안 입력칸 — Enter 는 아래 칸, Tab 은 옆 칸으로 (다시 그려져도 커서가 따라간다) ══ */
+let PENDING_FOCUS_TARGET = null;
+function gridInputs(el){
+  const tbl = el.closest("table"); if (!tbl) return null;
+  const rows = [...tbl.querySelectorAll("tbody tr")];
+  const r = rows.findIndex(tr=>tr.contains(el)); if (r < 0) return null;
+  const inRow = tr => [...tr.querySelectorAll("input[data-f]:not([disabled]):not([type=checkbox]), input.cin:not([disabled])")];
+  const cells = inRow(rows[r]); const c = cells.indexOf(el);
+  return { rows, r, c, inRow };
+}
+document.addEventListener("keydown", e=>{
+  const el = e.target;
+  if (!(el instanceof HTMLInputElement) || el.type === "checkbox") return;
+  if (!(el.dataset && el.dataset.f) && !el.classList.contains("cin")) return;
+  if (e.key !== "Enter" && e.key !== "Tab") return;
+  const g = gridInputs(el); if (!g) return;
+  let target = null;
+  if (e.key === "Enter") {                       // 아래 칸 (같은 열) — 마지막 줄이면 다음 열 첫 줄
+    for (let i = g.r + 1; i < g.rows.length; i++) { const cs = g.inRow(g.rows[i]); if (cs[g.c]) { target = cs[g.c]; break; } }
+    if (!target) { const cs = g.inRow(g.rows[0]); target = cs[g.c + 1] || null; }
+  } else {                                       // Tab — 옆 칸, 줄 끝이면 다음 줄 첫 칸 (Shift+Tab 은 반대)
+    const dir = e.shiftKey ? -1 : 1; const cs = g.inRow(g.rows[g.r]);
+    target = cs[g.c + dir] || null;
+    if (!target) { for (let i = g.r + dir; i >= 0 && i < g.rows.length; i += dir) { const c2 = g.inRow(g.rows[i]); if (c2.length) { target = dir > 0 ? c2[0] : c2[c2.length-1]; break; } } }
+  }
+  if (!target) return;
+  e.preventDefault();
+  PENDING_FOCUS_TARGET = target;
+  el.blur();                                     // change 가 먼저 나가고(저장) …
+  const key = target.dataset.f;
+  setTimeout(()=>{ PENDING_FOCUS_TARGET = null;
+    const t = key ? document.querySelector(`[data-f="${key.replace(/"/g,'\\"')}"]`) : (document.contains(target) ? target : null);
+    if (t) { t.focus({ preventScroll:false }); try { t.select(); } catch(_){} } }, 0);   // … 다시 그린 뒤 그 칸을 잡는다
+});
 /* ══ 즐겨찾기 ★ — 자주 가는 화면(탭까지)을 왼쪽 메뉴 맨 위에 둔다. 이 기기가 기억한다. ══ */
 const PLAN_TAB_NAME = { tally:"집계", grid:"기계 배분", order:"작업 순서", mat:"부자재·라벨", buf:"여유분" };
 function favList(){ try { return JSON.parse(localStorage.getItem("momos.favs") || "[]") || []; } catch(_){ return []; } }
@@ -6134,6 +6173,7 @@ renderFavs();
 
 /* ══ 업데이트 내역 — 어디에 뭘 바꿨는지 (최근 것이 위) ══ */
 const CHANGELOG = [
+  ["2026-10-26", "표 입력칸 전체", "Enter = 아래 칸, Tab = 옆 칸으로 이동 (여유분·집계·계획EA·재고 세기 등) — 저장되며 다시 그려져도 커서가 따라감"],
   ["2026-10-26", "생산계획 › 여유분", "여유 수량은 배치 잔량 안에서만 — 주문·안전재고 필요분을 뺀 남은 원두로만 만들고, 여유 때문에 로스팅은 안 잡음. 잔량이 모자라면 '못 채움'으로 표시 · 계획EA 밑에 수량 출처 표시"],
   ["2026-10-26", "비밀번호 변경", "실패 이유가 금방 사라지는 토스트 대신 창으로 남음 · 6자 이상(서버 규칙) · 성공도 창으로 확인"],
   ["2026-10-26", "상단 🔔 알림", "다른 기기에서 생긴 일이 역할에 맞게 뜸 — 생산 완료(검수에게) · 검수 반려+사유(현장에게) · 검수 완료(출고) · 라벨 완료 · 새 문의(관리자) · 문의 답변(쓴 사람). 토스트+소리+진동, 종 누르면 목록, 계정 메뉴에서 소리 끄기"],
