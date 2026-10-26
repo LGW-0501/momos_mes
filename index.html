@@ -6134,6 +6134,7 @@ renderFavs();
 
 /* ══ 업데이트 내역 — 어디에 뭘 바꿨는지 (최근 것이 위) ══ */
 const CHANGELOG = [
+  ["2026-10-26", "생산계획 › 여유분", "여유 수량은 배치 잔량 안에서만 — 주문·안전재고 필요분을 뺀 남은 원두로만 만들고, 여유 때문에 로스팅은 안 잡음. 잔량이 모자라면 '못 채움'으로 표시 · 계획EA 밑에 수량 출처 표시"],
   ["2026-10-26", "비밀번호 변경", "실패 이유가 금방 사라지는 토스트 대신 창으로 남음 · 6자 이상(서버 규칙) · 성공도 창으로 확인"],
   ["2026-10-26", "상단 🔔 알림", "다른 기기에서 생긴 일이 역할에 맞게 뜸 — 생산 완료(검수에게) · 검수 반려+사유(현장에게) · 검수 완료(출고) · 라벨 완료 · 새 문의(관리자) · 문의 답변(쓴 사람). 토스트+소리+진동, 종 누르면 목록, 계정 메뉴에서 소리 끄기"],
   ["2026-10-26", "문의 (새 화면)", "오류·요청·질문을 적어 보내면 관리자가 접수→확인중→완료로 바꾸고 답변 — 메뉴에 접수 건수 뱃지"],
@@ -10167,16 +10168,37 @@ function planWhy(p, day){
   const c = planCalc(p, d), parts = [];
   if (c.mode === "tally") parts.push(`집계 ${fmt(tallyQty(p.id, undefined, d))}${madeQty(p.id, d) ? ` − 만든 ${fmt(madeQty(p.id, d))}` : ""}`);
   else if (c.need > 0) parts.push(`안전재고 ${fmt(p.safety)} − 현재고 ${fmt(p.cfe)}`);
-  if (c.buf > 0) parts.push(`${bufOverride(p, d) != null ? "오늘 " : WD[dowOf(d)] + "요일 "}여유분 +${fmt(c.buf)}`);
+  if (c.buf > 0) parts.push(`${bufOverride(p, d) != null ? "오늘 " : WD[dowOf(d)] + "요일 "}여유 +${fmt(c.buf)}`);
+  if (c.cut > 0) parts.push(`<span class="warn">여유 ${fmt(c.cut)} 못 채움 (잔량 부족)</span>`);
   return parts.join(" · ") || "—";
 }
+/* ★ 여유 수량은 "배치 잔량" 안에서만 — 주문·안전재고 필요분을 다 뺀 뒤 남는 원두로만 만든다.
+     여유분 때문에 로스팅을 더 하지 않는다. 잔량이 모자라면 품목 순서대로 채우고 나머지는 깎인다. */
+let BUF_CAP_CACHE = { d:"", map:{} };
+function bufCapMap(d){
+  if (BUF_CAP_CACHE.d === d && BUF_CAP_CACHE.at === DB.mms.length + "|" + JSON.stringify(SETTINGS[BUF_KEY]||"")+"|"+JSON.stringify(SETTINGS[BUF_TODAY_KEY]||"")) return BUF_CAP_CACHE.map;
+  const left = {}; DB.mms.forEach(m=>{ if (Number(m.stock_kg)>0 && !isHeld(m)) left[m.bean] = (left[m.bean]||0) + Number(m.stock_kg); });
+  const ps = PRODS();
+  ps.forEach(p=>{ const need = p.id in planEA ? 0 : planNeedRaw(p, d); left[p.bean] = (left[p.bean]||0) - stdKg(p, need); });   // 필요분 먼저
+  const map = {};
+  ps.forEach(p=>{ const want = bufEA(p, d); if (!(want > 0)) { map[p.id] = 0; return; }
+    const g = Number(p.std_g||0)/1000, can = g > 0 ? Math.max(0, Math.floor((left[p.bean]||0) / g + 0.0001)) : 0;
+    const ea = Math.min(want, can); map[p.id] = ea; left[p.bean] = (left[p.bean]||0) - ea*g; });
+  BUF_CAP_CACHE = { d, map, at: DB.mms.length + "|" + JSON.stringify(SETTINGS[BUF_KEY]||"")+"|"+JSON.stringify(SETTINGS[BUF_TODAY_KEY]||"") };
+  return map;
+}
+function planNeedRaw(p, d){
+  if (!hasTally(p.id, d)) return shortage(p);
+  return Math.max(0, tallyQty(p.id, undefined, d) - madeQty(p.id, d));
+}
 function planCalc(p, day){
-  const d = day || tallyDay(), buf = bufEA(p, d);
-  if (!hasTally(p.id, d)) { const need = shortage(p); return { need, buf, total: need + buf, mode:"safety" }; }
+  const d = day || tallyDay(), want = bufEA(p, d);
+  const buf = want > 0 ? (bufCapMap(d)[p.id] ?? want) : 0;
+  if (!hasTally(p.id, d)) { const need = shortage(p); return { need, buf, want, cut: want - buf, total: need + buf, mode:"safety" }; }
   const tally = tallyQty(p.id, undefined, d), made = madeQty(p.id, d);
   const need = Math.max(0, tally - made);
   const total = Math.max(0, tally + buf - made);
-  return { need, buf: total - need, total, mode:"tally" };     // 이미 만든 수량이 주문을 넘으면 여유분에서 빠진다
+  return { need, buf: total - need, want, cut: want - (total - need), total, mode:"tally" };     // 이미 만든 수량이 주문을 넘으면 여유분에서 빠진다
 }
 
 function loadNeed(){
@@ -10402,7 +10424,10 @@ function renderBufPanel(){
             <input type="text" inputmode="numeric" class="num" style="width:58px;text-align:right" value="${v||""}" placeholder="0"
               data-f="buf:${p.id}:${w}" ${edit?"":"disabled"} onchange="setBufEA('${p.id}',${w},this.value)">
             <div style="font-size:10.5px;color:var(--soft);margin-top:2px">${v?`${fmt(eaKg(p,v))}kg`:"&nbsp;"}</div></td>`; }).join("")}
-        <td class="bufc c">${(()=>{ const t = bufEA(p, d); return t ? `+${fmt(t)}<br><span style="font-size:10.5px">${fmt(eaKg(p,t))}kg</span>` : "—"; })()}</td></tr>`);
+        <td class="bufc c">${(()=>{ const t = bufEA(p, d), ov = bufOverride(p, d);
+          if (ov != null) return `+${fmt(t)}<br><span style="font-size:10.5px">${fmt(eaKg(p,t))}kg · <b>오늘만</b> (집계 표에서 적음)</span>${edit?`<br><button class="btn" style="height:22px;padding:0 7px;font-size:11px;margin-top:3px" onclick="setBufToday('${p.id}','')">지움</button>`:""}`;
+          const pc = planCalc(p, d);
+          return t ? `+${fmt(pc.buf)}${pc.cut>0?` <span class="warn" style="font-size:10.5px">/ 목표 ${fmt(t)}</span>`:""}<br><span style="font-size:10.5px">${fmt(eaKg(p,pc.buf))}kg${pc.cut>0?` · <span class="warn">잔량 부족 ${fmt(pc.cut)}개 못 만듦</span>`:""}</span>` : "—"; })()}</td></tr>`);
     });
     /* 원두 합계 — 요일별 kg */
     rows.push(`<tr style="background:var(--bg2,#F7F8FA)"><td></td><td class="l" colspan="2"><b>${bn}</b> 합계 <span class="hint" style="padding:0">${mmsCodeOf(bn)||""}</span></td>
