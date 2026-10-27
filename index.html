@@ -6173,6 +6173,7 @@ renderFavs();
 
 /* ══ 업데이트 내역 — 어디에 뭘 바꿨는지 (최근 것이 위) ══ */
 const CHANGELOG = [
+  ["2026-10-27", "작업지시 만들기", "서버(기준정보)에 없는 품목이 섞여 있으면 FK 오류 대신 어느 품목인지 알려주고 멈춤 · 기준정보 권한 없는 계정은 집계 붙여넣기로 품목을 자동 생성하지 않음 (건너뛰고 알림)"],
   ["2026-10-26", "전체 순서", "품목은 CFE 코드 번호순, 원두는 MMS 코드 번호순, 부자재는 구분→코드순, 배치는 원두 코드→로스팅일순 — 표·카드·계획·집계·여유분·재고 세기 전부 같은 순서 (코드 없는 건 이름순으로 맨 뒤)"],
   ["2026-10-26", "표 입력칸 전체", "Enter = 아래 칸, Tab = 옆 칸으로 이동 (여유분·집계·계획EA·재고 세기 등) — 저장되며 다시 그려져도 커서가 따라감"],
   ["2026-10-26", "생산계획 › 여유분", "여유 수량은 배치 잔량 안에서만 — 주문·안전재고 필요분을 뺀 남은 원두로만 만들고, 여유 때문에 로스팅은 안 잡음. 잔량이 모자라면 '못 채움'으로 표시 · 계획EA 밑에 수량 출처 표시"],
@@ -13822,9 +13823,11 @@ async function applyPaste(){
   }
   /* 목록에 없는 품목·원두를 만들어 돌려줌 */
   let mkP = 0, mkB = 0;
+  let mkDenied = 0;
   const ensureProduct = r => {
     if (r.p) return r.p;
     if (!r.mk) return null;
+    if (sb && !can("base")) { mkDenied++; return null; }     // 기준정보 권한 없으면 품목을 만들지 않는다 (서버에 저장 안 돼 나중에 지시 생성이 깨진다)
     if (r.mk.newBean && !DB.beans.some(b=>b.name===r.mk.bean)) {
       const b = { id:uid(), name:r.mk.bean, mms_code:"" }; DB.beans.push(b); save("beans",b); mkB++;
     }
@@ -13833,7 +13836,7 @@ async function applyPaste(){
     DB.products.push(p); save("products",p); mkP++;
     return p;
   };
-  const mkMsg = () => (mkP ? ` · 신규 품목 ${mkP}건${mkB?`, 신규 원두 ${mkB}건`:""} 등록` : "");
+  const mkMsg = () => (mkP ? ` · 신규 품목 ${mkP}건${mkB?`, 신규 원두 ${mkB}건`:""} 등록` : "") + (mkDenied ? ` · 목록에 없는 품목 ${mkDenied}건은 건너뜀 (관리자가 기준정보에 먼저 등록)` : "");
 
   if (mode==="stock_cfe") {
     actual.cfe = {};
@@ -14101,11 +14104,33 @@ async function makeOrders(){
     label_id:x.label_id ?? "", batch_seq:x.seq ?? null, batch_of:x.of ?? null,
     pack_type: isFullPack(x.p) ? PACK_FULL : PACK_LABEL }));
 
+  /* ★ 서버에 없는 품목이 섞여 있으면 FK 오류로 전부 실패한다 — 먼저 확인해서 어느 품목인지 알려준다
+       (집계 붙여넣기로 자동 생성된 품목이 권한 때문에 저장 안 됐거나, 다른 기기에서 지운 품목이 이 화면에 남아 있는 경우) */
+  if (sb) {
+    try {
+      const ids = [...new Set(payload.map(x=>x.product_id))];
+      const { data, error } = await sb.from(tb("products")).select("id").in("id", ids);
+      if (!error) {
+        const have = new Set((data||[]).map(r=>r.id));
+        const missing = draft.filter(x=>!have.has(x.p.id));
+        if (missing.length) {
+          const names = [...new Set(missing.map(x=>`${x.p.name}${x.p.code?` (${x.p.code})`:""}`))];
+          await reloadDB({ silent:true }); renderAll();
+          await ask(`서버(기준정보)에 없는 품목 ${names.length}개가 계획에 들어 있어 작업지시를 만들 수 없습니다:\n\n${names.map(n=>"· "+n).join("\n")}\n\n` +
+            `왜 생기나 — 집계를 붙여넣을 때 목록에 없는 품목이 자동 생성되는데, 기준정보 권한이 없는 계정이면 서버에 저장되지 않습니다. 또는 다른 기기에서 지운 품목이 이 화면에 남아 있던 경우입니다.\n\n` +
+            `해결 — 관리자가 기준정보 › 품목에 이 품목을 등록(CFE 코드 포함)한 뒤, 집계를 다시 넣고 작업지시를 만드세요. 화면은 방금 새로 받았습니다.`,
+            { title:"서버에 없는 품목", yes:"확인" });
+          return;
+        }
+      }
+    } catch(_){}
+  }
   const res = await mesCreateOrders({ work_date:d, draft:payload,
                                       idem:`mko-${d}-${uid()}` });
   if (!res || !res.ok) {
     renderAll();
-    await ask(`${res?.message || "작업지시를 만들지 못했습니다"}\n\n` +
+    const m = String(res?.message || "작업지시를 만들지 못했습니다");
+    await ask(`${/foreign key|fkey/i.test(m) ? "기준정보에 없는 품목·기계·라벨이 섞여 있습니다 — 새로고침한 뒤 집계를 다시 넣어 보세요.\n\n" + m : m}\n\n` +
               `아무것도 만들어지지 않았습니다.`,
               { title:"만들지 못했습니다", yes:"확인" });
     return;
