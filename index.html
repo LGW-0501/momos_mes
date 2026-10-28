@@ -3982,7 +3982,8 @@ async function mesRejectQcCurrent(a){
 /* ── 5-b. 조치 완료 → 다시 검수로 (038) — 실적·재고는 그대로, 상태만 생산완료로 ── */
 async function mesResubmitQc(a){
   return rpc("resubmit_qc",
-    { p_order_id:a.order_id, p_note:a.note||null, p_user_name:CURRENT_USER, p_idempotency:a.idem },
+    { p_order_id:a.order_id, p_note:a.note||null, p_user_name:CURRENT_USER, p_idempotency:a.idem,
+      p_qty:(a.qty == null ? null : a.qty), p_rest_action:a.rest_action||null, p_merged_batch:a.merged_batch||null },
     () => {
       const hit = idemHit(a.idem); if (hit) return hit;
       const o = ordById(a.order_id);
@@ -3990,32 +3991,40 @@ async function mesResubmitQc(a){
       if (o.status !== "생산중" || !o.log_id) return MES_ERR("bad_status", `반려된 생산중 건만 다시 검수로 올릴 수 있습니다 (지금 ${o.status})`);
       const open = DB.qc_rejections.filter(r=>r.order_id===o.id && !r.resolved);
       if (!open.length) return MES_ERR("not_rejected","반려된 건이 아닙니다");
+      const tot = Number(o.qty_done)||0, qty = a.qty == null ? tot : Math.max(0, Math.min(tot, Math.round(Number(a.qty)||0))), rest = tot - qty;
+      if (rest > 0 && !["scrap","bean"].includes(a.rest_action||"")) return MES_ERR("rest", "재검수 수량이 반려 수량보다 적으면 나머지 처리(폐기/원두로 합침)를 정해야 합니다");
       return localTx(T => {
-        open.forEach(r=>{ T.upd(r, { resolved:true, resolved_at:nowISO(), handling:"resubmitted" }); save("qc_rejections", r); });
-        T.upd(o, { status:"생산완료", qc:{} }); save("orders", o);
-        pushEvent(T, o, "생산중", "생산완료", "qc_resubmit", a.note||"");
-        logAudit("조치 후 재검수", o.order_no, a.note||"");
-        const r = { ok:true, resolved:open.length };
+        const p = prodById(o.product_id); const restTxt = rest > 0 ? ` · 나머지 ${fmt(rest)}개 ${a.rest_action==="scrap"?"폐기":"원두로 합침"}` : "";
+        if (rest > 0 && p) { const reason = a.rest_action==="scrap" ? "반려 폐기" : "반려 원두환원";
+          T.upd(p, { cfe: Number(p.cfe||0) - rest }); save("products", p);
+          putMove(T, { kind:"완제품", ref_type:"order", ref_id:o.id, product_id:p.id, qty:-rest, unit:"EA", reason, note:a.note||"", move_date:today() });
+          const g = { id:uid(), date:o.work_date, type: a.rest_action==="scrap" ? "반려 폐기" : "반려 혼합(원두)", product_id:p.id, ...pSnap(p), machine:o.machine, qty:rest, note:`작업지시 ${o.order_no||""} · 조치 후 나머지 ${reason}${a.merged_batch?` → ${a.merged_batch}`:""}`, action:a.rest_action, worker:CURRENT_USER, created_at:nowISO() };
+          T.add("pqc", g); save("pqc", g); }
+        open.forEach(r=>{ T.upd(r, { resolved:true, resolved_at:nowISO(), resolved_by:CURRENT_USER, handling: qty===0 ? (a.rest_action||"closed") : "resubmitted", handling_note:`${a.note||""} · 재검수 ${fmt(qty)}개${restTxt}`, merged_batch:a.merged_batch||null }); save("qc_rejections", r); });
+        if (qty === 0) { T.upd(o, { status:"폐기", qty_ng:Number(o.qty_ng||0)+rest, note:a.note||o.note }); save("orders", o); pushEvent(T, o, "생산중", "폐기", "qc_close", `${a.rest_action==="scrap"?"반려 폐기":"반려 원두환원"} ${fmt(rest)}개 — ${a.note||""}`); }
+        else { T.upd(o, { status:"생산완료", qty_done:qty, progress_qty:qty, qty_ng:Number(o.qty_ng||0)+rest, qc:{} }); save("orders", o); pushEvent(T, o, "생산중", "생산완료", "qc_resubmit", `${a.note||""}${rest>0?` · 재검수 ${fmt(qty)}개${restTxt}`:""}`); }
+        logAudit("조치 후 재검수", o.order_no, `${a.note||""} · 재검수 ${fmt(qty)}개${restTxt}`);
+        const r = { ok:true, resolved:open.length, qty, rest };
         idemPut(T, a.idem, "resubmit_qc", o.id, r); return r;
       });
     });
 }
 /* 반려 건 끝내기 — 폐기 · 원두로 되돌려 합침 (044) : 제품이 아니므로 검수로 안 보내고 완제품 재고에서 뺀다 */
 async function mesCloseRejected(a){
-  return rpc("close_rejected", { p_order_id:a.order_id, p_action:a.action, p_note:a.note||null, p_user_name:CURRENT_USER, p_idempotency:a.idem }, () => {
+  return rpc("close_rejected", { p_order_id:a.order_id, p_action:a.action, p_note:a.note||null, p_user_name:CURRENT_USER, p_idempotency:a.idem, p_merged_batch:a.merged_batch||null }, () => {
     const hit = idemHit(a.idem); if (hit) return hit;
     const o = ordById(a.order_id); if (!o) return MES_ERR("no_order","작업지시를 찾을 수 없습니다");
     if (o.status !== "생산중" || !o.log_id) return MES_ERR("bad_status", `반려된 생산중 건만 처리할 수 있습니다 (지금 ${o.status})`);
     const open = DB.qc_rejections.filter(r=>r.order_id===o.id && !r.resolved); if (!open.length) return MES_ERR("not_rejected","반려된 건이 아닙니다");
     const p = prodById(o.product_id); const qty = Number(o.qty_done)||0; const reason = a.action==="scrap" ? "반려 폐기" : "반려 원두환원";
     return localTx(T => {
-      open.forEach(r=>{ T.upd(r, { resolved:true, resolved_at:nowISO(), handling:a.action }); save("qc_rejections", r); });
+      open.forEach(r=>{ T.upd(r, { resolved:true, resolved_at:nowISO(), resolved_by:CURRENT_USER, handling:a.action, handling_note:`${reason} ${fmt(qty)}개${a.note?` — ${a.note}`:""}`, merged_batch:a.merged_batch||null }); save("qc_rejections", r); });
       if (p && qty > 0) { T.upd(p, { cfe: Number(p.cfe||0) - qty }); save("products", p);
         putMove(T, { kind:"완제품", ref_type:"order", ref_id:o.id, product_id:p.id, qty:-qty, unit:"EA", reason, note:a.note||"", move_date:today() });
-        const g = { id:uid(), date:o.work_date, type: a.action==="scrap" ? "반려 폐기" : "반려 혼합(원두)", product_id:p.id, ...pSnap(p), machine:o.machine, qty, note:`작업지시 ${o.order_no||""} · 반려 후 ${reason}${a.note?` — ${a.note}`:""}`, action:a.action, worker:CURRENT_USER, created_at:nowISO() };
+        const g = { id:uid(), date:o.work_date, type: a.action==="scrap" ? "반려 폐기" : "반려 혼합(원두)", product_id:p.id, ...pSnap(p), machine:o.machine, qty, note:`작업지시 ${o.order_no||""} · 반려 후 ${reason}${a.merged_batch?` → ${a.merged_batch}`:""}${a.note?` — ${a.note}`:""}`, action:a.action, worker:CURRENT_USER, created_at:nowISO() };
         T.add("pqc", g); save("pqc", g); }
       T.upd(o, { status:"폐기", qty_ng:Number(o.qty_ng||0)+qty, note:a.note||o.note }); save("orders", o);
-      pushEvent(T, o, "생산중", "폐기", "qc_close", `${reason} ${fmt(qty)}개${a.note?` — ${a.note}`:""}`);
+      pushEvent(T, o, "생산중", "폐기", "qc_close", `${reason} ${fmt(qty)}개${a.merged_batch?` → ${a.merged_batch}`:""}${a.note?` — ${a.note}`:""}`);
       logAudit(reason, o.order_no, `${o.product_name||""} ${fmt(qty)}개${a.note?` — ${a.note}`:""}`);
       const r = { ok:true, qty, action:a.action }; idemPut(T, a.idem, "close_rejected", o.id, r); return r;
     });
@@ -4033,18 +4042,82 @@ async function resubmitQc(id){
   if (pick === "기타 직접 입력") { const t = await askText("조치 내용을 적어 주세요", "", "조치 내용"); if (t === null) return; memo = String(t).trim(); if (!memo) return toast("조치 내용을 적어 주세요"); }
   else { const t = await askText(`${pick} — 덧붙일 말이 있으면 적으세요 (없으면 그대로 확인)`, "", "조치 내용"); if (t === null) return; memo = String(t).trim(); }
   /* 폐기 · 원두로 되돌림 — 제품이 아니다: 검수로 보내지 않고 완제품 재고에서 빼고 끝낸다 */
+  /* 어느 배치로 합쳤는지 — 같은 원두의 쓸 수 있는 배치 중에서 고른다 */
+  const pickBatch = async () => {
+    const bean = prodById(o.product_id)?.bean; const list = freeBatches(bean);
+    if (!list.length) { const t = await askText("합친 배치 번호를 적어 주세요 (예 MMS0001-26102803)", "", "취합 배치"); return t === null ? null : String(t).trim(); }
+    const v = await ask(`어느 배치에 합쳤습니까?\n\n` + list.map((m,i)=>`${i+1}. ${batchLabel(m)} · 남은 ${fmt(m.stock_kg)}kg`).join("\n") + `\n\n번호를 적으세요 (목록에 없으면 0 을 적고 다음 창에 직접)`, { prompt:true, value:"1", title:"취합 배치" });
+    if (v === null) return null; const i = Math.round(numOf(v)) - 1;
+    if (i >= 0 && list[i]) return batchLabel(list[i]);
+    const t = await askText("합친 배치 번호를 적어 주세요", "", "취합 배치"); return t === null ? null : String(t).trim();
+  };
   if (pick === "폐기" || pick === "원두로 되돌려 다른 배치와 합침") {
     const action = pick === "폐기" ? "scrap" : "bean";
-    if (!(await ask(`${nm} ${fmt(o.qty_done)}개 — ${pick}\n\n검수로 보내지 않고 끝냅니다. 완제품 재고에서 ${fmt(o.qty_done)}개가 빠지고 품질관리(부적합)에 남습니다.${action==="bean"?"\n원두는 합친 배치에서 따로 더하지 않습니다 (로스로 남음)":""}`, { title:pick, yes:"처리", danger:true }))) return;
-    const r = await mesCloseRejected({ order_id:id, action, note:memo, idem:`cls-${id}-${uid()}` });
+    let merged = ""; if (action === "bean") { merged = await pickBatch(); if (merged === null) return; }
+    if (!(await ask(`${nm} ${fmt(o.qty_done)}개 — ${pick}${merged?` → ${merged}`:""}\n\n검수로 보내지 않고 끝냅니다. 완제품 재고에서 ${fmt(o.qty_done)}개가 빠지고 품질관리(부적합)에 남습니다.${action==="bean"?"\n합친 배치의 kg 는 따로 더하지 않습니다 (로스로 남음) — 배치 연결만 기록합니다":""}`, { title:pick, yes:"처리", danger:true }))) return;
+    const r = await mesCloseRejected({ order_id:id, action, note:memo, merged_batch:merged||null, idem:`cls-${id}-${uid()}` });
     if (!r || !r.ok) { quickRender(); return ask(`${r?.message||"처리하지 못했습니다"}${/close_rejected|schema cache/i.test(r?.message||"") ? "\n\n서버에 044_close_rejected.sql 을 아직 실행하지 않았습니다." : ""}`, { title:"처리하지 못했습니다", yes:"확인" }); }
     if (sb) await pullWhere("products", "id", o.product_id);
     quickRender(); return toast(`${pick} — ${fmt(o.qty_done)}개 처리했습니다`);
   }
   const note = pick === "기타 직접 입력" ? memo : (memo ? `${pick} — ${memo}` : pick);
-  const r = await mesResubmitQc({ order_id:id, note:String(note).trim(), idem:`rsq-${id}-${uid()}` });
+  /* ★ 실제로 다시 검수에 올릴 수량 — 반려 수량 그대로가 아니라 조치 결과대로 (9번) */
+  const tot = Number(o.qty_done)||0;
+  const qv = await askNum("다시 검수에 올릴 수량", `${nm} · 반려 ${fmt(tot)}개<br>실제로 다시 포장한(제품으로 남은) 개수만 — 적게 적으면 나머지 처리를 묻습니다`, tot,
+    { unit:"개", max:tot, quick:[ {t:`전부 ${fmt(tot)}`, set:tot}, {t:"0", set:0}, {t:"+1", add:1}, {t:"+5", add:5} ] });
+  if (qv === null) return;
+  const qty = Math.max(0, Math.min(tot, Math.round(Number(qv)||0))), rest = tot - qty;
+  let rest_action = null, merged = null;
+  if (rest > 0) {
+    rest_action = await ask(`${fmt(rest)}개는 제품으로 남지 않았습니다 — 어떻게 했습니까?\n(완제품 재고에서 ${fmt(rest)}개가 빠지고 품질관리에 남습니다)`, { title:"나머지 처리", choices:[ { v:"scrap", label:"폐기", cls:"primary" }, { v:"bean", label:"원두로 되돌려 다른 배치와 합침" }, { v:null, label:"취소" } ] });
+    if (!rest_action) return;
+    if (rest_action === "bean") { merged = await pickBatch(); if (merged === null) return; }
+  }
+  const r = await mesResubmitQc({ order_id:id, note:String(note).trim(), qty, rest_action, merged_batch:merged, idem:`rsq-${id}-${uid()}` });
   if (!r || !r.ok) { quickRender(); return ask(`${r?.message||"올리지 못했습니다"}${/resubmit_qc|schema cache/i.test(r?.message||"") ? "\n\n서버에 038_qc_resubmit.sql 을 아직 실행하지 않았습니다." : ""}`, { title:"올리지 못했습니다", yes:"확인" }); }
-  quickRender(); toast("다시 검수 대기로 올렸습니다");
+  if (sb && rest > 0) await pullWhere("products", "id", o.product_id);
+  quickRender(); toast(qty === 0 ? `재검수 없이 끝냈습니다 — ${fmt(rest)}개 ${rest_action==="scrap"?"폐기":"원두로 합침"}` : `다시 검수 대기로 올렸습니다 (${fmt(qty)}개${rest>0?` · 나머지 ${fmt(rest)}개 처리`:""})`);
+}
+/* ══ 출고 반려 — 출고 대기(검수완료)에서 문제가 보이면 되돌린다 (045) ══ */
+async function mesRejectShip(a){
+  return rpc("reject_ship", { p_order_id:a.order_id, p_qty:a.qty, p_reason:a.reason, p_user_name:CURRENT_USER, p_idempotency:a.idem }, () => {
+    const hit = idemHit(a.idem); if (hit) return hit;
+    const o = ordById(a.order_id); if (!o) return MES_ERR("no_order","작업지시를 찾을 수 없습니다");
+    if (o.status !== "검수완료") return MES_ERR("bad_status", `출고 대기(검수완료) 건만 출고 반려할 수 있습니다 (지금 ${o.status})`);
+    const tot = Number(o.qty_done)||0; const n = Math.max(1, Math.min(tot, Math.round(Number(a.qty)||tot)));
+    return localTx(T => {
+      let target = o;
+      if (n < tot) {
+        const c = { ...o, id:uid(), order_no:`${o.order_no||""}-R`, qty_plan:n, qty_done:n, progress_qty:n, qty_ng:0, status:"생산중", note:a.reason, qc:{}, qc_by:null, qc_at:null, ship_by:null, ship_at:null, split_from:o.id };
+        T.add("orders", c); save("orders", c); T.upd(o, { qty_done:tot-n, progress_qty:tot-n }); save("orders", o);
+        pushEvent(T, o, "검수완료", "검수완료", "ship_reject_split", `출고 반려 ${fmt(tot)}개 중 ${fmt(n)}개 — ${a.reason||""} · 나머지 ${fmt(tot-n)}개 출고 대기`); target = c;
+      } else { T.upd(o, { status:"생산중", note:a.reason, qc:{} }); save("orders", o); }
+      const rej = T.add("qc_rejections", { id:uid(), order_id:target.id, log_id:o.log_id, reason_code:null, reason_note:a.reason, qty_affected:n, handling:"ship_reject", resolved:false, created_by_name:CURRENT_USER, created_at:nowISO(), stage:"ship" });
+      save("qc_rejections", rej);
+      pushEvent(T, target, "검수완료", "생산중", "qc_reject", `[출고 반려] ${fmt(n)}개 — ${a.reason||""}`);
+      logAudit("출고 반려", o.order_no, `${o.product_name||""} · ${fmt(n)}개 — ${a.reason||""}`);
+      const r = { ok:true, rejection_id:rej.id, target_id:target.id, rejected:n }; idemPut(T, a.idem, "reject_ship", o.id, r); return r;
+    });
+  });
+}
+const SHIP_REJ = ["수량 차이","품목 틀림","배치·LOT 틀림","포장 상태","라벨·표시 오류","제조일자·일련번호","기타 직접 입력"];
+async function shipReject(id){
+  if (!(await requireUser())) return;
+  const o = ordById(id); if (!o) return;
+  const nm = o.product_name||prodById(o.product_id)?.name||"";
+  const pick = await ask(`${nm} ${fmt(o.qty_done)}개 · 일련번호 ${o.serial||"—"} · LOT ${lotOf(o)||"—"}\n\n출고 단계에서 무엇이 문제입니까?`, { title:"출고 반려 — 사유", choices:[ ...SHIP_REJ.map(x=>({ v:x, label:x })), { v:null, label:"취소" } ] });
+  if (!pick) return;
+  let why = pick;
+  if (pick === "기타 직접 입력") { const t = await askText("사유를 적어 주세요", "", "출고 반려"); if (t === null) return; why = String(t).trim(); if (!why) return toast("사유를 적어 주세요"); }
+  else { const t = await askText(`${pick} — 덧붙일 말이 있으면 적으세요 (없으면 그대로 확인)`, "", "출고 반려"); if (t === null) return; if (String(t).trim()) why = `${pick} — ${String(t).trim()}`; }
+  const tot = Number(o.qty_done)||0;
+  const q = await askNum("출고 반려 수량", `${nm} · 출고 대기 ${fmt(tot)}개<br>몇 개를 돌려보냅니까?`, tot, { unit:"개", max:tot, quick:[ {t:`전부 ${fmt(tot)}`, set:tot}, {t:"1", set:1}, {t:"+1", add:1}, {t:"+5", add:5} ] });
+  if (q === null) return;
+  const n = Math.max(1, Math.min(tot, Math.round(Number(q)||0)));
+  if (!(await ask(`${nm} ${fmt(n)}개${n<tot?` (${fmt(tot)}개 중)`:""} 출고 반려\n사유: ${why}\n\n현장 작업의 반려 칸으로 돌아가고, 조치 → 재검수 → 출고 순서로 다시 옵니다.${n<tot?`\n나머지 ${fmt(tot-n)}개는 출고 대기에 남습니다.`:""}`, { title:"출고 반려", yes:"반려", danger:true }))) return;
+  const r = await mesRejectShip({ order_id:id, qty:n, reason:why, idem:`shr-${id}-${uid()}` });
+  if (r && r.ok && sb) { await Promise.all([ pullOrder(id), pullWhere("orders", "split_from", id), pullWhere("qc_rejections", "order_id", r.target_id), pullWhere("order_events", "order_id", r.target_id) ]); }
+  await mesTell(r, `출고 반려 — 현장 반려 칸으로 보냈습니다`);
 }
 /* ── 6. 출고 ───────────────────────────────────────────────── */
 async function mesShipOrder(a){
@@ -6395,6 +6468,8 @@ renderFavs();
 
 /* ══ 업데이트 내역 — 어디에 뭘 바꿨는지 (최근 것이 위) ══ */
 const CHANGELOG = [
+  ["2026-10-28", "출고 › [반려] (045 SQL)", "출고 대기에서 수량·품목·배치/LOT·포장·라벨 문제가 보이면 반려 — 수량(일부/전체)·사유·일시·처리자 기록 · 현장 반려 칸에 \"출고 반려\"로 올라가 조치 → 재검수 → 출고 · 나머지는 출고 대기에 남음"],
+  ["2026-10-28", "반려 칸 › 조치 결과대로 수량 (045 SQL)", "조치 후 \"다시 검수에 올릴 수량\"을 물음 — 반려 2개 중 1개만 재포장했으면 1개만 재검수, 나머지는 폐기/원두로 합침(취합 배치 선택·기록)으로 재고에서 빼고 끝 · 반려 수량이 그대로 재검수로 생기지 않음"],
   ["2026-10-28", "반려 칸 › 조치 내용 (044 SQL)", "적는 대신 고르기 — 재포장·재실링·라벨 교체·제조일자/일련번호 수정·이물 제거·중량 재조정·이상 없음·기타 → 다시 검수로 / 폐기·원두로 되돌려 다른 배치와 합침 → 검수로 안 보내고 완제품 재고에서 빼고 끝냄(품질관리에 기록, 지시 상태 폐기)"],
   ["2026-10-28", "검수 › 반려 사유", "적는 대신 고르기 — 검수 항목(제품명·제조일자·일련번호·포장지·실링·외관) + 수량 차이·이물·중량 오차·기타 · 체크 안 된 항목이 먼저 보임 · 덧붙일 말은 선택"],
   ["2026-10-28", "검수 › 부분 반려 (043 SQL)", "반려할 때 수량을 물음 — 55개 중 2개만 반려하면 2개만 반려 칸으로(…-R 지시, 같은 일련번호), 53개는 바로 검수 완료 → 출고 · 조치 내용은 반려 칸·검수 카드·[이력]·이력추적에 그대로"],
@@ -11497,7 +11572,7 @@ function qcState(o){
     rejected: !!(last && last.event === "qc_reject"
                  && !["검수완료","출고완료"].includes(o.status)),
     reason: r?.reason_note || "", at: r?.created_at || null, by: r?.created_by_name || "",
-    count: rejs.length,
+    count: rejs.length, stage: r?.stage || "qc", handling_note: r?.handling_note || "", merged_batch: r?.merged_batch || "",
     qty_done: Number(o.qty_done||0), received: rcv,
     diff: rcv == null ? null : rcv - Number(o.qty_done||0),
     hasLog: DB.logs.some(x => x.order_id === o.id && logLive(x) && !x.corrects),
@@ -11521,8 +11596,8 @@ function qcHistory(orderId){
         what:e.event === "qc_reject" ? "반려" : e.event === "qc_resubmit" ? "조치 완료 → 다시 검수로" : "검수완료",
         note:e.note || "", who:e.user_name || "" }));
   const b = DB.qc_rejections.filter(r => r.order_id === orderId)
-      .map(r => ({ at:r.created_at, kind:"반려기록",
-        what:`${fmt(r.qty_affected||0)} EA`, note:r.reason_note || "", who:r.created_by_name || "" }));
+      .map(r => ({ at:r.created_at, kind: r.stage==="ship" ? "출고 반려기록" : "반려기록",
+        what:`${fmt(r.qty_affected||0)} EA`, note:(r.reason_note || "") + (r.handling_note ? ` → 조치: ${r.handling_note}` : "") + (r.merged_batch ? ` (취합 배치 ${r.merged_batch})` : ""), who:r.created_by_name || "" }));
   return [...a, ...b].sort((x,y) => String(x.at).localeCompare(String(y.at)));
 }
 
@@ -15642,7 +15717,7 @@ function renderWork(){
         <span class="r hint">손본 뒤 [조치 완료 → 다시 검수로] · 검수 완료되면 여기서 빠집니다 · 🔔 알림은 알려 주는 것, 이 칸은 지금 할 일</span></div>
       <div class="panel-b"><table><thead><tr><th>상태</th><th class="l">품목 · 생산 완료</th><th>일련번호</th><th class="l">배치</th><th>봉투 LOT</th><th class="l">반려 사유 → 조치</th><th>반려 일시 · 검수자</th><th></th></tr></thead><tbody>${
         rej.map(({o,f})=>{ const p = prodById(o.product_id); const rj = lastEv(o,"qc_reject"), rs = lastEv(o,"qc_resubmit"); const q = qcState(o);
-          return `<tr><td class="c" style="white-space:nowrap"><span class="tag ${f==="조치 필요"?"bad":"warn"}">${f}</span>${q.count>1?`<br><span class="hint" style="padding:0;font-size:11px">반려 ${q.count}회</span>`:""}</td>
+          return `<tr><td class="c" style="white-space:nowrap"><span class="tag ${f==="조치 필요"?"bad":"warn"}">${f}</span><br><span class="tag" style="font-size:10.5px">${q.stage==="ship"?"출고 반려":"검수 반려"}</span>${q.count>1?`<br><span class="hint" style="padding:0;font-size:11px">반려 ${q.count}회</span>`:""}</td>
             <td class="l" style="white-space:nowrap"><b>${p?.name||o.product_name||""}</b> ${o.split_from ? `<span class="tag warn" style="font-size:10.5px">${fmt((ordById(o.split_from)?.qty_done||0)+Number(o.qty_done||0))}개 중 ${fmt(o.qty_done)}개</span>` : `${fmt(o.qty_done)}EA`}<br><span class="hint" style="padding:0">${o.machine||"—"} · 완료 ${dtFull(o.done_at)} ${o.done_by||""}</span></td>
             <td class="c"><b>${o.serial||"—"}</b></td><td class="l" style="font-size:12px">${o.batch_plan||"—"}</td><td class="c">${lotOf(o)||"—"}</td>
             <td class="l" style="font-size:12.5px;min-width:180px">⛔ ${rj?.note || q.reason || "(사유 없음)"}${f==="재검수 대기" ? `<br>🔁 ${rs?.note||"조치 내용 없음"} <span class="hint" style="padding:0">${dtFull(rs?.at)} ${rs?.user_name||""}</span>` : `<br><span class="bad">조치 후 다시 올려 주세요</span>`}</td>
@@ -15816,7 +15891,7 @@ function renderShip(){
           <span class="hint" style="padding:0;font-size:11px">${o.serial||o.order_no}</span></div>
           <div class="row">수량 <b>${fmt(o.qty_done)}</b> 개 <span class="calc">검수 ${o.qc_by||"—"} ${dtFull(o.qc_at)}</span></div>
           <div class="row"><span class="calc">생산 완료 ${dtFull(o.done_at)} ${o.done_by||""}</span></div>
-          <div class="mv"><button onclick="shipDone('${o.id}')">출고 완료</button></div></div>`; }).join("")}</div>
+          <div class="mv"><button onclick="shipDone('${o.id}')">출고 완료</button> <button class="btn" style="height:30px;color:var(--bad);font-weight:800" onclick="shipReject('${o.id}')" title="출고 단계에서 문제 — 현장 반려 칸으로">반려</button></div></div>`; }).join("")}</div>
     </div>`).join("") + `</div>`
     : `<div class="wempty">출고할 것이 없습니다<br><span>검수가 끝나면 출고처별로 여기 모입니다</span></div>`;
 
