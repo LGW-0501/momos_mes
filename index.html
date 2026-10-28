@@ -4000,15 +4000,51 @@ async function mesResubmitQc(a){
       });
     });
 }
+/* 반려 건 끝내기 — 폐기 · 원두로 되돌려 합침 (044) : 제품이 아니므로 검수로 안 보내고 완제품 재고에서 뺀다 */
+async function mesCloseRejected(a){
+  return rpc("close_rejected", { p_order_id:a.order_id, p_action:a.action, p_note:a.note||null, p_user_name:CURRENT_USER, p_idempotency:a.idem }, () => {
+    const hit = idemHit(a.idem); if (hit) return hit;
+    const o = ordById(a.order_id); if (!o) return MES_ERR("no_order","작업지시를 찾을 수 없습니다");
+    if (o.status !== "생산중" || !o.log_id) return MES_ERR("bad_status", `반려된 생산중 건만 처리할 수 있습니다 (지금 ${o.status})`);
+    const open = DB.qc_rejections.filter(r=>r.order_id===o.id && !r.resolved); if (!open.length) return MES_ERR("not_rejected","반려된 건이 아닙니다");
+    const p = prodById(o.product_id); const qty = Number(o.qty_done)||0; const reason = a.action==="scrap" ? "반려 폐기" : "반려 원두환원";
+    return localTx(T => {
+      open.forEach(r=>{ T.upd(r, { resolved:true, resolved_at:nowISO(), handling:a.action }); save("qc_rejections", r); });
+      if (p && qty > 0) { T.upd(p, { cfe: Number(p.cfe||0) - qty }); save("products", p);
+        putMove(T, { kind:"완제품", ref_type:"order", ref_id:o.id, product_id:p.id, qty:-qty, unit:"EA", reason, note:a.note||"", move_date:today() });
+        const g = { id:uid(), date:o.work_date, type: a.action==="scrap" ? "반려 폐기" : "반려 혼합(원두)", product_id:p.id, ...pSnap(p), machine:o.machine, qty, note:`작업지시 ${o.order_no||""} · 반려 후 ${reason}${a.note?` — ${a.note}`:""}`, action:a.action, worker:CURRENT_USER, created_at:nowISO() };
+        T.add("pqc", g); save("pqc", g); }
+      T.upd(o, { status:"폐기", qty_ng:Number(o.qty_ng||0)+qty, note:a.note||o.note }); save("orders", o);
+      pushEvent(T, o, "생산중", "폐기", "qc_close", `${reason} ${fmt(qty)}개${a.note?` — ${a.note}`:""}`);
+      logAudit(reason, o.order_no, `${o.product_name||""} ${fmt(qty)}개${a.note?` — ${a.note}`:""}`);
+      const r = { ok:true, qty, action:a.action }; idemPut(T, a.idem, "close_rejected", o.id, r); return r;
+    });
+  });
+}
+const FIX_ACTIONS = [ "재포장", "재실링", "라벨 교체", "제조일자·일련번호 수정", "이물 제거 후 재포장", "중량 재조정", "이상 없음 — 재확인만", "원두로 되돌려 다른 배치와 합침", "폐기", "기타 직접 입력" ];
 async function resubmitQc(id){
   if (!(await requireUser())) return;
   const o = ordById(id); if (!o) return;
   const q = qcState(o);
-  const note = await askText(`${o.product_name||prodById(o.product_id)?.name||""} ${fmt(o.qty_done)}EA\n반려 사유: ${q.reason||"—"}\n\n어떻게 조치했는지 적고 확인하면 다시 검수 대기로 올라갑니다 (실적·수량은 그대로).\n수량이 달라졌으면 올리지 말고 관리자에게 — 생산실적을 정정해야 합니다.`, "", "조치 완료 → 다시 검수로");
-  if (note === null) return;
+  const nm = o.product_name||prodById(o.product_id)?.name||"";
+  const pick = await ask(`${nm} ${fmt(o.qty_done)}EA\n반려 사유: ${q.reason||"—"}\n\n어떻게 조치했습니까?`, { title:"조치 내용", choices:[ ...FIX_ACTIONS.map(x=>({ v:x, label:x, cls:/폐기|합침/.test(x)?"":"" })), { v:null, label:"취소" } ] });
+  if (!pick) return;
+  let memo = "";
+  if (pick === "기타 직접 입력") { const t = await askText("조치 내용을 적어 주세요", "", "조치 내용"); if (t === null) return; memo = String(t).trim(); if (!memo) return toast("조치 내용을 적어 주세요"); }
+  else { const t = await askText(`${pick} — 덧붙일 말이 있으면 적으세요 (없으면 그대로 확인)`, "", "조치 내용"); if (t === null) return; memo = String(t).trim(); }
+  /* 폐기 · 원두로 되돌림 — 제품이 아니다: 검수로 보내지 않고 완제품 재고에서 빼고 끝낸다 */
+  if (pick === "폐기" || pick === "원두로 되돌려 다른 배치와 합침") {
+    const action = pick === "폐기" ? "scrap" : "bean";
+    if (!(await ask(`${nm} ${fmt(o.qty_done)}개 — ${pick}\n\n검수로 보내지 않고 끝냅니다. 완제품 재고에서 ${fmt(o.qty_done)}개가 빠지고 품질관리(부적합)에 남습니다.${action==="bean"?"\n원두는 합친 배치에서 따로 더하지 않습니다 (로스로 남음)":""}`, { title:pick, yes:"처리", danger:true }))) return;
+    const r = await mesCloseRejected({ order_id:id, action, note:memo, idem:`cls-${id}-${uid()}` });
+    if (!r || !r.ok) { quickRender(); return ask(`${r?.message||"처리하지 못했습니다"}${/close_rejected|schema cache/i.test(r?.message||"") ? "\n\n서버에 044_close_rejected.sql 을 아직 실행하지 않았습니다." : ""}`, { title:"처리하지 못했습니다", yes:"확인" }); }
+    if (sb) await pullWhere("products", "id", o.product_id);
+    quickRender(); return toast(`${pick} — ${fmt(o.qty_done)}개 처리했습니다`);
+  }
+  const note = pick === "기타 직접 입력" ? memo : (memo ? `${pick} — ${memo}` : pick);
   const r = await mesResubmitQc({ order_id:id, note:String(note).trim(), idem:`rsq-${id}-${uid()}` });
-  if (!r || !r.ok) { renderAll(); return ask(`${r?.message||"올리지 못했습니다"}${/resubmit_qc|schema cache/i.test(r?.message||"") ? "\n\n서버에 038_qc_resubmit.sql 을 아직 실행하지 않았습니다." : ""}`, { title:"다시 검수로 — 실패", yes:"확인" }); }
-  renderAll(); toast("다시 검수 대기로 올렸습니다");
+  if (!r || !r.ok) { quickRender(); return ask(`${r?.message||"올리지 못했습니다"}${/resubmit_qc|schema cache/i.test(r?.message||"") ? "\n\n서버에 038_qc_resubmit.sql 을 아직 실행하지 않았습니다." : ""}`, { title:"올리지 못했습니다", yes:"확인" }); }
+  quickRender(); toast("다시 검수 대기로 올렸습니다");
 }
 /* ── 6. 출고 ───────────────────────────────────────────────── */
 async function mesShipOrder(a){
@@ -6359,6 +6395,8 @@ renderFavs();
 
 /* ══ 업데이트 내역 — 어디에 뭘 바꿨는지 (최근 것이 위) ══ */
 const CHANGELOG = [
+  ["2026-10-28", "반려 칸 › 조치 내용 (044 SQL)", "적는 대신 고르기 — 재포장·재실링·라벨 교체·제조일자/일련번호 수정·이물 제거·중량 재조정·이상 없음·기타 → 다시 검수로 / 폐기·원두로 되돌려 다른 배치와 합침 → 검수로 안 보내고 완제품 재고에서 빼고 끝냄(품질관리에 기록, 지시 상태 폐기)"],
+  ["2026-10-28", "검수 › 반려 사유", "적는 대신 고르기 — 검수 항목(제품명·제조일자·일련번호·포장지·실링·외관) + 수량 차이·이물·중량 오차·기타 · 체크 안 된 항목이 먼저 보임 · 덧붙일 말은 선택"],
   ["2026-10-28", "검수 › 부분 반려 (043 SQL)", "반려할 때 수량을 물음 — 55개 중 2개만 반려하면 2개만 반려 칸으로(…-R 지시, 같은 일련번호), 53개는 바로 검수 완료 → 출고 · 조치 내용은 반려 칸·검수 카드·[이력]·이력추적에 그대로"],
   ["2026-10-28", "현장 작업 · 검수 — 속도", "생산 완료·반려·검수 완료·출고 뒤에 20개 화면을 다 그리던 것 → 지금 화면만 바로, 나머지는 뒤에서 · 완료 뒤 서버에서 받아오는 것도 꼭 필요한 4개만 한 번에 · 로스 기록은 기다리지 않고 뒤에서"],
   ["2026-10-28", "생산 완료 › 원두 차감 (042 SQL)", "지시에 적힌 배치(일련번호)부터 빼고, 모자라면 오래된 배치 순 — 봉지 번호와 소비 기록이 어긋나지 않게"],
@@ -14382,8 +14420,8 @@ async function applyPaste(){
    [작업지시] → [생산 시작] → [생산 완료] → [검수] → [출고]
    각 단계는 앞 단계 정보를 그대로 물려받고, 결과만 입력한다
    ══════════════════════════════════════════════════════════════ */
-const WOST = ["대기","생산중","생산완료","검수완료","출고완료"];
-const WOST_TAG = { "대기":"", "생산중":"warn", "생산완료":"warn", "검수완료":"ok", "출고완료":"ok" };
+const WOST = ["대기","생산중","생산완료","검수완료","출고완료","폐기"];
+const WOST_TAG = { "대기":"", "생산중":"warn", "생산완료":"warn", "검수완료":"ok", "출고완료":"ok", "폐기":"bad" };
 const SHIP_CH = [...new Set([...CHANNELS, "온라인","부산점","직납"])];   // 기준정보 채널 + 추가 출고처
 /* 검수 항목 — 체크만 하면 되도록 */
 const QC_ITEMS = [
@@ -15339,8 +15377,15 @@ async function showQcHistory(id){
 async function qcReject(id){
   if (!(await requireUser())) return;
   const o = ordById(id); if(!o) return;
-  const why = await askText("무엇이 문제인가요?", "", "검수 반려");
-  if (why===null) return;
+  /* 사유는 고른다 — 검수 항목과 같은 말로 (체크 안 된 항목이 있으면 그걸 먼저) · 덧붙일 말은 선택 */
+  const unchecked = QC_ITEMS.filter(([k])=>!(o.qc && o.qc[k])).map(([,l])=>l);
+  const REJ = [ ...QC_ITEMS.map(([,l])=>l), "수량 차이", "이물·오염", "중량 오차", "기타 직접 입력" ];
+  const pick = await ask(`무엇이 문제인가요? 사유를 고르세요${unchecked.length && unchecked.length < QC_ITEMS.length ? `\n(체크 안 된 항목: ${unchecked.join(" · ")})` : ""}`,
+    { title:"검수 반려 — 사유", choices:[ ...REJ.map(x=>({ v:x, label:x, cls: unchecked.length < QC_ITEMS.length && unchecked.includes(x) ? "primary" : "" })), { v:null, label:"취소" } ] });
+  if (!pick) return;
+  let why = pick;
+  if (pick === "기타 직접 입력") { const t = await askText("사유를 적어 주세요", "", "검수 반려"); if (t === null) return; why = String(t).trim(); if (!why) return toast("사유를 적어 주세요"); }
+  else { const t = await askText(`${pick} — 덧붙일 말이 있으면 적으세요 (없으면 그대로 확인)`, "", "검수 반려"); if (t === null) return; if (String(t).trim()) why = `${pick} — ${String(t).trim()}`; }
   const tot = Number(o.qty_done)||0;
   /* ★ 반려 수량 — 전체면 전부 현장으로, 일부면 그 수만 반려 칸으로 가고 나머지는 바로 검수 완료 */
   const q = await askNum("반려 수량", `${o.product_name||prodById(o.product_id)?.name||""} · 생산 ${fmt(tot)}개<br>몇 개를 돌려보냅니까? 전부면 <b>[전부 ${fmt(tot)}]</b>`, tot,
