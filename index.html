@@ -1124,6 +1124,7 @@
     <button data-s="trace" data-r="admin,qc"><span class="ico">⌕</span><span class="lb">이력추적</span></button>
     <div class="grp" data-r="admin"></div>
     <button data-s="loss" data-r="admin"><span class="ico">▽</span><span class="lb">로스관리</span></button>
+    <button data-s="capa" data-r="admin,lead"><span class="ico">◔</span><span class="lb">생산분석</span></button>
     <button data-s="cal" data-r="admin"><span class="ico">▩</span><span class="lb">캘린더</span></button>
     <button data-s="base" data-r="admin"><span class="ico">◇</span><span class="lb">기준정보</span></button>
     <div class="grp" data-r="admin,qc,floor,lead"></div>
@@ -1314,6 +1315,43 @@
 </section>
 
 <!-- ══════ 문의 센터 — 오류·요청·질문을 적어 두면 관리자가 보고 고친다 ══════ -->
+<!-- ══════ 생산분석 — 생산시간 · CAPA · 회고 (046) ══════ -->
+<section class="screen" id="s-capa">
+  <div class="cond">
+    <label>기간</label>
+    <select id="capaMode" onchange="capaSetMode(this.value)">
+      <option value="day">일간</option><option value="week">주간</option><option value="month" selected>월간</option><option value="year">연간</option><option value="custom">직접 지정</option>
+    </select>
+    <input type="date" id="capaFrom" onchange="renderCapa()"> ~ <input type="date" id="capaTo" onchange="renderCapa()">
+    <button class="btn" onclick="capaShift(-1)">◀ 이전</button><button class="btn" onclick="capaShift(1)">다음 ▶</button>
+    <span style="margin-left:auto"></span>
+    <button class="btn" onclick="csvCapa()">엑셀 다운로드</button>
+  </div>
+  <div class="body">
+    <h2 class="page">생산분석 — 생산시간 · CAPA · 회고<small id="asof-capa"></small></h2>
+    <div class="guide"><b>현장에서 [생산 시작] ~ [생산 완료] 를 누른 시간으로 계산합니다.</b> 실제 생산시간 = 경과시간 − 중단시간(일시정지) · 시간당 CAPA = 생산수량(중량) ÷ 실제 생산시간 · 중량(규격)마다 따로 봅니다 · 참여 작업자가 [참여]를 눌러 두면 인시(사람×시간)가 따로 잡힙니다 (안 누르면 시작한 사람 1명으로 봅니다) · 숫자는 생산실적(검수·출고 전 포함)이 기준입니다.</div>
+    <div class="cards" id="capaCards"></div>
+    <div class="cols2">
+      <div class="panel"><div class="panel-h">중량(규격)별 CAPA</div><div class="panel-b"><table id="capaSpec"></table></div></div>
+      <div class="panel"><div class="panel-h">설비별 CAPA <span class="r hint">설비 × 규격</span></div><div class="panel-b"><table id="capaMach"></table></div></div>
+    </div>
+    <div class="panel"><div class="panel-h">시간대별 생산 <span class="r hint">완료된 생산을 시작~완료 시간에 나눠 넣음</span></div><div class="panel-b"><table id="capaHour"></table></div></div>
+    <div class="cols2">
+      <div class="panel"><div class="panel-h">작업자별 투입시간</div><div class="panel-b"><table id="capaWorker"></table></div></div>
+      <div class="panel"><div class="panel-h">중단 사유별</div><div class="panel-b"><table id="capaPause"></table></div></div>
+    </div>
+    <div class="panel"><div class="panel-h">품목별 생산량 · 생산시간</div><div class="panel-b"><table id="capaProd"></table></div></div>
+    <div class="panel"><div class="panel-h">생산 건별 <span class="r hint">시작 · 완료 · 중단 · 참여 · 시간당</span></div><div class="panel-b"><table id="capaLogs"></table></div></div>
+    <div class="panel"><div class="panel-h">월간 회고 <span class="r hint">이 달 ↔ 전월 · 계획 대비 · 품질 · 운영</span>
+        <span style="margin-left:14px"><input type="month" id="capaRetroMon" onchange="renderCapa()"></span></div>
+      <div id="capaRetro" style="padding:10px 18px"></div></div>
+    <div class="panel"><div class="panel-h">연간 — 월별 비교 <span style="margin-left:14px"><input type="number" id="capaYear" style="width:80px" onchange="renderCapa()"> 년</span></div>
+      <div class="panel-b"><table id="capaYearTbl"></table></div></div>
+    <div class="panel"><div class="panel-h">예상 생산시간 · 필요 인원 <span class="r hint">최근 90일 CAPA 로 계산</span></div>
+      <div id="capaForecast" style="padding:10px 18px"></div></div>
+  </div>
+</section>
+
 <section class="screen" id="s-help">
   <div class="cond">
     <span class="hint" style="padding:0">보기</span><span id="helpSum"></span>
@@ -3279,6 +3317,7 @@ const DB = {
   holds: [],            // 배치 보류 이력 (보류 → 사용재개 / 폐기)
   roast_lines: [],      // 로스팅 계획을 배치 한 줄씩 펼친 것 — 받을 때 날짜·kg만 확인한다
   rework: [],           // 완제품 재작업 (소분·세트구성·재포장)
+  order_workers: [],    // 지시별 참여 작업자 (in_at ~ out_at) — 046
   rework_in: [],        // 재작업에 넣은 완제품
   adjust: [],           // 재고 수기 조정 이력 (역산 정확도용)
   audit: [],            // 변경 이력 (누가·언제·무엇을)
@@ -3586,7 +3625,7 @@ function effSpeed(m, p){
    ⑤ 저장소 (Supabase / 로컬)
    ══════════════════════════════════════════════════════════════ */
 const TABLES = ["products","beans","bom","mms","machines","workers","roasters","bean_roasters","roasting","roast_lines","holds","materials","material_moves","material_tasks","bom_sets","labels","label_moves","orders","logs","consumptions","pqc","events","counts","usages","adjust","audit","perms","rework","rework_in","tallies","stock_moves","idempotency_keys","order_events","shipments","qc_rejections","migration_checks","ng_adjustments","material_task_reverts",
-   "log_amendments","search_aliases","app_users"];
+   "log_amendments","search_aliases","app_users","order_workers"];
 let sb = null, dbMode = "local";
 let DEV_OK = false, DEV_NAME = "", IS_ADMIN_SESSION = false, CONN_ERR = "";
 async function initDB(){
@@ -6468,6 +6507,8 @@ renderFavs();
 
 /* ══ 업데이트 내역 — 어디에 뭘 바꿨는지 (최근 것이 위) ══ */
 const CHANGELOG = [
+  ["2026-10-28", "현장 작업 › 일시정지 · 참여 (046 SQL)", "[⏸ 일시정지]/[▶ 재개] (사유: 설비 이상·품목 변경·사이즈 변경·원두/부자재/검수 대기·작업자 이동·휴게·청소·기타) — 중단시간은 생산시간에서 뺌 · [참여]/[빠짐]으로 작업자별 투입시간 · 카드에 생산 경과시간 표시 · 생산실적에 실제 생산시간"],
+  ["2026-10-28", "생산분석 (새 화면)", "기간(일·주·월·연·지정)별 총 생산수량·중량·실제 생산시간·중단·시간당 EA/kg·투입 인시·인시당 · 중량별/설비별/품목별 CAPA · 시간대별 생산 · 작업자별 투입시간 · 중단 사유별 · 건별 표 · 월간 회고(전월 대비·계획 대비·품질·운영) · 연간 월별 비교 · 최근 90일 CAPA 로 예상 생산시간·인원 (오늘 계획도 자동)"],
   ["2026-10-28", "출고 › [반려] (045 SQL)", "출고 대기에서 수량·품목·배치/LOT·포장·라벨 문제가 보이면 반려 — 수량(일부/전체)·사유·일시·처리자 기록 · 현장 반려 칸에 \"출고 반려\"로 올라가 조치 → 재검수 → 출고 · 나머지는 출고 대기에 남음"],
   ["2026-10-28", "반려 칸 › 조치 결과대로 수량 (045 SQL)", "조치 후 \"다시 검수에 올릴 수량\"을 물음 — 반려 2개 중 1개만 재포장했으면 1개만 재검수, 나머지는 폐기/원두로 합침(취합 배치 선택·기록)으로 재고에서 빼고 끝 · 반려 수량이 그대로 재검수로 생기지 않음"],
   ["2026-10-28", "반려 칸 › 조치 내용 (044 SQL)", "적는 대신 고르기 — 재포장·재실링·라벨 교체·제조일자/일련번호 수정·이물 제거·중량 재조정·이상 없음·기타 → 다시 검수로 / 폐기·원두로 되돌려 다른 배치와 합침 → 검수로 안 보내고 완제품 재고에서 빼고 끝냄(품질관리에 기록, 지시 상태 폐기)"],
@@ -6736,7 +6777,7 @@ function renderOne(s){
   ({ dash:renderDash, plan:renderPlan, roast:renderRoast, req:renderReq, log:renderLog,
      stock:renderStock, pqc:renderPqc, cal:renderCal, loss:renderLoss, base:renderBase,
      work:renderWork, qc:renderQc, ship:renderShip, order:renderOrder, trace:renderTrace,
-     rw:renderRw, mt:renderMt, close:renderClose, count:renderCount, help:renderHelp })[s]?.();
+     rw:renderRw, mt:renderMt, close:renderClose, count:renderCount, help:renderHelp, capa:renderCapa })[s]?.();
 }
 /* ★ 기준 순서 — 품목은 CFE 코드 번호, 원두는 MMS 코드 번호, 부자재는 구분→코드→이름 순.
      표·카드·계획·집계·여유분·재고 세기 전부 이 순서를 따른다 (머리글 정렬을 누르면 그게 우선) */
@@ -11519,7 +11560,7 @@ function renderLog(){
         <td class="l" style="font-size:11.5px">${l.batch_codes?`<span class="tag ok">${l.batch_codes}</span>`:"—"}
           <br>${l.lot?`<span class="tag warn">LOT ${l.lot}</span>`:'<span class="hint" style="padding:0">LOT 없음</span>'}</td>
         <td class="c">${l.machine}</td><td class="c">${l.worker}</td>
-        <td class="c" style="font-size:12px;white-space:nowrap">${dtFull(od?.done_at || l.created_at)}${od?.first_started_at||od?.started_at?`<br><span class="hint" style="padding:0">시작 ${dtFull(od.first_started_at||od.started_at)}</span>`:""}</td><td><b>${fmt(l.qty_ea)}</b></td>
+        <td class="c" style="font-size:12px;white-space:nowrap">${dtFull(od?.done_at || l.created_at)}${od?.first_started_at||od?.started_at?`<br><span class="hint" style="padding:0">시작 ${dtFull(od.first_started_at||od.started_at)}</span>`:""}${(()=>{ const t = od && workTime(od); return t && !t.running ? `<br><b>${fmtDur(t.active)}</b>${t.pause?` <span class="hint" style="padding:0">중단 ${fmtDur(t.pause)}</span>`:""}` : ""; })()}</td><td><b>${fmt(l.qty_ea)}</b></td>
         <td class="${Number(l.qty_diff||0)?'bad':''}">${l.received_qty!=null?fmt(l.received_qty):"—"}</td>
         <td class="${lossOf(l)>.005?'bad':'ok'}" style="white-space:nowrap">${fmt(lossOf(l))}${l.loss_flag?`<br><span class="tag ${LOSS_FLAG_C[l.loss_flag]||""}" style="font-size:10.5px" title="${l.loss_reason||""}${l.loss_note?" · "+l.loss_note:""}">${l.loss_flag==="open"?"미확정":LOSS_FLAG_T[l.loss_flag]}${l.loss_flag!=="open"&&l.loss_pct_actual!=null?` ${l.loss_pct_actual}%`:""}</span>`:""}</td>
         <td style="white-space:nowrap">${fmt(l.leftover_kg)}${l.leftover_to?`<br><span class="hint" style="padding:0;font-size:11px">${({next:"다음 생산에",loss:"로스로",keep:"보관"})[l.leftover_to]||""}</span>`:""}${l.carried_kg>0?`<br><span class="hint" style="padding:0;font-size:11px">+이전 ${fmt(l.carried_kg)}</span>`:""}</td>
@@ -13359,7 +13400,7 @@ function rtBadge(){
    · 이제 지금 보고 있는 화면만 바로 그리고, 나머지는 쉬는 틈에 하나씩 그린다
    · 지금 화면에서 숫자를 치고 있을 때만 손을 뗄 때까지 기다린다 */
 const SCREENS = ["dash","plan","roast","req","log","stock","pqc","cal","loss","base",
-                 "work","qc","ship","order","trace","rw","mt"];
+                 "work","qc","ship","order","trace","rw","mt","capa"];
 const curScreen = () => (document.querySelector(".screen.on")?.id || "s-dash").replace(/^s-/, "");
 const idle = f => (window.requestIdleCallback ? requestIdleCallback(f, { timeout:600 }) : setTimeout(f, 30));
 let RT_REST = null;
@@ -15242,6 +15283,7 @@ async function finishWork(id){
 
   /* ── 여기부터는 한 건의 처리다 ──────────────────────────────
      멱등키를 지금 만든다. 더블클릭·재전송·새로고침 재시도가 전부 같은 키로 간다. */
+  if (o.paused_at) { const rr = await resumeWork(o.id, true); if (!rr || rr.ok === false) return toast("정지를 풀지 못했습니다 — " + (rr?.message||"")); }
   const key = `fw-${o.id}-${uid()}`;
   const btnBusy = setBusy(`완료 처리 중…`);
   /* 로스율이 있으면 표준 × (1+로스%) 를 투입량으로 보낸다 — 서버도 그만큼 원두를 뺀다 */
@@ -15257,6 +15299,7 @@ async function finishWork(id){
                `원인을 고친 뒤 다시 누르시면 됩니다.`,
                { title:"완료하지 못했습니다", yes:"확인", only:true });
   }
+  if (!sb) DB.order_workers.filter(w=>w.order_id===o.id && !w.out_at).forEach(w=>{ w.out_at = nowISO(); save("order_workers", w); });
   /* 로스 기록 — 재고와는 별개. 기다리지 않고 뒤에서 보낸다 (실패하면 알려 주고, 나중에 [로스]로 다시 적는다) */
   if (!r.replayed) {
     const lid = r.log_id || o.log_id;
@@ -15323,6 +15366,62 @@ function logFromOrder(o, p, qty){
   save("logs",log);
   if (need>.01) toast(`${p.bean} 원두 ${fmt(need)}kg 부족 — 재고를 확인하세요`);
   return log;
+}
+/* ══ 생산시간 — 일시정지 · 재개 · 참여 작업자 (046) ══ */
+const PAUSE_REASONS = ["설비 이상","품목 변경","사이즈 변경","원두 대기","부자재 대기","검수 대기","작업자 이동","휴게","청소","기타 직접 입력"];
+const secOf = (a,b) => Math.max(0, (new Date(b) - new Date(a)) / 1000);
+const fmtDur = sec => { sec = Math.max(0, Math.round(Number(sec)||0)); const h = Math.floor(sec/3600), m = Math.round((sec%3600)/60); return h ? `${h}시간 ${m}분` : `${m}분`; };
+/* 지시 한 건의 시간 — 경과 · 중단 · 실제 */
+function workTime(o){
+  if (!o) return null;
+  const st = o.first_started_at || o.started_at; if (!st) return null;
+  const end = o.done_at || (o.status === "생산중" ? nowISO() : null); if (!end) return null;
+  const elapsed = secOf(st, end);
+  let pause = Number(o.pause_sec||0); if (o.paused_at && !o.done_at) pause += secOf(o.paused_at, nowISO());
+  return { start:st, end, elapsed, pause, active: Math.max(0, elapsed - pause), running: !o.done_at };
+}
+const openWorkers = o => DB.order_workers.filter(w=>w.order_id===o.id && !w.out_at).map(w=>w.worker_name);
+function workTimeLine(o){
+  const t = workTime(o), ws = openWorkers(o);
+  const st = o.paused_at ? `<span class="tag bad">⏸ 정지 중 — ${o.pause_reason||""} (${fmtDur(secOf(o.paused_at, nowISO()))})</span>` : `<span class="tag ok">▶ 생산 ${t?fmtDur(t.active):"—"}</span>`;
+  const pz = t && t.pause ? ` <span class="hint" style="padding:0">중단 ${fmtDur(t.pause)}</span>` : "";
+  const who = ws.length ? `<b>${ws.join(", ")}</b>` : `<span class="hint" style="padding:0">${o.started_by||"—"}</span>`;
+  return `<div class="meta" style="margin-top:4px">${st}${pz} · 참여 ${who}</div>`;
+}
+async function pauseWork(id){
+  if (!(await requireUser())) return;
+  const o = ordById(id); if (!o || o.status !== "생산중") return;
+  const pick = await ask("왜 멈춥니까? (중단시간은 생산시간에서 빠집니다)", { title:"일시정지", choices:[ ...PAUSE_REASONS.map(x=>({ v:x, label:x })), { v:null, label:"취소" } ] });
+  if (!pick) return;
+  let why = pick; if (pick === "기타 직접 입력") { const t = await askText("사유", "", "일시정지"); if (t === null) return; why = String(t).trim() || "기타"; }
+  const r = await rpc("pause_work", { p_order_id:id, p_reason:why, p_user_name:CURRENT_USER, p_idempotency:`pz-${id}-${uid()}` }, () => {
+    if (o.paused_at) return MES_ERR("paused","이미 정지 중입니다");
+    o.paused_at = nowISO(); o.pause_reason = why; save("orders", o);
+    DB.order_events.push({ id:uid(), order_id:o.id, seq:(DB.order_events.filter(x=>x.order_id===o.id).length)+1, from_status:"생산중", to_status:"생산중", event:"pause", note:why, user_name:CURRENT_USER, at:nowISO() });
+    return { ok:true }; });
+  await mesTell(r, `일시정지 — ${why}`);
+}
+async function resumeWork(id, quiet){
+  const o = ordById(id); if (!o || !o.paused_at) return { ok:true };
+  const r = await rpc("resume_work", { p_order_id:id, p_user_name:CURRENT_USER, p_idempotency:`rs-${id}-${uid()}` }, () => {
+    const sec = secOf(o.paused_at, nowISO()); o.pause_sec = Number(o.pause_sec||0) + sec; o.paused_at = null; save("orders", o);
+    DB.order_events.push({ id:uid(), order_id:o.id, seq:(DB.order_events.filter(x=>x.order_id===o.id).length)+1, from_status:"생산중", to_status:"생산중", event:"resume", note:`${o.pause_reason||""} · 중단 ${Math.round(sec/60)}분`, user_name:CURRENT_USER, at:nowISO() });
+    return { ok:true, sec }; });
+  if (!quiet) await mesTell(r, "재개 — 다시 생산시간에 들어갑니다");
+  return r;
+}
+async function joinWork(id){
+  if (!(await requireUser())) return;
+  const o = ordById(id); if (!o) return;
+  const me = CURRENT_USER;
+  const already = openWorkers(o).includes(me);
+  const r = await rpc(already ? "leave_work" : "join_work", { p_order_id:id, p_worker_name:me, p_idempotency:`jw-${id}-${uid()}` }, () => {
+    if (already) { DB.order_workers.filter(w=>w.order_id===id && w.worker_name===me && !w.out_at).forEach(w=>{ w.out_at = nowISO(); save("order_workers", w); }); }
+    else { const w = { id:uid(), order_id:id, worker_name:me, in_at:nowISO(), out_at:null }; DB.order_workers.push(w); save("order_workers", w); }
+    DB.order_events.push({ id:uid(), order_id:id, seq:(DB.order_events.filter(x=>x.order_id===id).length)+1, from_status:null, to_status:null, event: already ? "leave" : "join", note:null, user_name:me, at:nowISO() });
+    return { ok:true }; });
+  if (r && r.ok && sb) await pullWhere("order_workers", "order_id", id);
+  await mesTell(r, already ? `${me} — 이 작업에서 빠졌습니다` : `${me} — 이 작업에 참여 (투입시간 기록 시작)`);
 }
 async function stopWork(id){
   const o = ordById(id); if(!o) return;
@@ -15782,8 +15881,11 @@ function renderWork(){
           : `<button class="go2" onclick="countWork('${o.id}')">수량 입력</button>
              <button class="go" onclick="finishWork('${o.id}')">생산 완료</button>`}
       </div>
+      ${run ? workTimeLine(o) : ""}
       <div class="btns sm">
         <button onclick="ngWork('${o.id}')">부적합 등록</button>
+        ${o.status==="대기" ? "" : (o.paused_at ? `<button onclick="resumeWork('${o.id}')" style="color:var(--ok);font-weight:800">▶ 재개</button>` : `<button onclick="pauseWork('${o.id}')">⏸ 일시정지</button>`)}
+        ${o.status==="대기" ? "" : `<button onclick="joinWork('${o.id}')" title="내 투입시간 기록">${openWorkers(o).includes(CURRENT_USER)?"빠짐":"참여"}</button>`}
         ${o.status==="대기" ? "" : `<button onclick="stopWork('${o.id}')">작업 중단</button>`}
       </div>
       ${o.status==="대기" && isMixedOrder(o) && can("plan") ? `<div class="btns sm" style="padding-top:0">
@@ -16004,11 +16106,238 @@ function renderTrace(){
         ${step(ng.length, "부적합", ng.length ? ng.map(x=>`${x.type} ${fmt(x.qty)}EA`).join("<br>") : "없음")}
         ${step(o?.status==="출고완료", "출고", o?.status==="출고완료" ? `${o.channel} · <b>${dtFull(o.ship_at)}</b> · ${o.ship_by}` : (o?`${o.channel} · ${o.status}`:"출고 기록 없음"))}
         ${(()=>{ const evs = o ? DB.order_events.filter(e=>e.order_id===o.id).sort((a,b)=>(Number(a.seq)||0)-(Number(b.seq)||0) || String(a.at).localeCompare(String(b.at))) : [];
-           const T = { create:"작업지시 생성", start:"작업 시작", finish:"생산 완료", stop:"작업 중단", resume:"작업 재개", edit_serial:"일련번호 수정", qc_reject:"검수 반려", qc_resubmit:"조치 완료 → 재검수", qc_pass:"검수 완료", ship:"출고 완료", unship:"출고 취소", edit:"수정", cancel:"취소" };
+           const T = { create:"작업지시 생성", start:"작업 시작", finish:"생산 완료", stop:"작업 중단", pause:"일시정지", resume:"재개", join:"참여", leave:"빠짐", qc_close:"반려 종료(폐기·원두환원)", ship_reject_split:"출고 반려(일부 가름)", edit_serial:"일련번호 수정", qc_reject:"검수 반려", qc_resubmit:"조치 완료 → 재검수", qc_pass:"검수 완료", ship:"출고 완료", unship:"출고 취소", edit:"수정", cancel:"취소" };
            return evs.length ? step(true, `작업 이력 (${evs.length}건 · 날짜·시간)`, evs.map(e=>`<b>${dtFull(e.at)}</b> ${T[e.event]||e.event} ${e.from_status&&e.to_status?`(${e.from_status} → ${e.to_status})`:""} · ${e.user_name||"—"}${e.note?` — ${e.note}`:""}`).join("<br>")) : ""; })()}
       </div>
     </div>`;
   }).join("");
+}
+
+/* ══════════════════════════════════════════════════════════════
+   생산분석 — 생산시간 · CAPA · 시간대 · 작업자 · 회고 · 예측 (046)
+   ══════════════════════════════════════════════════════════════ */
+let capaMode = "month";
+function capaSetMode(m){ capaMode = m; capaSetRange(); renderCapa(); }
+function capaSetRange(base){
+  const d = base ? new Date(base) : new Date(); const iso = x => x.toISOString().slice(0,10);
+  let f, t;
+  if (capaMode === "day") { f = t = iso(d); }
+  else if (capaMode === "week") { const w = new Date(d); w.setDate(d.getDate() - d.getDay()); f = iso(w); const e = new Date(w); e.setDate(w.getDate()+6); t = iso(e); }
+  else if (capaMode === "month") { f = iso(new Date(d.getFullYear(), d.getMonth(), 1)); t = iso(new Date(d.getFullYear(), d.getMonth()+1, 0)); }
+  else if (capaMode === "year") { f = `${d.getFullYear()}-01-01`; t = `${d.getFullYear()}-12-31`; }
+  else return;
+  $("capaFrom").value = f; $("capaTo").value = t;
+}
+function capaShift(dir){
+  const f = new Date($("capaFrom").value || today());
+  if (capaMode === "day") f.setDate(f.getDate()+dir); else if (capaMode === "week") f.setDate(f.getDate()+7*dir);
+  else if (capaMode === "month") f.setMonth(f.getMonth()+dir); else if (capaMode === "year") f.setFullYear(f.getFullYear()+dir);
+  else { const t = new Date($("capaTo").value||today()); const span = (t - f)/86400000 + 1; f.setDate(f.getDate()+span*dir); const nt = new Date(f); nt.setDate(f.getDate()+span-1); $("capaFrom").value = f.toISOString().slice(0,10); $("capaTo").value = nt.toISOString().slice(0,10); renderCapa(); return; }
+  capaSetRange(f); renderCapa();
+}
+/* 생산 건 → 시간·수량·중량·설비·규격·작업자 */
+function capaRow(l){
+  const o = DB.orders.find(x=>x.log_id===l.id && !x.split_from) || DB.orders.find(x=>x.log_id===l.id);
+  const p = prodById(l.product_id); const t = o ? workTime(o) : null;
+  if (!p) return null;
+  const qty = Number(l.qty_ea)||0, kg = Math.round(qty * Number(p.spec_g||0) / 1000 * 100) / 100;
+  const spec = Number(p.spec_g)||0, specT = specLabel(spec);
+  const machine = l.machine || o?.machine || "미기록";
+  /* 작업자 투입 — 참여 기록이 있으면 그것, 없으면 시작한 사람 1명이 실제 생산시간만큼 */
+  let workers = [];
+  if (o) { const ws = DB.order_workers.filter(w=>w.order_id===o.id);
+    if (ws.length) workers = ws.map(w=>({ name:w.worker_name, sec: secOf(w.in_at, w.out_at || o.done_at || nowISO()) }));
+    else if (t && !t.running) workers = [{ name: o.started_by || l.worker || "—", sec: t.active }]; }
+  const manSec = workers.reduce((s,w)=>s+w.sec, 0);
+  const pauses = o ? DB.order_events.filter(e=>e.order_id===o.id && e.event==="resume").map(e=>{ const m = String(e.note||"").match(/^(.*?) · 중단 (\d+)분/); return { reason: m ? m[1] : (e.note||"기타"), sec: m ? Number(m[2])*60 : 0 }; }) : [];
+  return { l, o, p, qty, kg, spec, specT, machine, date:l.work_date, t: (t && !t.running) ? t : null, workers, manSec, pauses, serial:l.serial, worker:l.worker, loss: lossOf(l), lossFlag:l.loss_flag };
+}
+function capaRows(from, to){
+  return DB.logs.filter(l=>logLive(l) && l.work_date >= from && l.work_date <= to && !l.rework).map(capaRow).filter(Boolean)
+    .sort((a,b)=>String(a.o?.done_at||a.l.created_at).localeCompare(String(b.o?.done_at||b.l.created_at)));
+}
+function capaSum(rows){
+  const timed = rows.filter(r=>r.t);
+  const qty = rows.reduce((s,r)=>s+r.qty,0), kg = rows.reduce((s,r)=>s+r.kg,0);
+  const active = timed.reduce((s,r)=>s+r.t.active,0), elapsed = timed.reduce((s,r)=>s+r.t.elapsed,0), pause = timed.reduce((s,r)=>s+r.t.pause,0);
+  const tq = timed.reduce((s,r)=>s+r.qty,0), tk = timed.reduce((s,r)=>s+r.kg,0), man = rows.reduce((s,r)=>s+r.manSec,0);
+  const h = active/3600;
+  return { n:rows.length, nT:timed.length, qty, kg:Math.round(kg*100)/100, active, elapsed, pause, man,
+    qph: h>0 ? Math.round(tq/h) : null, kgph: h>0 ? Math.round(tk/h*10)/10 : null,
+    qpm: man>0 ? Math.round(tq/(man/3600)) : null };
+}
+const pct = (a,b) => b ? `${Math.round(a/b*1000)/10}%` : "—";
+const delta = (a,b) => b == null || a == null ? "" : (a-b>0?`▲ ${fmt(a-b)}`:a-b<0?`▼ ${fmt(b-a)}`:"—");
+function renderCapa(){
+  if (!$("capaFrom")) return;
+  if (!$("capaFrom").value) capaSetRange();
+  if (!$("capaRetroMon").value) $("capaRetroMon").value = today().slice(0,7);
+  if (!$("capaYear").value) $("capaYear").value = today().slice(0,4);
+  const from = $("capaFrom").value, to = $("capaTo").value || from;
+  const rows = capaRows(from, to), S = capaSum(rows);
+  const pq = PQCL().filter(x=>x.date >= from && x.date <= to), rj = DB.qc_rejections.filter(r=>String(r.created_at||"").slice(0,10) >= from && String(r.created_at||"").slice(0,10) <= to);
+  const rw = DB.rework.filter(x=>(x.date||"") >= from && (x.date||"") <= to);
+  const lossKg = rows.filter(r=>r.lossFlag && r.lossFlag!=="open").reduce((s,r)=>s+r.loss,0), lossIn = rows.filter(r=>r.lossFlag && r.lossFlag!=="open").reduce((s,r)=>s+Number(r.l.input_kg||0),0);
+  $("capaCards").innerHTML = [
+    ["총 생산수량", fmt(S.qty), "EA"], ["총 생산중량", fmt(S.kg), "kg"],
+    ["실제 생산시간", fmtDur(S.active), `${S.nT}건 측정 / ${S.n}건`], ["경과 · 중단", `${fmtDur(S.elapsed)}`, `중단 ${fmtDur(S.pause)}`],
+    ["시간당 생산수량", S.qph!=null?fmt(S.qph):"—", "EA/h"], ["시간당 생산중량", S.kgph!=null?fmt(S.kgph):"—", "kg/h"],
+    ["총 투입 인시", fmtDur(S.man), "사람×시간"], ["인시당 생산량", S.qpm!=null?fmt(S.qpm):"—", "EA/인시"],
+    ["로스율", lossIn?pct(lossKg, lossIn):"—", `${fmt(lossKg)}kg`], ["부적합 · 반려 · 재작업", `${pq.reduce((s,x)=>s+Number(x.qty||0),0)} · ${rj.reduce((s,x)=>s+Number(x.qty_affected||0),0)} · ${rw.reduce((s,x)=>s+Number(x.qty||0),0)}`, `${pq.length}건 · ${rj.length}건 · ${rw.length}건`],
+  ].map(([a,b,c])=>`<div class="card"><div class="lb">${a}</div><div class="vl">${b} <small>${c}</small></div></div>`).join("");
+
+  const group = (key) => { const g = {}; rows.forEach(r=>{ const k = key(r); (g[k] = g[k]||[]).push(r); }); return Object.entries(g).map(([k,v])=>[k, capaSum(v)]); };
+  const line = (k, s) => `<tr><td class="l">${k}</td><td>${s.n}</td><td>${fmt(s.qty)}</td><td>${fmt(s.kg)}</td><td>${fmtDur(s.active)}</td><td>${s.pause?fmtDur(s.pause):"—"}</td><td><b>${s.qph!=null?fmt(s.qph):"—"}</b></td><td><b>${s.kgph!=null?fmt(s.kgph):"—"}</b></td><td>${fmtDur(s.man)}</td><td>${s.qpm!=null?fmt(s.qpm):"—"}</td></tr>`;
+  const H = ["구분","건수","수량","중량(kg)","실제 생산시간","중단","EA/h","kg/h","투입 인시","EA/인시"];
+  tbl("capaSpec", H, group(r=>r.specT).sort((a,b)=>natCmp(a[0],b[0])).map(([k,s])=>line(k,s)));
+  tbl("capaMach", H, group(r=>r.machine).sort((a,b)=>b[1].qty-a[1].qty).flatMap(([m,s])=>[line(`<b>${m}</b>`, s), ...group(r=>r.machine===m?r.specT:null).filter(([k])=>k!=="null").sort((a,b)=>natCmp(a[0],b[0])).map(([k,s2])=>line(`&nbsp;&nbsp;↳ ${k}`, s2))]));
+  tbl("capaProd", ["품목","건수","수량","중량(kg)","실제 생산시간","중단","EA/h","kg/h","투입 인시","EA/인시"], group(r=>r.p.name).sort((a,b)=>b[1].qty-a[1].qty).map(([k,s])=>line(k,s)));
+
+  /* 시간대별 — 각 건의 실제 생산 구간에 비례해 나눈다 */
+  const hours = {};
+  rows.filter(r=>r.t).forEach(r=>{ const st = new Date(r.t.start), en = new Date(r.t.end); const total = Math.max(1, en - st);
+    let cur = new Date(st); cur.setMinutes(0,0,0);
+    while (cur < en) { const nx = new Date(cur); nx.setHours(cur.getHours()+1); const a = Math.max(st, cur), b = Math.min(en, nx); const share = Math.max(0, b - a) / total;
+      const k = `${String(cur.getHours()).padStart(2,"0")}:00~${String((cur.getHours()+1)%24).padStart(2,"0")}:00`;
+      const h = hours[k] = hours[k] || { qty:0, kg:0, workers:new Set(), items:new Set(), machines:new Set(), pause:0, n:0 };
+      h.qty += r.qty*share; h.kg += r.kg*share; h.n += share; r.workers.forEach(w=>h.workers.add(w.name)); h.items.add(r.p.name); h.machines.add(r.machine); h.pause += r.t.pause*share;
+      cur = nx; } });
+  const hr = x => String(x||"").slice(11,13);
+  const pqH = {}; pq.forEach(x=>{ const k = hr(x.created_at); if (k) pqH[k] = (pqH[k]||0) + Number(x.qty||0); });
+  const rjH = {}; rj.forEach(x=>{ const k = hr(x.created_at); if (k) rjH[k] = (rjH[k]||0) + Number(x.qty_affected||0); });
+  tbl("capaHour", ["시간대","생산수량","생산중량(kg)","투입인원","작업자","생산품목","설비","부적합","반려","중단"],
+    Object.keys(hours).sort().map(k=>{ const h = hours[k]; const hh = k.slice(0,2);
+      return `<tr><td class="c"><b>${k}</b></td><td>${fmt(Math.round(h.qty))}</td><td>${fmt(Math.round(h.kg*10)/10)}</td><td>${h.workers.size}</td><td class="l" style="font-size:12px">${[...h.workers].join(", ")}</td><td class="l" style="font-size:12px">${[...h.items].join(", ")}</td><td class="l" style="font-size:12px">${[...h.machines].join(", ")}</td><td class="${pqH[hh]?"bad":""}">${pqH[hh]||"—"}</td><td class="${rjH[hh]?"bad":""}">${rjH[hh]||"—"}</td><td>${h.pause>30?fmtDur(h.pause):"—"}</td></tr>`; }));
+
+  /* 작업자별 */
+  const wk = {}; rows.forEach(r=>r.workers.forEach(w=>{ const x = wk[w.name] = wk[w.name] || { sec:0, n:0, qty:0 }; x.sec += w.sec; x.n++; x.qty += r.qty / Math.max(1, r.workers.length); }));
+  tbl("capaWorker", ["작업자","참여 건수","투입시간","생산수량(분담)","EA/인시"], Object.entries(wk).sort((a,b)=>b[1].sec-a[1].sec).map(([k,x])=>`<tr><td class="l"><b>${k}</b></td><td>${x.n}</td><td>${fmtDur(x.sec)}</td><td>${fmt(Math.round(x.qty))}</td><td>${x.sec?fmt(Math.round(x.qty/(x.sec/3600))):"—"}</td></tr>`));
+  /* 중단 사유별 */
+  const ps = {}; rows.forEach(r=>r.pauses.forEach(x=>{ const k = ps[x.reason] = ps[x.reason] || { n:0, sec:0 }; k.n++; k.sec += x.sec; }));
+  tbl("capaPause", ["사유","횟수","중단시간"], Object.entries(ps).sort((a,b)=>b[1].sec-a[1].sec).map(([k,x])=>`<tr><td class="l">${k}</td><td>${x.n}</td><td>${fmtDur(x.sec)}</td></tr>`));
+  /* 건별 */
+  tbl("capaLogs", ["일자","일련번호","품목","설비","시작","완료","경과","중단","실제 생산시간","수량","중량(kg)","EA/h","kg/h","참여 작업자(투입)"],
+    [...rows].reverse().map(r=>`<tr><td class="c">${r.date}</td><td class="l"><b>${r.serial||"—"}</b></td><td class="l">${r.p.name}</td><td class="c">${r.machine}</td>
+      <td class="c" style="font-size:12px">${r.t?dtFull(r.t.start).slice(11):"—"}</td><td class="c" style="font-size:12px">${r.t?dtFull(r.t.end).slice(11):"—"}</td>
+      <td>${r.t?fmtDur(r.t.elapsed):"—"}</td><td>${r.t&&r.t.pause?fmtDur(r.t.pause):"—"}</td><td><b>${r.t?fmtDur(r.t.active):"<span class='hint' style='padding:0'>시간 없음</span>"}</b></td>
+      <td>${fmt(r.qty)}</td><td>${fmt(r.kg)}</td><td>${r.t&&r.t.active>0?fmt(Math.round(r.qty/(r.t.active/3600))):"—"}</td><td>${r.t&&r.t.active>0?fmt(Math.round(r.kg/(r.t.active/3600)*10)/10):"—"}</td>
+      <td class="l" style="font-size:12px">${r.workers.map(w=>`${w.name} ${fmtDur(w.sec)}`).join(", ")||"—"}</td></tr>`));
+
+  renderCapaRetro(); renderCapaYear(); renderCapaForecast();
+}
+/* 월간 회고 */
+function renderCapaRetro(){
+  const mon = $("capaRetroMon").value || today().slice(0,7);
+  const [y,m] = mon.split("-").map(Number); const pm = new Date(y, m-2, 1); const pmon = `${pm.getFullYear()}-${String(pm.getMonth()+1).padStart(2,"0")}`;
+  const last = d => new Date(d.getFullYear(), d.getMonth()+1, 0).getDate();
+  const rng = mm => [`${mm}-01`, `${mm}-${String(last(new Date(mm+"-01"))).padStart(2,"0")}`];
+  const [f1,t1] = rng(mon), [f0,t0] = rng(pmon);
+  const R1 = capaRows(f1,t1), R0 = capaRows(f0,t0), S1 = capaSum(R1), S0 = capaSum(R0);
+  const plan1 = DB.tallies.filter(t=>t.date>=f1 && t.date<=t1).reduce((s,t)=>s+Number(t.qty||0),0);
+  const inR = (arr, key) => arr.filter(x=>String(x[key]||"").slice(0,10) >= f1 && String(x[key]||"").slice(0,10) <= t1);
+  const pq = PQCL().filter(x=>x.date>=f1 && x.date<=t1), rj = inR(DB.qc_rejections, "created_at"), rw = DB.rework.filter(x=>(x.date||"")>=f1 && (x.date||"")<=t1);
+  const pq0 = PQCL().filter(x=>x.date>=f0 && x.date<=t0), rj0 = DB.qc_rejections.filter(x=>String(x.created_at||"").slice(0,10)>=f0 && String(x.created_at||"").slice(0,10)<=t0);
+  const lossF = R => R.filter(r=>r.lossFlag && r.lossFlag!=="open"); const lk = R => lossF(R).reduce((s,r)=>s+r.loss,0), li = R => lossF(R).reduce((s,r)=>s+Number(r.l.input_kg||0),0);
+  const over1 = R1.filter(r=>r.lossFlag==="high"||r.lossFlag==="low").length;
+  const reasons = {}; rj.forEach(r=>{ const k = String(r.reason_note||"기타").split(" — ")[0]; reasons[k] = (reasons[k]||0)+1; });
+  const topR = Object.entries(reasons).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([k,n])=>`${k} ${n}건`).join(" · ") || "—";
+  const ps = {}; R1.forEach(r=>r.pauses.forEach(x=>{ const k = ps[x.reason] = ps[x.reason] || { n:0, sec:0 }; k.n++; k.sec += x.sec; }));
+  const topP = Object.entries(ps).sort((a,b)=>b[1].sec-a[1].sec).slice(0,5).map(([k,x])=>`${k} ${fmtDur(x.sec)}(${x.n})`).join(" · ") || "—";
+  const wk = {}; R1.forEach(r=>r.workers.forEach(w=>{ wk[w.name] = (wk[w.name]||0) + w.sec; }));
+  const byDay = {}; R1.forEach(r=>{ byDay[r.date] = (byDay[r.date]||0) + r.qty; }); const bestDay = Object.entries(byDay).sort((a,b)=>b[1]-a[1])[0];
+  const kv = (k, v, d) => `<tr><td class="l">${k}</td><td><b>${v}</b></td><td class="c" style="font-size:12px">${d||""}</td></tr>`;
+  const specLine = R => { const g = {}; R.forEach(r=>{ (g[r.specT] = g[r.specT]||[]).push(r); }); return Object.entries(g).sort((a,b)=>natCmp(a[0],b[0])).map(([k,v])=>{ const s = capaSum(v); return `${k} ${fmt(s.qty)}EA${s.qph!=null?` (${fmt(s.qph)}EA/h · ${fmt(s.kgph)}kg/h)`:""}`; }).join("<br>") || "—"; };
+  const machLine = R => { const g = {}; R.forEach(r=>{ (g[r.machine] = g[r.machine]||[]).push(r); }); return Object.entries(g).map(([k,v])=>{ const s = capaSum(v); return `${k} ${fmt(s.qty)}EA${s.qph!=null?` (${fmt(s.qph)}EA/h)`:""}`; }).join("<br>") || "—"; };
+  $("capaRetro").innerHTML = `<div class="hint" style="padding:0 0 8px">${mon} (전월 ${pmon} 과 비교)</div>
+    <div class="cols2" style="gap:14px">
+      <table><thead><tr><th class="l">생산</th><th>이 달</th><th>전월 대비</th></tr></thead><tbody>
+        ${kv("총 생산수량", fmt(S1.qty)+" EA", delta(S1.qty, S0.qty) + ` (전월 ${fmt(S0.qty)})`)}
+        ${kv("총 생산중량", fmt(S1.kg)+" kg", delta(S1.kg, S0.kg))}
+        ${kv("계획(집계) 대비", plan1 ? `${pct(S1.qty, plan1)}` : "—", plan1 ? `집계 ${fmt(plan1)} EA` : "집계 없음")}
+        ${kv("가장 많이 만든 날", bestDay ? `${bestDay[0]} · ${fmt(bestDay[1])}EA` : "—", `${Object.keys(byDay).length}일 생산`)}
+        ${kv("중량별", specLine(R1), "")}
+        ${kv("설비별", machLine(R1), "")}
+      </tbody></table>
+      <table><thead><tr><th class="l">CAPA</th><th>이 달</th><th>전월 대비</th></tr></thead><tbody>
+        ${kv("실제 생산시간", fmtDur(S1.active), `${S1.nT}건 측정 · 전월 ${fmtDur(S0.active)}`)}
+        ${kv("중단시간", fmtDur(S1.pause), delta(Math.round(S1.pause/60), Math.round(S0.pause/60)) + " 분")}
+        ${kv("시간당 생산수량", S1.qph!=null?fmt(S1.qph)+" EA/h":"—", delta(S1.qph, S0.qph))}
+        ${kv("시간당 생산중량", S1.kgph!=null?fmt(S1.kgph)+" kg/h":"—", delta(S1.kgph, S0.kgph))}
+        ${kv("총 투입 인시", fmtDur(S1.man), delta(Math.round(S1.man/3600), Math.round(S0.man/3600)) + " h")}
+        ${kv("인시당 생산량", S1.qpm!=null?fmt(S1.qpm)+" EA/인시":"—", delta(S1.qpm, S0.qpm))}
+      </tbody></table>
+      <table><thead><tr><th class="l">품질</th><th>이 달</th><th>전월</th></tr></thead><tbody>
+        ${kv("부적합", `${pq.length}건 · ${fmt(pq.reduce((s,x)=>s+Number(x.qty||0),0))}EA`, `${pq0.length}건`)}
+        ${kv("반려", `${rj.length}건 · ${fmt(rj.reduce((s,x)=>s+Number(x.qty_affected||0),0))}EA`, `${rj0.length}건`)}
+        ${kv("재작업", `${rw.length}건 · ${fmt(rw.reduce((s,x)=>s+Number(x.qty||0),0))}EA`, "")}
+        ${kv("주요 반려 사유", topR, "")}
+        ${kv("로스율", li(R1)?pct(lk(R1), li(R1)):"—", `${fmt(lk(R1))}kg · 전월 ${li(R0)?pct(lk(R0), li(R0)):"—"}`)}
+        ${kv("기준 ± 오차 벗어난 건", `${over1}건`, "")}
+      </tbody></table>
+      <table><thead><tr><th class="l">운영</th><th colspan="2">이 달</th></tr></thead><tbody>
+        ${kv("작업자별 투입시간", Object.entries(wk).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`${k} ${fmtDur(v)}`).join("<br>")||"—", "")}
+        ${kv("설비 중단 사유", topP, "")}
+        ${kv("시간대 (가장 많이 만든)", (()=>{ const hh = {}; R1.filter(r=>r.t).forEach(r=>{ const k = String(r.t.end).slice(11,13); hh[k] = (hh[k]||0)+r.qty; }); const b = Object.entries(hh).sort((a,b)=>b[1]-a[1])[0]; return b ? `${b[0]}시 완료분 ${fmt(b[1])}EA` : "—"; })(), "")}
+        ${kv("주요 이슈 (문의·비고)", (()=>{ const hs = helpTickets().filter(t=>String(t.at||"").slice(0,7)===mon); const cl = Object.entries(closeLog()).filter(([d])=>d.slice(0,7)===mon && closeLog()[d]?.note).map(([d,v])=>`${d.slice(5)} ${v.note}`); return [`문의 ${hs.length}건`, ...cl.slice(0,5)].join("<br>"); })(), "")}
+      </tbody></table>
+    </div>`;
+}
+/* 연간 */
+function renderCapaYear(){
+  const y = $("capaYear").value || today().slice(0,4);
+  const rowsY = Array.from({length:12}, (_,i)=>{ const mm = `${y}-${String(i+1).padStart(2,"0")}`; const last = new Date(Number(y), i+1, 0).getDate();
+    const R = capaRows(`${mm}-01`, `${mm}-${String(last).padStart(2,"0")}`), S = capaSum(R);
+    const pq = PQCL().filter(x=>String(x.date||"").slice(0,7)===mm).reduce((s,x)=>s+Number(x.qty||0),0);
+    const rj = DB.qc_rejections.filter(x=>String(x.created_at||"").slice(0,7)===mm).reduce((s,x)=>s+Number(x.qty_affected||0),0);
+    const lf = R.filter(r=>r.lossFlag && r.lossFlag!=="open"); const lk = lf.reduce((s,r)=>s+r.loss,0), li = lf.reduce((s,r)=>s+Number(r.l.input_kg||0),0);
+    const g = {}; R.forEach(r=>{ (g[r.specT] = g[r.specT]||[]).push(r); });
+    const specs = Object.entries(g).sort((a,b)=>natCmp(a[0],b[0])).map(([k,v])=>{ const s=capaSum(v); return s.qph!=null?`${k} ${fmt(s.qph)}`:null; }).filter(Boolean).join(" · ");
+    const gm = {}; R.forEach(r=>{ (gm[r.machine] = gm[r.machine]||[]).push(r); });
+    const machs = Object.entries(gm).map(([k,v])=>{ const s=capaSum(v); return s.qph!=null?`${k} ${fmt(s.qph)}`:null; }).filter(Boolean).join(" · ");
+    return { mm:`${i+1}월`, S, pq, rj, loss: li ? pct(lk, li) : "—", specs, machs };
+  });
+  tbl("capaYearTbl", ["월","생산수량","생산중량(kg)","생산시간","EA/h","kg/h","중량별 EA/h","설비별 EA/h","투입 인시","EA/인시","로스율","부적합률","반려율"],
+    rowsY.map(r=>`<tr><td class="c"><b>${r.mm}</b></td><td>${r.S.qty?fmt(r.S.qty):"—"}</td><td>${r.S.kg?fmt(r.S.kg):"—"}</td><td>${r.S.active?fmtDur(r.S.active):"—"}</td><td>${r.S.qph!=null?fmt(r.S.qph):"—"}</td><td>${r.S.kgph!=null?fmt(r.S.kgph):"—"}</td><td class="l" style="font-size:12px">${r.specs||"—"}</td><td class="l" style="font-size:12px">${r.machs||"—"}</td><td>${r.S.man?fmtDur(r.S.man):"—"}</td><td>${r.S.qpm!=null?fmt(r.S.qpm):"—"}</td><td>${r.loss}</td><td>${r.S.qty?pct(r.pq, r.S.qty):"—"}</td><td>${r.S.qty?pct(r.rj, r.S.qty):"—"}</td></tr>`));
+}
+/* 예측 — 최근 90일 설비×규격 CAPA 로 오늘 계획과 입력값의 예상 시간 */
+function recentCapa(machine, spec){
+  const d = new Date(); d.setDate(d.getDate()-90); const from = d.toISOString().slice(0,10);
+  const R = capaRows(from, today()).filter(r=>r.t);
+  const pick = R.filter(r=>r.machine===machine && r.spec===spec); const alt = R.filter(r=>r.spec===spec); const any = R;
+  const use = pick.length ? pick : alt.length ? alt : any; const S = capaSum(use);
+  const pauseRatio = S.elapsed ? S.pause / S.elapsed : 0;
+  const ppl = use.length ? use.reduce((s,r)=>s+Math.max(1, r.workers.length),0)/use.length : 1;
+  return { S, n:use.length, src: pick.length ? "설비×규격" : alt.length ? "규격(다른 설비 포함)" : any.length ? "전체 평균" : "없음", pauseRatio, ppl };
+}
+let fcState = { machine:"", pid:"", kg:"" };
+function renderCapaForecast(){
+  const machs = DB.machines.map(m=>m.name); if (!fcState.machine) fcState.machine = machs[0] || "";
+  const prods = PRODS(); if (!fcState.pid) fcState.pid = prods[0]?.id || "";
+  const p = prodById(fcState.pid); const spec = Number(p?.spec_g)||0;
+  const c = recentCapa(fcState.machine, spec);
+  const kg = Number(fcState.kg)||0; const ea = spec ? Math.round(kg*1000/spec) : 0;
+  const hrs = c.S.kgph ? kg / c.S.kgph : null; const hrsAll = hrs != null ? hrs * (1 + c.pauseRatio) : null;
+  /* 오늘 생산계획도 같이 */
+  let planHtml = "";
+  try { const rows = planRows(); allocate(rows); const by = {};
+    rows.forEach(r=>Object.entries(r.alloc||{}).forEach(([mid,q])=>{ const m = DB.machines.find(x=>x.id===mid)?.name||"미지정"; const sp = Number(r.p.spec_g)||0; const k = `${m}|${sp}`; const o = by[k] = by[k]||{ m, sp, ea:0, kg:0 }; o.ea += q; o.kg += q*sp/1000; }));
+    const list = Object.values(by).map(x=>{ const cc = recentCapa(x.m, x.sp); const h = cc.S.kgph ? x.kg/cc.S.kgph : null; return { ...x, cc, h, hAll: h!=null ? h*(1+cc.pauseRatio) : null }; });
+    if (list.length) planHtml = `<div style="font-weight:700;margin:12px 0 4px">오늘 생산계획 예상 (기계 배분 기준)</div><table><thead><tr><th>설비</th><th>규격</th><th>계획 EA</th><th>계획 kg</th><th>최근 CAPA</th><th>예상 생산시간</th><th>중단 포함</th><th>평균 인원</th><th>근거</th></tr></thead><tbody>${
+      list.map(x=>`<tr><td class="c">${x.m}</td><td class="c">${specLabel(x.sp)}</td><td>${fmt(x.ea)}</td><td>${fmt(Math.round(x.kg*10)/10)}</td><td>${x.cc.S.kgph!=null?`${fmt(x.cc.S.kgph)}kg/h`:"—"}</td><td><b>${x.h!=null?fmtDur(x.h*3600):"—"}</b></td><td>${x.hAll!=null?fmtDur(x.hAll*3600):"—"}</td><td>${x.cc.n?Math.round(x.cc.ppl*10)/10:"—"}명</td><td class="c" style="font-size:12px">${x.cc.src} ${x.cc.n}건</td></tr>`).join("")}</tbody>
+      <tfoot><tr><td colspan="5" class="c">합계</td><td><b>${fmtDur(list.reduce((s,x)=>s+(x.h||0),0)*3600)}</b></td><td>${fmtDur(list.reduce((s,x)=>s+(x.hAll||0),0)*3600)}</td><td colspan="2"></td></tr></tfoot></table>`; } catch(e){}
+  $("capaForecast").innerHTML = `<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+      <label>설비 <select onchange="fcState.machine=this.value;renderCapaForecast()">${machs.map(m=>`<option ${m===fcState.machine?"selected":""}>${m}</option>`).join("")}</select></label>
+      <label>품목 <select onchange="fcState.pid=this.value;renderCapaForecast()">${prods.map(x=>`<option value="${x.id}" ${x.id===fcState.pid?"selected":""}>${x.name}</option>`).join("")}</select></label>
+      <label>생산계획 <input type="text" inputmode="decimal" class="num" style="width:80px" value="${fcState.kg}" placeholder="kg" onchange="fcState.kg=this.value;renderCapaForecast()"> kg</label>
+    </div>
+    <div style="margin-top:10px;line-height:1.9">최근 90일 ${c.src} ${c.n}건 → <b>${c.S.kgph!=null?`${fmt(c.S.kgph)} kg/h · ${fmt(c.S.qph)} EA/h`:"측정된 생산시간이 아직 없음"}</b> · 평균 중단 ${Math.round(c.pauseRatio*100)}% · 평균 인원 ${c.n?Math.round(c.ppl*10)/10:"—"}명<br>
+      ${kg ? `계획 ${fmt(kg)}kg (${fmt(ea)}EA) → 예상 생산시간 <b>${hrs!=null?fmtDur(hrs*3600):"—"}</b>${hrsAll!=null?` · 중단 포함 약 <b>${fmtDur(hrsAll*3600)}</b>`:""}${c.n?` · ${Math.round(c.ppl*10)/10}명 기준 인시 ${hrsAll!=null?fmtDur(hrsAll*c.ppl*3600):"—"}`:""}` : `<span class="hint" style="padding:0">생산계획 kg 를 적으면 예상 시간이 나옵니다</span>`}</div>${planHtml}`;
+}
+function csvCapa(){
+  const from = $("capaFrom").value, to = $("capaTo").value || from;
+  csv("생산분석", ["일자","일련번호","품목","규격","설비","시작","완료","경과(분)","중단(분)","실제생산(분)","수량","중량kg","EA/h","kg/h","참여작업자","투입인시(분)","로스kg","판정"],
+    capaRows(from,to).map(r=>[r.date, r.serial||"", r.p.name, r.specT, r.machine, r.t?dtFull(r.t.start):"", r.t?dtFull(r.t.end):"", r.t?Math.round(r.t.elapsed/60):"", r.t?Math.round(r.t.pause/60):"", r.t?Math.round(r.t.active/60):"", r.qty, r.kg,
+      r.t&&r.t.active>0?Math.round(r.qty/(r.t.active/3600)):"", r.t&&r.t.active>0?Math.round(r.kg/(r.t.active/3600)*10)/10:"", r.workers.map(w=>`${w.name} ${Math.round(w.sec/60)}분`).join(" / "), Math.round(r.manSec/60), Math.round(r.loss*100)/100, r.lossFlag ? (LOSS_FLAG_T[r.lossFlag]||r.lossFlag) : ""]));
 }
 
 /* ══════════════════════════════════════════════════════════════
