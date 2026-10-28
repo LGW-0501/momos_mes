@@ -2921,7 +2921,7 @@ function fixLabels(prods){
 /* 품목 이름 그대로 라벨을 하나 만들어 연결한다 — 기준정보까지 찾아갈 필요 없이 */
 function newLabelFor(p){
   if (!p) return null;
-  const same = LABELS().find(L=>String(L.name).trim()===String(p.name).trim());
+  const same = LABELS().find(L=>matActive(L) && matNorm(L.name)===matNorm(p.name));
   const L = same || { id:uid(), code:p.code||"", name:p.name, kind:"라벨",
     spec:specLabel(p.spec_g), unit:"장", pack_qty:PACK_DEFAULT,
     stock:0, safety:0, note:"", last_in:null, last_use:null };
@@ -3643,6 +3643,7 @@ async function initDB(){
            시연 데이터가 운영 DB 에 들어가거나 같은 것이 또 쌓였습니다.
            이제는 서버에 있는 것만 씁니다. 기준정보는 SQL 로 넣습니다. */
       TABLES.forEach(t => DB[t] = loaded[t] || []);
+      DB.materials = DB.materials.filter(matActive);        // 통합돼 비활성화된 자재는 화면에서 뺀다
       await loadSettings();                       // 공용 설정 (여유분 등) — 031 이 없으면 이 기기 값
 
       /* v66 — 운영 DB의 roasters 표가 비어 있어도 로스팅 요청서 카드가 사라지지 않게 한다.
@@ -3763,7 +3764,7 @@ async function rpc(name, params, localFn, opt = {}){
           return MES_ERR(isNetErr(m) ? "network" : "server", m);
         }
         /* 지시 한 건을 바꾼 처리는 그 줄을 바로 다시 받아 둔다 (실시간 누락 대비) */
-        if (data && data.ok !== false && params && params.p_order_id) { try { await pullOrder(params.p_order_id); await pullWhere("order_events", "order_id", params.p_order_id); } catch(_){} }
+        if (data && data.ok !== false && params && params.p_order_id) { try { await Promise.all([ pullOrder(params.p_order_id), pullWhere("order_events", "order_id", params.p_order_id) ]); } catch(_){} }
         return data;
       } catch(e){
         const m = String(e?.message || e);
@@ -3927,6 +3928,33 @@ async function mesCompleteQc(a){
    반려 6종 Flow 가 확정되면 mesRejectQc() 를 새로 만들고
    화면이 그쪽을 부르게 바꾸면 된다. 이 함수는 그때까지의 것이다.
    재고·실적은 건드리지 않는다. */
+/* 부분 반려 — 일부만 반려 칸으로, 나머지는 바로 검수 완료 (043) */
+async function mesRejectQcPartial(a){
+  return rpc("reject_qc_partial",
+    { p_order_id:a.order_id, p_qty:a.qty, p_reason:a.reason, p_user_name:CURRENT_USER, p_idempotency:a.idem },
+    () => {
+      const hit = idemHit(a.idem); if (hit) return hit;
+      const o = ordById(a.order_id);
+      if (!o) return MES_ERR("no_order","작업지시를 찾을 수 없습니다");
+      if (o.status !== "생산완료") return MES_ERR("bad_status", `생산완료 건만 반려할 수 있습니다 (지금 ${o.status})`);
+      const n = Math.round(Number(a.qty)||0), tot = Number(o.qty_done)||0;
+      if (n <= 0) return MES_ERR("bad_qty", "반려 수량을 넣어 주세요");
+      if (n >= tot) return null;                       // 전체 반려는 호출한 쪽이 처리
+      return localTx(T => {
+        const c = { ...o, id:uid(), order_no:`${o.order_no||""}-R`, qty_plan:n, qty_done:n, progress_qty:n, qty_ng:0, status:"생산중", note:a.reason, qc:{}, qc_by:null, qc_at:null, ship_by:null, ship_at:null, split_from:o.id };
+        T.add("orders", c); save("orders", c);
+        const rej = T.add("qc_rejections", { id:uid(), order_id:c.id, log_id:o.log_id, reason_code:null, reason_note:a.reason, qty_affected:n, handling:"partial", resolved:false, created_by_name:CURRENT_USER, created_at:nowISO() });
+        save("qc_rejections", rej);
+        pushEvent(T, c, "생산완료", "생산중", "qc_reject", `${fmt(tot)}개 중 ${fmt(n)}개 반려 — ${a.reason||""}`);
+        T.upd(o, { qty_done:tot-n, progress_qty:tot-n, status:"검수완료", qc_by:CURRENT_USER, qc_at:nowISO(), qc:{ ...(o.qc||{}), partial_reject:n } }); save("orders", o);
+        const l = DB.logs.find(x=>x.id===o.log_id); if (l) { l.checked_by = CURRENT_USER; l.checked_at = nowISO(); if (l.status === "pending") l.status = "approved"; save("logs", l); }
+        pushEvent(T, o, "생산완료", "검수완료", "qc_pass", `${fmt(tot)}개 중 ${fmt(n)}개 반려(${a.reason||""}) · ${fmt(tot-n)}개 검수 완료`);
+        logAudit("검수 부분 반려", o.order_no, `${o.product_name||""} · ${fmt(tot)}개 중 ${fmt(n)}개 반려 — ${a.reason||""} · 나머지 ${fmt(tot-n)}개 검수 완료`);
+        const r = { ok:true, rejection_id:rej.id, child_id:c.id, kept:tot-n, rejected:n };
+        idemPut(T, a.idem, "reject_qc_partial", o.id, r); return r;
+      });
+    });
+}
 async function mesRejectQcCurrent(a){
   return rpc("reject_qc_current",
     { p_order_id:a.order_id, p_reason:a.reason, p_user_name:CURRENT_USER, p_idempotency:a.idem },
@@ -5765,10 +5793,12 @@ async function mesMoveMaterial(a){
 }
 
 /* 처리 결과를 화면에 알린다 — 실패하면 무엇도 안 바뀌었음을 분명히 한다 */
+/* 빠른 그리기 — 지금 보는 화면만 바로, 나머지는 한가할 때 (renderAll 은 20개 화면을 다 그려서 태블릿에서 느리다) */
+function quickRender(){ try { render(curScreen()); } catch(e){ console.warn(e); } liveRender(); }
 async function mesTell(r, okMsg){
-  if (r && r.ok) { renderAll();
+  if (r && r.ok) { quickRender();
     return toast(r.replayed ? "이미 처리된 건입니다 — 중복 처리하지 않았습니다" : okMsg); }
-  renderAll();
+  quickRender();
   await ask(`${(r && r.message) || "처리하지 못했습니다"}\n\n` +
             `재고와 기록은 그대로입니다 — 아무것도 바뀌지 않았습니다.`,
             { title:"처리하지 못했습니다", yes:"확인" });
@@ -5792,6 +5822,9 @@ function consumeBeans(T, logRow, p, kg, date, who, preferMms){
   if (!(kg > 0)) return "";
   let left = Math.round(kg*1000)/1000; const codes = [];
   let list = freeBatches(p.bean);
+  /* 042 와 같은 규칙 — 우선 배치가 없으면 작업지시에 적힌 배치부터 */
+  if (!preferMms && logRow && logRow.order_id) { const o = ordById(logRow.order_id); const d = String(o?.batch_plan || o?.serial_full || "").match(/(\d{8})/);
+    if (d) { const rd = `20${d[1].slice(0,2)}-${d[1].slice(2,4)}-${d[1].slice(4,6)}`, bn = Number(d[1].slice(6,8)); const m = list.find(x => x.roast_date === rd && Number(x.batch) === bn); if (m) preferMms = m.id; } }
   if (preferMms) { const sel = list.find(m => m.id === preferMms);
     if (sel) list = [sel, ...list.filter(m => m.id !== preferMms)]; }
   for (const b of list) {
@@ -6326,6 +6359,10 @@ renderFavs();
 
 /* ══ 업데이트 내역 — 어디에 뭘 바꿨는지 (최근 것이 위) ══ */
 const CHANGELOG = [
+  ["2026-10-28", "검수 › 부분 반려 (043 SQL)", "반려할 때 수량을 물음 — 55개 중 2개만 반려하면 2개만 반려 칸으로(…-R 지시, 같은 일련번호), 53개는 바로 검수 완료 → 출고 · 조치 내용은 반려 칸·검수 카드·[이력]·이력추적에 그대로"],
+  ["2026-10-28", "현장 작업 · 검수 — 속도", "생산 완료·반려·검수 완료·출고 뒤에 20개 화면을 다 그리던 것 → 지금 화면만 바로, 나머지는 뒤에서 · 완료 뒤 서버에서 받아오는 것도 꼭 필요한 4개만 한 번에 · 로스 기록은 기다리지 않고 뒤에서"],
+  ["2026-10-28", "생산 완료 › 원두 차감 (042 SQL)", "지시에 적힌 배치(일련번호)부터 빼고, 모자라면 오래된 배치 순 — 봉지 번호와 소비 기록이 어긋나지 않게"],
+  ["2026-10-28", "기준정보 › 부자재 (041 SQL)", "같은 자재(이름·구분·1묶음)는 하나만 — 표·일괄 입력·라벨 자동생성 어디서든 같은 자재를 또 만들면 \"이미 등록된 자재입니다\" · [중복 자재 정리]로 대표 하나에 재고·입고/사용 이력·BOM·라벨 연결을 전부 옮기고 중복 줄은 비활성화(지우지 않음) · 재고 세기에 중복 묶음 경고"],
   ["2026-10-28", "현장 작업 › 생산 완료", "완료 뒤 카드가 \"생산중\" 으로 남던 문제 — 처리 직후 그 지시를 서버에서 다시 받아 화면을 맞춤 (실시간이 늦거나 끊겨도)"],
   ["2026-10-28", "현장 작업 › 반려 칸", "반려된 건은 기계 카드에서 빼서 맨 위 ⚠ 반려 칸에 — 품목·배치·LOT·사유·반려 일시·조치 상태(조치 필요 / 재검수 대기) · 검수 완료되면 빠짐 · 반려 건이 기계를 막지 않음"],
   ["2026-10-28", "날짜 + 시간", "작업 시작 · 생산 완료 · 검수 · 반려/조치 · 출고 · 입고 일시를 현장 카드·검수·출고·생산실적·작업지시·이력추적(작업 이력 전체)·LOT 이력에 표시 (예 2026.10.28 17:42)"],
@@ -9189,8 +9226,68 @@ function useLabels(p, qty, ref, note, lid){
 function backLabels(p, qty, ref, lid){
   console.warn("backLabels 는 더 이상 쓰지 않습니다");
 }
+/* ══ 부자재 기준정보는 하나 — 같은 자재 열쇠 = 자재명(공백·대소문자 무시) + 구분 + 1묶음 (041) ══ */
+const matNorm = v => String(v||"").toLowerCase().replace(/\s+/g,"");
+const matKeyOf = M => `${matNorm(M.name)}|${M.kind||""}|${Number(M.pack_qty)||1}`;
+const matActive = M => M && M.active !== false;
+function matDupOf(M, excludeId){ const key = matKeyOf(M); return DB.materials.find(x=>matActive(x) && x.id !== (excludeId||M.id) && matKeyOf(x) === key) || null; }
+/* 이름·구분만 같은 것 (묶음이 달라도) — 정리 후보 */
+function matDupGroups(){
+  const g = {}; DB.materials.filter(matActive).forEach(M=>{ if (!String(M.name||"").trim()) return; const k = `${matNorm(M.name)}|${M.kind||""}`; (g[k] = g[k]||[]).push(M); });
+  return Object.values(g).filter(a=>a.length > 1);
+}
+const matHistN = M => DB.material_moves.filter(m=>(m.material_id||m.label_id)===M.id).length + DB.bom.filter(b=>b.material_id===M.id).length + DB.products.filter(p=>p.label_id===M.id).length + DB.material_tasks.filter(t=>t.material_id===M.id).length;
+async function mesMergeMaterial(a){
+  return rpc("merge_material", { p_keep:a.keep, p_drop:a.drop, p_user_name:CURRENT_USER }, () => {
+    const k = matById(a.keep), d = matById(a.drop); if (!k || !d) return MES_ERR("no_material", "자재를 찾을 수 없습니다");
+    let n = 0;
+    DB.material_moves.forEach(m=>{ if (m.material_id===d.id) { m.material_id = k.id; n++; } if (m.label_id===d.id) m.label_id = k.id; });
+    DB.stock_moves.forEach(m=>{ if (m.material_id===d.id) m.material_id = k.id; });
+    DB.bom = DB.bom.filter(b=>!(b.material_id===d.id && DB.bom.some(x=>x.product_id===b.product_id && x.material_id===k.id)));
+    DB.bom.forEach(b=>{ if (b.material_id===d.id) b.material_id = k.id; });
+    DB.products.forEach(p=>{ if (p.label_id===d.id) { p.label_id = k.id; save("products", p); } });
+    DB.orders.forEach(o=>{ if (o.label_id===d.id) o.label_id = k.id; });
+    DB.logs.forEach(l=>{ if (l.label_id===d.id) l.label_id = k.id; });
+    DB.material_tasks.forEach(t=>{ if (t.material_id===d.id) { t.material_id = k.id; t.material_name = k.name; } });
+    k.stock = Number(k.stock||0) + Number(d.stock||0); k.safety = Math.max(Number(k.safety||0), Number(d.safety||0));
+    if (d.code && !String(k.code||"").includes(d.code)) k.code = k.code ? `${k.code} / ${d.code}` : d.code;
+    d.active = false; d.merged_into = k.id; d.stock = 0; save("materials", k); save("materials", d);
+    return { ok:true, moved:{ moves:n }, stock:k.stock };
+  });
+}
+/* 중복 자재 정리 — 묶음마다 대표를 고르고 나머지를 통합 */
+async function mergeDupMaterials(){
+  if (!(await requireUser())) return;
+  if (!can("base")) return deny("base");
+  const groups = matDupGroups();
+  if (!groups.length) return ask("같은 이름·구분의 자재가 둘 이상인 경우가 없습니다 — 중복이 없습니다.", { title:"중복 자재 정리", yes:"확인" });
+  let done = 0;
+  for (const g of groups) {
+    const list = [...g].sort((a,b)=>matHistN(b)-matHistN(a) || (b.code?1:0)-(a.code?1:0));
+    const pick = await ask(`[${g[0].kind}] ${g[0].name} — 같은 자재가 ${g.length}줄 있습니다.\n\n대표로 남길 줄 번호를 적으세요 (나머지의 재고·입고/사용 이력·BOM·라벨 연결은 전부 대표로 옮기고, 그 줄은 비활성화됩니다 — 지우지 않습니다):\n\n` +
+      list.map((M,i)=>`${i+1}. ${M.code||"(코드 없음)"} · 1묶음 ${fmt(M.pack_qty||1)} · 재고 ${fmt(M.stock)} · 이력 ${matHistN(M)}건${M.spec?` · 규격 ${M.spec}`:""}`).join("\n") + `\n\n0 = 이 묶음은 건너뜀`, { prompt:true, value:"1", title:"중복 자재 정리" });
+    if (pick === null) break;
+    const i = Math.round(numOf(pick)) - 1; if (!(i >= 0 && list[i])) continue;
+    const keep = list[i];
+    for (const d of list) { if (d.id === keep.id) continue;
+      const r = await mesMergeMaterial({ keep:keep.id, drop:d.id });
+      if (!r || r.ok === false) { await ask(`통합 실패 — ${d.name} (${d.code||"코드 없음"})\n${r?.message||""}`, { title:"중복 자재 정리", yes:"확인" }); continue; }
+      /* LOT 기록도 대표로 */
+      const all = matLots(); if (all[d.id] && all[d.id].length) { all[keep.id] = [ ...(all[keep.id]||[]), ...all[d.id] ].sort((a,b)=>String(a.at||a.date).localeCompare(String(b.at||b.date))); delete all[d.id]; await saveLots(all); }
+      logAudit("부자재 통합", keep.name, `${d.name} (${d.code||"-"} · 재고 ${fmt(d.stock)}) → 대표 ${keep.code||"-"}`);
+      done++;
+    }
+  }
+  if (sb) { await pullWhere("materials", "active", false); await reloadDB({ silent:true }); }
+  DB.materials = DB.materials.filter(matActive);
+  renderAll();
+  await ask(`중복 자재 ${done}줄을 대표로 통합했습니다.\n재고 세기 · 부자재 재고 · LOT 에서 한 줄로 보입니다. 통합된 줄은 변경이력에 남습니다.`, { title:"중복 자재 정리", yes:"확인" });
+}
 function addMaterial(kind){
   const k = kind || "봉투";
+  /* 아직 이름을 안 적은 빈 줄이 있으면 또 만들지 않고 그 줄로 간다 (같은 이름의 줄이 쌓이지 않게) */
+  const blank = DB.materials.find(x=>matActive(x) && x.kind===k && String(x.name).trim()===`${k}명`);
+  if (blank) { if (matKindFilter && matKindFilter !== k) matKindFilter = k; renderBase(); toast(`먼저 만든 빈 줄에 이름을 적어 주세요`); focusNewRow("tMat", 'input[data-k="name"]'); return; }
   const m = { id:uid(), code:"", name:`${k}명`, kind:k, spec:"", unit:MAT_UNIT[k]||"EA",
     pack_qty:(k==="라벨"?PACK_DEFAULT:1), stock:0, safety:0, note:"", last_in:null, last_use:null };
   DB.materials.push(m); save("materials", m);
@@ -9205,7 +9302,7 @@ const addLabel = () => addMaterial("라벨");
 /* ══ 완제품 기준으로 부자재 맞추기 ══
    · 라벨 코드 = 그 품목의 CFE 코드 (한 라벨을 여러 품목이 쓰면 코드를 " / " 로 잇는다)
    · 풀패키지 품목 → 풀패키지 봉투를 하나씩 만든다 (이름 = 품목명 · 코드 = CFE 코드) */
-function fullBagOf(p){ return DB.materials.find(M=>isFullBag(M) && (String(M.code||"").split(" / ").includes(p.code) || String(M.name).trim()===String(p.name).trim())); }
+function fullBagOf(p){ return DB.materials.find(M=>matActive(M) && isFullBag(M) && (String(M.code||"").split(" / ").includes(p.code) || String(M.name).trim()===String(p.name).trim())); }
 function newFullBagFor(p){
   const M = { id:uid(), code:p.code||"", name:p.name, kind:MAT_FULL, spec:specLabel(p.spec_g), unit:"EA",
     pack_qty:1, stock:0, safety:0, note:"라벨 없이 인쇄된 봉투", last_in:null, last_use:null };
@@ -9243,12 +9340,7 @@ async function autoLabels(){
     `${need.slice(0,6).map(p=>`· ${p.name}`).join("\n")}${need.length>6?`\n… 외 ${need.length-6}개`:""}\n\n` +
     `한 묶음 ${PACK_DEFAULT}장으로 만들고, 보유 수량은 0입니다 — 발주 받은 수량은 [입고]로 넣으세요.`,
     {title:"품목별 라벨 만들기", yes:"만들기"}))) return;
-  need.forEach(p=>{
-    const l = { id:uid(), code:p.code||"", name:p.name, kind:"라벨", spec:specLabel(p.spec_g),
-      unit:"장", pack_qty:PACK_DEFAULT, stock:0, safety:0, note:"", last_in:null, last_use:null };
-    DB.materials.push(l); save("materials", l);
-    p.label_id = l.id; save("products", p);
-  });
+  need.forEach(p=>newLabelFor(p));     // 같은 이름의 라벨이 이미 있으면 새로 만들지 않고 연결만
   logAudit("라벨 자동생성", `${need.length}건`, "");
   renderAll(); toast(`라벨 ${need.length}개 생성·연결 — 보유 수량을 넣으세요`);
 }
@@ -11386,9 +11478,9 @@ function qcNextStep(o){
 /* 반려 → 조치 → 재검수 를 시간순 한 줄씩 (두 이력을 덮어쓰지 않고 이어 붙입니다) */
 function qcHistory(orderId){
   const a = DB.order_events.filter(e => e.order_id === orderId
-      && ["qc_reject","qc_pass"].includes(e.event))
-      .map(e => ({ at:e.at, kind:"검수",
-        what:e.event === "qc_reject" ? "반려" : "검수완료",
+      && ["qc_reject","qc_resubmit","qc_pass"].includes(e.event))
+      .map(e => ({ at:e.at, kind:e.event === "qc_resubmit" ? "조치" : "검수",
+        what:e.event === "qc_reject" ? "반려" : e.event === "qc_resubmit" ? "조치 완료 → 다시 검수로" : "검수완료",
         note:e.note || "", who:e.user_name || "" }));
   const b = DB.qc_rejections.filter(r => r.order_id === orderId)
       .map(r => ({ at:r.created_at, kind:"반려기록",
@@ -12044,6 +12136,11 @@ document.addEventListener("change", e=>{
     if (full && full !== el.value) { el.value = full; toast(`${full} 로 맞췄습니다`); }
   }
   const was = row[k];
+  /* ★ 041 — 같은 자재(이름·구분·묶음)가 이미 있으면 그 줄로 바꾸지 못하게 */
+  if (t === "materials" && ["name","kind","pack_qty"].includes(k)) {
+    const d = matDupOf({ ...row, [k]: el.type === "checkbox" ? el.checked : el.value }, row.id);
+    if (d) { el.value = was; toast(`이미 등록된 자재입니다 — ${d.code||""} ${d.name} (${d.kind} · 1묶음 ${fmt(d.pack_qty||1)}) · 새로 만들지 말고 기존 자재를 쓰세요`); return; }
+  }
 
   /* ★ 2026-10-18 — 재고 칸은 표에서 바로 덮어쓰지 않습니다.
        전: mms.stock_kg · materials.stock 을 타이핑하면 그대로 들어가고
@@ -12545,7 +12642,8 @@ function renderBaseInner(){
         v&&msum[v]?` ${msum[v]}`:""}</button>`).join(" ");
   /* 추가 버튼도 구분 목록에서 만든다 — 구분이 늘어도 빠지는 일이 없다 */
   if ($("matAddBtn")) $("matAddBtn").innerHTML =
-    MAT_KINDS.map(k=>`<button class="btn ${matKindFilter===k?"primary":""}" onclick="addMaterial('${k}')">${k} 추가</button>`).join(" ");
+    MAT_KINDS.map(k=>`<button class="btn ${matKindFilter===k?"primary":""}" onclick="addMaterial('${k}')">${k} 추가</button>`).join(" ") +
+    (()=>{ const g = matDupGroups(); return g.length ? ` <button class="btn" style="color:var(--bad);font-weight:800" onclick="mergeDupMaterials()" title="같은 이름·구분의 자재가 여러 줄 — 대표 하나로 통합(이력 전부 옮김)">중복 자재 정리 ${g.length}묶음</button>` : ""; })();
 
   SHOWN.materials = mats.map(M=>M.id);
   tbl("tMat", [selAllBox("materials"),"구분","품목명","코드","규격","단위","1묶음","현재고","보유 묶음","안전재고","상태","최근 입고","최근 사용","연결 품목",'<span class="fix">처리</span>',""],
@@ -13121,6 +13219,7 @@ async function reloadDB(opt = {}){
       if (t === "roasters" && !loaded[t].length && DB.roasters?.length) return;
       DB[t] = loaded[t];
     });
+    DB.materials = DB.materials.filter(matActive);
     if (opt.silent) liveRender(); else { renderAll(); toast("모든 화면을 최신 데이터로 갱신했습니다"); }
   } catch(e){ console.warn(e); if (!opt.silent) toast("불러오기 실패 — 연결을 확인하세요"); }
 }
@@ -13189,6 +13288,7 @@ function rtApply(t, ev, row, old){
     return;
   }
   if (!row) return;
+  if (t === "materials" && row.active === false) { const j = DB.materials.findIndex(x=>x.id===row.id); if (j >= 0) DB.materials.splice(j, 1); return; }
   const cur = DB[t].find(x => x[key] === row[key]);
   const prev = cur ? { ...cur } : null;
   if (cur) Object.assign(cur, row);       // 같은 객체를 고쳐 쓴다 — 다른 곳이 잡고 있는 참조도 함께 바뀐다
@@ -13206,11 +13306,10 @@ async function pullWhere(t, col, val){
 }
 const pullOrder = id => pullWhere("orders", "id", id);
 async function pullAfterFinish(orderId, logId){
-  await pullOrder(orderId);
   const o = ordById(orderId);
-  await Promise.all([ pullWhere("logs", "order_id", orderId), pullWhere("products", "id", o?.product_id),
-    logId ? pullWhere("consumptions", "log_id", logId) : null, pullWhere("order_events", "order_id", orderId),
-    o ? pullWhere("mms", "bean", prodById(o.product_id)?.bean) : null ]);
+  /* 꼭 필요한 것만 한 번에 (배치·소비 기록은 실시간으로 따라온다) */
+  await Promise.all([ pullOrder(orderId), pullWhere("logs", "order_id", orderId), pullWhere("order_events", "order_id", orderId),
+    pullWhere("products", "id", o?.product_id) ]);
 }
 function startRealtime(){
   if (!sb || RT_CH || typeof sb.channel !== "function") return;
@@ -15040,18 +15139,20 @@ async function finishWork(id){
 
   if (!r || !r.ok) {
     const msg = (r && r.message) || "처리하지 못했습니다";
-    renderAll();
+    quickRender();
     return ask(`${msg}\n\n재고와 실적은 그대로입니다 — 아무것도 바뀌지 않았습니다.\n` +
                `원인을 고친 뒤 다시 누르시면 됩니다.`,
                { title:"완료하지 못했습니다", yes:"확인", only:true });
   }
-  /* 로스 기록 — 재고와는 별개 (실패해도 생산 완료는 그대로, 나중에 [로스]로 다시 적는다) */
+  /* 로스 기록 — 재고와는 별개. 기다리지 않고 뒤에서 보낸다 (실패하면 알려 주고, 나중에 [로스]로 다시 적는다) */
   if (!r.replayed) {
-    const lr = await recordLoss(r.log_id || o.log_id, LZ);
-    if (!lr || lr.ok === false) toast(`로스 기록을 못 남겼습니다 — 생산실적의 [로스]에서 다시 적으세요 (${lr?.message||""})`);
-    else if (sb) await pullWhere("logs", "id", r.log_id || o.log_id);
+    const lid = r.log_id || o.log_id;
+    recordLoss(lid, LZ).then(async lr=>{
+      if (!lr || lr.ok === false) return toast(`로스 기록을 못 남겼습니다 — 생산실적의 [로스]에서 다시 적으세요 (${lr?.message||""})`);
+      if (sb) { await pullWhere("logs", "id", lid); liveRender(); }
+    }).catch(()=>{});
   }
-  renderAll();
+  quickRender();
   toast(r.replayed
     ? `이미 처리된 건입니다 (일련번호 ${r.serial}) — 중복 처리하지 않았습니다`
     : `생산 완료 — 검수로 넘어갑니다 (일련번호 ${r.serial})${LZ.flag==="open" ? " · 남은 원두는 다음 생산에 합산" : LZ.flag!=="ok" ? ` · 로스 ${LZ.loss_pct}% 이상 기록` : ` · 로스 ${LZ.loss_pct}% 정상`}`);
@@ -15231,17 +15332,27 @@ async function showQcHistory(id){
   const rows = qcHistory(id);
   if (!rows.length) return toast("검수 이력이 없습니다");
   const txt = rows.map(r =>
-    `${String(r.at||"").slice(5,16).replace("T"," ")}  ${r.kind}  ${r.what}` +
+    `${dtFull(r.at)}  ${r.kind}  ${r.what}` +
     (r.note ? `\n    ${r.note}` : "") + (r.who ? `  (${r.who})` : "")).join("\n");
   await ask(txt, { title:`${o.product_name||""} 검수 이력`, yes:"닫기" });
 }
 async function qcReject(id){
   if (!(await requireUser())) return;
   const o = ordById(id); if(!o) return;
-  const why = await askText("무엇이 문제인가요? (현장으로 돌아갑니다)", "", "검수 반려");
+  const why = await askText("무엇이 문제인가요?", "", "검수 반려");
   if (why===null) return;
-  /* ★ 지금 동작 그대로입니다 — 재고·실적은 건드리지 않습니다.
-     반려 6종 Flow 가 확정되면 mesRejectQc() 로 바꿉니다. */
+  const tot = Number(o.qty_done)||0;
+  /* ★ 반려 수량 — 전체면 전부 현장으로, 일부면 그 수만 반려 칸으로 가고 나머지는 바로 검수 완료 */
+  const q = await askNum("반려 수량", `${o.product_name||prodById(o.product_id)?.name||""} · 생산 ${fmt(tot)}개<br>몇 개를 돌려보냅니까? 전부면 <b>[전부 ${fmt(tot)}]</b>`, tot,
+    { unit:"개", max:tot, quick:[ {t:`전부 ${fmt(tot)}`, set:tot}, {t:"1", set:1}, {t:"+1", add:1}, {t:"+5", add:5} ] });
+  if (q === null) return;
+  const n = Math.max(1, Math.min(tot, Math.round(Number(q)||0)));
+  if (n < tot) {
+    if (!(await ask(`${fmt(tot)}개 중 ${fmt(n)}개만 반려합니다.\n\n· ${fmt(n)}개 → 반려 칸 (조치 후 다시 검수)\n· ${fmt(tot-n)}개 → 바로 검수 완료 → 출고 대기\n\n사유: ${why||"(없음)"}`, { title:"부분 반려", yes:`${fmt(n)}개 반려` }))) return;
+    const r = await mesRejectQcPartial({ order_id:id, qty:n, reason:why, idem:`rejp-${id}-${uid()}` });
+    if (r && r.ok && sb) { await pullWhere("orders", "split_from", id); await pullWhere("qc_rejections", "order_id", r.child_id); await pullWhere("order_events", "order_id", r.child_id); }
+    return mesTell(r, `${fmt(n)}개만 반려 — 나머지 ${fmt(tot-n)}개는 검수 완료`);
+  }
   const r = await mesRejectQcCurrent({ order_id:id, reason:why, idem:`rej-${id}-${uid()}` });
   await mesTell(r, "현장으로 돌려보냈습니다");
 }
@@ -15487,7 +15598,7 @@ function renderWork(){
       <div class="panel-b"><table><thead><tr><th>상태</th><th class="l">품목 · 생산 완료</th><th>일련번호</th><th class="l">배치</th><th>봉투 LOT</th><th class="l">반려 사유 → 조치</th><th>반려 일시 · 검수자</th><th></th></tr></thead><tbody>${
         rej.map(({o,f})=>{ const p = prodById(o.product_id); const rj = lastEv(o,"qc_reject"), rs = lastEv(o,"qc_resubmit"); const q = qcState(o);
           return `<tr><td class="c" style="white-space:nowrap"><span class="tag ${f==="조치 필요"?"bad":"warn"}">${f}</span>${q.count>1?`<br><span class="hint" style="padding:0;font-size:11px">반려 ${q.count}회</span>`:""}</td>
-            <td class="l" style="white-space:nowrap"><b>${p?.name||o.product_name||""}</b> ${fmt(o.qty_done)}EA<br><span class="hint" style="padding:0">${o.machine||"—"} · 완료 ${dtFull(o.done_at)} ${o.done_by||""}</span></td>
+            <td class="l" style="white-space:nowrap"><b>${p?.name||o.product_name||""}</b> ${o.split_from ? `<span class="tag warn" style="font-size:10.5px">${fmt((ordById(o.split_from)?.qty_done||0)+Number(o.qty_done||0))}개 중 ${fmt(o.qty_done)}개</span>` : `${fmt(o.qty_done)}EA`}<br><span class="hint" style="padding:0">${o.machine||"—"} · 완료 ${dtFull(o.done_at)} ${o.done_by||""}</span></td>
             <td class="c"><b>${o.serial||"—"}</b></td><td class="l" style="font-size:12px">${o.batch_plan||"—"}</td><td class="c">${lotOf(o)||"—"}</td>
             <td class="l" style="font-size:12.5px;min-width:180px">⛔ ${rj?.note || q.reason || "(사유 없음)"}${f==="재검수 대기" ? `<br>🔁 ${rs?.note||"조치 내용 없음"} <span class="hint" style="padding:0">${dtFull(rs?.at)} ${rs?.user_name||""}</span>` : `<br><span class="bad">조치 후 다시 올려 주세요</span>`}</td>
             <td class="c" style="font-size:12px;white-space:nowrap">${dtFull(rj?.at || q.at)}<br>${rj?.user_name || q.by || "—"}</td>
@@ -15607,7 +15718,8 @@ function renderQc(){
     return `<div class="qcc" data-oid="${o.id}">
       <div class="hd"><div class="nm">${p?.name||""}</div>
         <div class="sub">${o.channel}${o.serial?` · 일련번호 ${o.serial}`:""} · 생산 ${o.done_by||"—"} · ${fmt(o.qty_done)}개${
-          qcFlow(o)==="재검수 대기" ? ` · <span class="tag warn" style="font-size:11px">재검수 (반려 ${qcState(o).count}회)</span>` : ""}</div></div>
+          qcFlow(o)==="재검수 대기" ? ` · <span class="tag warn" style="font-size:11px">재검수 (반려 ${qcState(o).count}회)</span>` : ""}${
+          o.split_from ? ` · <span class="tag bad" style="font-size:11px">부분 반려분 ${fmt(o.qty_done)}개</span>` : ""}</div></div>
       ${kInfoHTML(p?.bean, o, { mfg: mfgDateOf(o) || serialOfText(l?.batch_codes).full.slice(0,10) })}
       <div class="info">
         <div><span>일련번호</span><b>${o.serial||"—"}</b></div>
@@ -15930,8 +16042,8 @@ const BULK_DEFS = {
            { k:"safety", l:"안전재고", w:80, num:true }, { k:"stock", l:"초기재고", w:80, num:true }, { k:"lot", l:"LOT", w:120, ph:"박스 LOT" } ],
     validate(v, i, all){
       if (!v.name) return "자재명 없음"; if (!MAT_KINDS.includes(v.kind)) return "구분 없음";
-      if (DB.materials.some(M=>M.name.trim()===v.name.trim() && M.kind===v.kind)) return "같은 구분·이름이 이미 있음";
-      if (all.some((o,j)=>j<i && o.name.trim()===v.name.trim() && o.kind===v.kind)) return "위 줄과 중복";
+      { const d = DB.materials.find(M=>matActive(M) && matNorm(M.name)===matNorm(v.name) && M.kind===v.kind); if (d) return `이미 등록된 자재입니다 — ${d.code||""} ${d.name} (${d.kind} · 1묶음 ${fmt(d.pack_qty||1)}) · 기존 자재를 쓰세요`; }
+      if (all.some((o,j)=>j<i && matNorm(o.name)===matNorm(v.name) && o.kind===v.kind)) return "위 줄과 중복";
       return ""; },
     async save(v){
       const k = v.kind || "봉투";
@@ -16081,6 +16193,7 @@ function renderCount(){
     <div class="card"><div class="lb">항목</div><div class="vl">${rows.length}</div></div>
     <div class="card ${ent.length?"green":""}"><div class="lb">입력함</div><div class="vl">${ent.length} <small>/ ${rows.length}</small></div></div>
     <div class="card ${diffs.length?"red":"green"}"><div class="lb">차이 있음</div><div class="vl">${diffs.length} <small>${diffs.length?`부족 ${fmt(diffs.filter(r=>r.act<r.app).reduce((s,r)=>s+(r.act-r.app),0))} / 초과 +${fmt(diffs.filter(r=>r.act>r.app).reduce((s,r)=>s+(r.act-r.app),0))}`:""}</small></div></div>`;
+  if (cntType === "mat") { const g = matDupGroups(); if (g.length) $("cntCards").innerHTML += `<div class="card red" style="cursor:pointer" onclick="goTo('base','label');setTimeout(mergeDupMaterials,300)" title="같은 자재가 여러 줄 — 눌러서 하나로 통합"><div class="lb">같은 자재가 여러 줄</div><div class="vl">${g.length} <small>묶음 · 눌러서 정리</small></div></div>`; }
   $("cntApplyBtn").style.display = diffs.length ? "" : "none";
   $("cntApplyBtn").textContent = `차이 전체 반영${diffs.length?` ${diffs.length}건`:""}`;
   tbl("cntSheet", ["No","품목","앱 재고","실제 (센 수량)","차이","", ""],
