@@ -133,6 +133,14 @@
   .nt .ic{font-size:18px; flex:none; width:24px; text-align:center;}
   .nt .tx{font-size:13px; font-weight:600; line-height:1.4;} .nt .tm{font-size:11px; color:var(--soft); margin-top:2px;}
   .toast.big{font-size:14px; padding:14px 20px; max-width:min(560px, 92vw); white-space:normal; line-height:1.45;}
+  /* ── 일괄 입력 표 ── */
+  #bkTbl{border-collapse:separate; border-spacing:0; width:100%;}
+  #bkTbl th{position:sticky; top:0; background:#F7F8FB; font-size:12px; padding:8px 6px; text-align:left; border-bottom:1px solid var(--line); white-space:nowrap;}
+  #bkTbl td{padding:4px 4px; border-bottom:1px solid var(--line); vertical-align:middle;}
+  #bkTbl input, #bkTbl select{width:100%; height:32px; font-size:13px;}
+  #bkTbl td.no{color:var(--soft); font-size:12px; width:28px; text-align:center;}
+  #bkTbl tr.bad td{background:#FFF4F2;} #bkTbl tr.ok td{background:#EEFBF3;}
+  #bkTbl .why{font-size:11.5px; color:var(--bad); white-space:nowrap;}
   .shell{flex:1; display:flex; overflow:hidden; min-height:0;}
 
   /* ── 아이콘 사이드바 ── */
@@ -1125,6 +1133,7 @@
     <button onclick="reloadDB();closeNav()"><span class="ico">↻</span><span class="lb">새로고침</span></button>
     <button onclick="toggleGuide()" id="gnbGuide"><span class="ico">?</span><span class="lb">설명 보기</span></button>
     <button onclick="toggleMobile()" id="gnbMob"><span class="ico">🖥</span><span class="lb">PC 보기</span></button>
+    <button onclick="openManual()"><span class="ico">📖</span><span class="lb">설명서</span></button>
   </div>
   <div class="menu gnbOut" id="gnbLogout" style="display:none; margin-top:0; border-top:0; padding-top:0">
     <button onclick="askLogout()" title="로그아웃"><span class="ico">⏻</span><span class="lb">로그아웃</span></button>
@@ -1290,7 +1299,7 @@
 <!-- ══════ 이력추적 ══════ -->
 <section class="screen" id="s-trace">
   <div class="cond">
-    <label>검색</label><input id="trQ" placeholder="일련번호 · LOT · 지시번호 · 배치번호(2801 / 26102801 / 2026-10-28)" style="width:380px" oninput="renderTrace()">
+    <label>검색</label><input id="trQ" placeholder="일련번호 · 봉투/부자재 LOT · 지시번호 · 배치번호(2801 / 26102801 / 2026-10-28)" style="width:420px" oninput="renderTrace()">
     <button class="btn primary" onclick="renderTrace()">찾기</button>
   </div>
   <div class="body">
@@ -2017,6 +2026,7 @@
     <button class="subtab on" data-p="prod">품목 · 안전재고</button>
     <button class="subtab" data-p="beans">원두 · MMS코드</button>
     <button class="subtab" data-p="label">부자재 재고</button>
+    <button class="subtab" data-p="lots">부자재 LOT</button>
     <button class="subtab" data-p="bom">제품별 BOM</button>
     <button class="subtab" data-p="mms">MMS 원두재고</button>
     <button class="subtab" data-p="mach">기계</button>
@@ -2035,6 +2045,7 @@
             <button class="btn primary" onclick="openPaste('cfecode')">엑셀로 CFE코드 넣기</button>
             <button class="btn" onclick="fillCodes()">빈 코드 자동생성</button>
             <button class="btn" onclick="addProduct()">행추가</button>
+            <button class="btn primary" onclick="openBulk('products')" title="여러 품목을 표에 한 번에 적고 저장">일괄 입력</button>
             <button class="btn" onclick="csvProducts()">엑셀 다운로드</button></span></div>
         <div class="hint"><b>기본 라벨</b>은 그 품목에 <b>평소 붙이는 라벨</b>입니다 —
           생산계획·현장이 이걸 보고 <b>몇 묶음 뜯을지</b> 계산하고, 생산을 끝내면 그 라벨 재고에서 빠집니다.
@@ -2061,6 +2072,7 @@
             <button class="btn" onclick="openPaste('beanmaster')">엑셀로 원두 마스터 넣기</button>
             <button class="btn" onclick="applyBeanRules()" title="머신 종류 칸(S35_하바나 싱글 · S70_시그니처 블렌드 …)대로 로스터기 가능 칸과 1배치 kg(하바나 싱글 10 · 싱글 20)을 채웁니다">머신 종류대로 세팅</button>
             <button class="btn" onclick="addBean()">행추가</button>
+            <button class="btn primary" onclick="openBulk('beans')" title="여러 원두를 표에 한 번에 적고 저장">일괄 입력</button>
             <button class="btn" onclick="csvBeans()">엑셀 다운로드</button></span></div>
         <div class="hint">포장 전 원두(반제품)입니다. <b class="bad">컬러 · 품목보고번호 · 원산지</b>는 한글표시사항(식품표시광고법)에 들어가는 값이라
           <b>반드시 채워야 합니다</b> — 비어 있으면 생산·검수 화면에 빨갛게 뜨고, 그 줄이 표에서도 붉게 표시됩니다.
@@ -2090,22 +2102,40 @@
           <button class="btn primary" onclick="autoLabels()">품목별 라벨 만들기</button>
           <button class="btn primary" onclick="syncMatFromProducts()" title="라벨 코드를 완제품 CFE 코드로 맞추고, 풀패키지 품목의 봉투를 풀패키지 칸에 만듭니다">CFE 코드 맞추기 · 풀패키지 채우기</button>
           <span id="matAddBtn"></span>
+          <button class="btn primary" onclick="openBulk('materials')" title="여러 부자재를 표에 한 번에 적고 저장 (초기재고·LOT 포함)">일괄 입력</button>
           <button class="btn" onclick="csvLabel()">엑셀 다운로드</button>
         </div>
         <div class="selbar" id="selBar-materials"></div>
         <div class="panel-b"><table id="tMat"></table></div>
       </div>
-      <div class="panel">
-        <div class="panel-h">봉투 LOT 내역 <span class="r hint">박스마다 언제 · 누가 · 몇 장 — 생산 카드의 봉투 LOT 는 여기서 선입선출로 붙습니다</span></div>
-        <div class="hint">봉투·풀패키지를 <b>[입고]</b>할 때 LOT 를 적으면 여기 쌓입니다 ·
-          <b>사용 중</b> = 지금 재고 기준으로 뜯어 쓰고 있는 박스, <b>대기</b> = 아직 안 뜯은 박스, <b>다 씀</b> = 소진 ·
-          이미 재고로 잡혀 있던 봉투는 <b>[기존 재고에 LOT 붙이기]</b>로 지금 남은 수량에 LOT 만 붙입니다 (재고는 안 바뀝니다).</div>
-        <div class="panel-b"><table id="tMatLot"></table></div>
-      </div>
+      <div class="hint" style="margin:0 14px 10px"><b>LOT</b> — 박스마다 LOT·입고일·입력자·잔량·어느 생산에 쓰였는지는 <b>[부자재 LOT]</b> 탭에서 봅니다. [입고]할 때 LOT 를 적으면 거기 쌓입니다.</div>
       <div class="panel">
         <div class="panel-h">부자재 입·출고 이력 <span class="r hint">최근 60건</span>
           <span class="r"><button class="btn" onclick="csvLabelMove()">엑셀 다운로드</button></span></div>
         <div class="panel-b"><table id="tLabelMv"></table></div>
+      </div>
+    </div>
+    <div class="subpane" id="p-lots">
+      <div class="panel">
+        <div class="panel-h">부자재 LOT 관리 <span id="lotSum"></span>
+          <span class="r">
+            <span id="lotKindBtn" style="display:inline-flex;gap:5px;margin-right:8px"></span>
+            <label style="font-weight:600;cursor:pointer;margin-right:8px"><input type="checkbox" id="lotShowDone" onchange="renderLots()" style="width:auto;height:auto"> 다 쓴 LOT 도 보기</label>
+            <button class="btn primary" onclick="lotReceive()" title="자재를 고르고 수량·LOT·입고일을 적어 입고합니다">LOT 입고</button>
+            <button class="btn" onclick="csvLots()">엑셀 다운로드</button></span></div>
+        <div class="hint">
+          <b>박스 단위로 들어오는 부자재(봉투·풀패키지·라벨·박스…)를 LOT 로 추적합니다.</b>
+          [입고]할 때 LOT 를 적으면 한 줄이 생기고, 생산할 때마다 <b>오래된 LOT 부터(선입선출)</b> 쓴 것으로 계산해 <b>잔량</b>이 줄어듭니다 ·
+          <b>사용 중</b> = 지금 뜯어 쓰는 박스 · <b>대기</b> = 아직 안 뜯은 박스 · <b>다 씀</b> = 소진 ·
+          생산 카드·한글표시사항의 <b>봉투 LOT</b> 는 여기서 "사용 중"인 LOT 가 저절로 붙습니다 ·
+          줄의 <b>[이력]</b> 을 누르면 그 LOT 가 어느 생산(일련번호)에 몇 장 쓰였는지 나옵니다 ·
+          이미 재고로 잡혀 있던 자재는 <b>[기존 재고에 LOT 붙이기]</b> 로 지금 남은 수량에 LOT 만 붙입니다 (재고는 안 바뀜).
+        </div>
+        <div class="panel-b"><table id="tLots"></table></div>
+      </div>
+      <div class="panel" id="lotHistWrap" style="display:none">
+        <div class="panel-h">LOT 사용 이력 — <span id="lotHistTitle"></span> <span class="r"><button class="btn" onclick="$('lotHistWrap').style.display='none'">닫기</button></span></div>
+        <div class="panel-b"><table id="tLotHist"></table></div>
       </div>
     </div>
     <div class="subpane" id="p-bom">
@@ -2131,7 +2161,7 @@
     </div>
     <div class="subpane" id="p-mms">
       <div class="panel">
-        <div class="panel-h">MMS 원두재고 (배치별) <span class="r"><button class="btn" onclick="addMms()">행추가</button></span></div>
+        <div class="panel-h">MMS 원두재고 (배치별) <span class="r"><button class="btn" onclick="addMms()">행추가</button> <button class="btn primary" onclick="openBulk('mms')">일괄 입력</button></span></div>
         <div class="hint">보통 입고처리로 자동 등록됩니다 · 생산 시 오래된 배치부터 차감(선입선출)</div>
         <div class="selbar" id="selBar-mms"></div>
         <div class="panel-b"><table id="tMms"></table></div>
@@ -2139,7 +2169,7 @@
     </div>
     <div class="subpane" id="p-mach">
       <div class="panel">
-        <div class="panel-h">기계 · 인원 · 능력 <span class="r"><button class="btn" onclick="addMachine()">행추가</button></span></div>
+        <div class="panel-h">기계 · 인원 · 능력 <span class="r"><button class="btn" onclick="addMachine()">행추가</button> <button class="btn primary" onclick="openBulk('machines')">일괄 입력</button></span></div>
         <div class="hint">규격별 속도(EA/h)에 <b>0 = 그 규격 생산 불가</b> · <b>인원비례</b> 체크 시 가용시간 = 가동시간 × 인원 ·
           <b>분쇄가능</b> 미체크 기계엔 분쇄 품목 미배정 · <b>라벨(초/EA)</b>은 스티커 부착시간으로, 값을 넣으면 그만큼 생산속도가 낮춰져 배분에 반영됩니다 · <span class="bad">속도 일부는 임시값이니 실측값으로 수정하세요 (미확인: 수동1구 200g·100g, 리팩 100g)</span></div>
         <div class="panel-b"><table id="tMach"></table></div>
@@ -2147,7 +2177,7 @@
     </div>
     <div class="subpane" id="p-work">
       <div class="panel">
-        <div class="panel-h">생산자 명단 · 권한 <span class="r"><button class="btn" onclick="addWorker()">행추가</button></span></div>
+        <div class="panel-h">생산자 명단 · 권한 <span class="r"><button class="btn" onclick="addWorker()">행추가</button> <button class="btn primary" onclick="openBulk('workers')">일괄 입력</button></span></div>
         <div class="hint" id="workHint"></div>
         <div class="panel-b"><table id="tWork"></table></div>
       </div>
@@ -2467,6 +2497,24 @@
   </div>
 </div>
 
+<!-- ══ 일괄 입력 — 표 하나를 여러 줄 한 번에 (품목·원두·부자재·기계·생산자·MMS 배치) ══ -->
+<div id="bulk" style="display:none;position:fixed;inset:0;background:rgba(11,20,68,.5);z-index:52">
+  <div style="background:var(--card);width:1180px;max-width:96vw;margin:28px auto;border-radius:12px;display:flex;flex-direction:column;max-height:90vh;overflow:hidden">
+    <div class="panel-h"><span id="bkTitle">일괄 입력</span>
+      <span class="r">
+        <button class="btn" onclick="bulkAddRows(1)">+1행</button>
+        <button class="btn" onclick="bulkAddRows(5)">+5행</button>
+        <button class="btn" onclick="bulkAddRows(10)">+10행</button>
+        <button class="btn" onclick="bulkClear()">비우기</button>
+        <button class="btn" onclick="closeBulk()">닫기</button></span></div>
+    <div class="hint" id="bkHint" style="border-bottom:1px solid var(--line)"></div>
+    <div style="overflow:auto;padding:0 14px;flex:1 1 auto;min-height:0"><table id="bkTbl" class="bk"></table></div>
+    <div style="padding:12px 18px;display:flex;gap:8px;align-items:center;border-top:1px solid var(--line);flex:0 0 auto">
+      <span class="hint" id="bkSum" style="padding:0">Enter = 아래 칸 · Tab = 옆 칸 · 빈 줄은 건너뜁니다</span><span style="flex:1"></span>
+      <button class="btn primary" onclick="bulkSave()">저장</button></div>
+  </div>
+</div>
+
 <div id="overlay">
   <div class="box">
     <div class="panel-h">엑셀 · 사진 넣기 <span class="r"><button class="btn" onclick="closePaste()">닫기</button></span></div>
@@ -2783,7 +2831,7 @@ function ask(message, opts={}){
         b.addEventListener("click", ()=>done(c.v));
         bar.appendChild(b);
       });
-    } else { $("dlgYes").style.display = ""; $("dlgNo").style.display = ""; }
+    } else { $("dlgYes").style.display = ""; $("dlgNo").style.display = (opts.only || (!isPrompt && opts.yes === "확인")) ? "none" : ""; }
     const onYes = () => done(isPrompt ? field.value : true);
     const onNo  = () => done(isPrompt ? null : false);
     const onKey = e => { if(e.key==="Enter" && !(multi && e.target===area)) onYes(); if(e.key==="Escape") onNo(); };
@@ -3027,7 +3075,7 @@ function tbl(id, head, rows, foot){
 /* 칸이 많은 표는 기본 너비를 정해 둔다 — 안 그러면 다 쪼그라들어 글이 잘린다 */
 const COL_DEFAULT = {
   tBeans: [66,74,122,190,300,92,160,330,128,116,116,108,70,96,84,70],
-  tProd:  [66,118,92,92,150,260,86,96,98,88,96,112,240,124,80,86,70],
+  tProd:  [66,118,92,92,150,260,98,96,98,88,96,72,112,240,124,80,86,70],
 };
 const colKey = id => "momos_col_" + id;
 function colWidths(id){
@@ -3046,7 +3094,7 @@ function resetCols(id){
 const SORT_COLS = {
   tProd:  { 1:p=>p.code, 2:p=>p.category, 3:p=>p.channel||"일반", 4:p=>p.bean, 5:p=>p.name,
             6:p=>Number(p.spec_g)||0, 7:p=>p.grind||"홀빈", 8:p=>Number(p.std_g)||0,
-            9:p=>Number(p.safety)||0, 10:p=>Number(p.cfe)||0, 15:p=>p.off?1:0 },
+            9:p=>Number(p.safety)||0, 10:p=>Number(p.cfe)||0, 11:p=>lossPctOf(p), 16:p=>p.off?1:0 },
   tBeans: { 1:b=>beanOff(b)?1:0, 2:b=>b.mms_code, 3:b=>b.machine, 4:b=>b.name, 5:b=>b.color,
             6:b=>b.report_no, 7:b=>b.compose, 8:b=>b.note, 9:b=>b.launch, 10:b=>b.end_date,
             11:b=>DB.mms.filter(m=>m.bean===b.name && Number(m.stock_kg)>0).reduce((t,m)=>t+Number(m.stock_kg||0),0) },
@@ -3374,6 +3422,14 @@ const heldByBean = bean => DB.mms.filter(m=>m.bean===bean &&  isHeld(m)).reduce(
 const heldAll    = () => sortBatches(DB.mms.filter(m=>isHeld(m) && Number(m.stock_kg)>0));
 const shortage = p => Math.max(0, Number(p.safety||0) - Number(p.cfe||0));
 const stdKg = (p,ea) => (Number(ea)||0) * Number(p.std_g||0) / 1000;
+/* ★ 로스율 — 포장할 때 흘리고 남는 원두. 필요원두 = 표준투입 × (1 + 로스율%). 계획·배치 나누기·생산 차감에 전부 적용.
+     기본값은 생산계획 상단, 품목별 값은 기준정보 › 품목 표 (공용 설정 loss_pct) */
+const LOSS_KEY = "loss_pct";
+const lossCfg = () => { const c = SETTINGS[LOSS_KEY]; return (c && typeof c === "object") ? { def:Number(c.def)||0, items:(c.items && typeof c.items==="object") ? c.items : {} } : { def:0, items:{} }; };
+const lossPctOf = p => { const c = lossCfg(); const v = p && c.items[p.id]; return (v != null && v !== "" && Number(v) >= 0) ? Number(v) : c.def; };
+const needKg = (p,ea) => Math.round(stdKg(p,ea) * (1 + lossPctOf(p)/100) * 1000) / 1000;
+function setLossDefault(v){ const c = lossCfg(); c.def = Math.max(0, Number(v)||0); SETTINGS[LOSS_KEY] = c; renderAll(); saveSetting(LOSS_KEY, c); toast(`기본 로스율 ${c.def}%`); }
+function setLossPct(pid, v){ const c = lossCfg(); const t = String(v).trim(); if (t === "") delete c.items[pid]; else c.items[pid] = Math.max(0, Number(t)||0); SETTINGS[LOSS_KEY] = c; keepFocus(renderAll); saveSetting(LOSS_KEY, c); }
 const lossOf = l => { const p=prodById(l.product_id);
   return Number(l.input_kg||0) - (p?stdKg(p,l.qty_ea):0) - Number(l.leftover_kg||0); };
 
@@ -3832,6 +3888,37 @@ async function mesRejectQcCurrent(a){
     });
 }
 
+/* ── 5-b. 조치 완료 → 다시 검수로 (038) — 실적·재고는 그대로, 상태만 생산완료로 ── */
+async function mesResubmitQc(a){
+  return rpc("resubmit_qc",
+    { p_order_id:a.order_id, p_note:a.note||null, p_user_name:CURRENT_USER, p_idempotency:a.idem },
+    () => {
+      const hit = idemHit(a.idem); if (hit) return hit;
+      const o = ordById(a.order_id);
+      if (!o) return MES_ERR("no_order","작업지시를 찾을 수 없습니다");
+      if (o.status !== "생산중" || !o.log_id) return MES_ERR("bad_status", `반려된 생산중 건만 다시 검수로 올릴 수 있습니다 (지금 ${o.status})`);
+      const open = DB.qc_rejections.filter(r=>r.order_id===o.id && !r.resolved);
+      if (!open.length) return MES_ERR("not_rejected","반려된 건이 아닙니다");
+      return localTx(T => {
+        open.forEach(r=>{ T.upd(r, { resolved:true, resolved_at:nowISO(), handling:"resubmitted" }); save("qc_rejections", r); });
+        T.upd(o, { status:"생산완료", qc:{} }); save("orders", o);
+        pushEvent(T, o, "생산중", "생산완료", "qc_resubmit", a.note||"");
+        logAudit("조치 후 재검수", o.order_no, a.note||"");
+        const r = { ok:true, resolved:open.length };
+        idemPut(T, a.idem, "resubmit_qc", o.id, r); return r;
+      });
+    });
+}
+async function resubmitQc(id){
+  if (!(await requireUser())) return;
+  const o = ordById(id); if (!o) return;
+  const q = qcState(o);
+  const note = await askText(`${o.product_name||prodById(o.product_id)?.name||""} ${fmt(o.qty_done)}EA\n반려 사유: ${q.reason||"—"}\n\n어떻게 조치했는지 적고 확인하면 다시 검수 대기로 올라갑니다 (실적·수량은 그대로).\n수량이 달라졌으면 올리지 말고 관리자에게 — 생산실적을 정정해야 합니다.`, "", "조치 완료 → 다시 검수로");
+  if (note === null) return;
+  const r = await mesResubmitQc({ order_id:id, note:String(note).trim(), idem:`rsq-${id}-${uid()}` });
+  if (!r || !r.ok) { renderAll(); return ask(`${r?.message||"올리지 못했습니다"}${/resubmit_qc|schema cache/i.test(r?.message||"") ? "\n\n서버에 038_qc_resubmit.sql 을 아직 실행하지 않았습니다." : ""}`, { title:"다시 검수로 — 실패", yes:"확인" }); }
+  renderAll(); toast("다시 검수 대기로 올렸습니다");
+}
 /* ── 6. 출고 ───────────────────────────────────────────────── */
 async function mesShipOrder(a){
   return rpc("ship_order",
@@ -6173,6 +6260,12 @@ renderFavs();
 
 /* ══ 업데이트 내역 — 어디에 뭘 바꿨는지 (최근 것이 위) ══ */
 const CHANGELOG = [
+  ["2026-10-28", "계정 메뉴 › 사용 설명서", "그림으로 된 사용 설명서(manual.html) — 로그인부터 마감까지 화면별 따라 하기 · 자주 묻는 질문 · 관리자 부록"],
+  ["2026-10-28", "문의 · 마감 체크 · 라벨 안 함", "현장 작업자·검수 계정으로도 서버에 저장되게 (039 SQL — 전에는 그 기기에만 남고 \"저장 실패 — 서버 연결 확인\" 만 떴음) · 저장이 안 되면 이유를 그대로 보여 줌"],
+  ["2026-10-28", "현장 작업 › 반려 카드", "[조치 완료 → 다시 검수로] — 반려된 건을 손본 뒤 실적 그대로 검수 대기로 되돌림 (038 SQL) · 검수에게 재검수 알림"],
+  ["2026-10-28", "기준정보 › 부자재 LOT (새 탭)", "봉투뿐 아니라 모든 부자재를 박스(LOT) 단위로 — 입고 시 LOT 입력(저장 확인창), 선입선출 잔량·사용 중/대기/다 씀, [이력]으로 어느 생산(일련번호)에 몇 장 쓰였는지, 이력추적에서 LOT 검색, 엑셀 다운로드"],
+  ["2026-10-28", "로스율", "생산계획 상단 [로스율 기본 %] + 기준정보 › 품목 표 [로스율 %] 칸 — 필요원두 = 표준투입 × (1+로스율). 계획·배치 나누기·생산 완료 차감·수기 실적·로스팅 필요량 전부 반영"],
+  ["2026-10-28", "기준정보 › 품목·원두·부자재·MMS 배치·기계·생산자", "[일괄 입력] — 표에 여러 줄 적고 [저장] → \"N건 저장하시겠습니까?\" → 줄마다 성공/실패와 사유(중복·빈칸·권한·서버 오류) · +1/+5/+10행 · 실패한 줄은 남아서 고쳐 다시 저장"],
   ["2026-10-27", "작업지시 만들기", "서버(기준정보)에 없는 품목이 섞여 있으면 FK 오류 대신 어느 품목인지 알려주고 멈춤 · 기준정보 권한 없는 계정은 집계 붙여넣기로 품목을 자동 생성하지 않음 (건너뛰고 알림)"],
   ["2026-10-26", "전체 순서", "품목은 CFE 코드 번호순, 원두는 MMS 코드 번호순, 부자재는 구분→코드순, 배치는 원두 코드→로스팅일순 — 표·카드·계획·집계·여유분·재고 세기 전부 같은 순서 (코드 없는 건 이름순으로 맨 뒤)"],
   ["2026-10-26", "표 입력칸 전체", "Enter = 아래 칸, Tab = 옆 칸으로 이동 (여유분·집계·계획EA·재고 세기 등) — 저장되며 다시 그려져도 커서가 따라감"],
@@ -6286,6 +6379,10 @@ function notifyChange(t, prev, row, ev){
       return pushNotif({ ic:"🚚", tx:`${nm(row)} ${fmt(row.qty_done)}개 출고 완료 — ${row.channel||""} (${row.ship_by||"—"})`, s:"ship", sn:"출고" });
     return;
   }
+  if (t === "order_events" && ev === "INSERT" && row.event === "qc_resubmit" && row.user_name !== me() && roleIn("qc","lead")) {
+    const o = ordById(row.order_id);
+    return pushNotif({ ic:"🔁", tx:`재검수 요청 — ${o ? nm(o) : ""}${o?.serial?` (${o.serial})`:""} · 조치: ${row.note||"—"} (${row.user_name||"—"})`, s:"qc", sn:"검수" });
+  }
   if (t === "order_events" && ev === "INSERT" && row.event === "qc_reject" && row.user_name !== me()) {
     const o = ordById(row.order_id);
     /* 반려는 그 건을 만든 작업자(done_by)에게만 — 현장관리자·관리자는 전부 */
@@ -6314,6 +6411,8 @@ function notifySetting(key, before, after){
       pushNotif({ ic:"💬", tx:`내 문의 ${t.st !== p.st ? `→ ${t.st}` : ""}${t.reply && t.reply !== p.reply ? ` · 답변: ${t.reply.slice(0,60)}` : ""}`, s:"help", sn:"문의" });
   });
 }
+/* 사용 설명서 — index.html 옆에 올려 둔 manual.html 을 새 탭으로 */
+function openManual(){ try { window.open("manual.html", "_blank"); } catch(_){ location.href = "manual.html"; } }
 /* ══ 계정 메뉴 — 오른쪽 위 동그라미를 누르면 ══ */
 function toggleAcct(){ const m = $("acctMenu"); if (m.style.display === "none") openAcct(); else closeAcct(); }
 function closeAcct(){ $("acctMenu").style.display = "none"; document.body.classList.remove("acctopen"); }
@@ -6338,6 +6437,7 @@ function openAcct(){
     </div>
     <div class="sec" style="padding:6px 0">
       <button class="it" onclick="closeAcct();showChangelog()"><span class="ico">✎</span>업데이트 내역</button>
+      <button class="it" onclick="closeAcct();openManual()"><span class="ico">📖</span>사용 설명서</button>
     </div>
     <div class="sec" style="padding:6px 0">
       ${u ? `<button class="it" onclick="openPwDlg()"><span class="ico">🔑</span>비밀번호 변경</button>
@@ -6646,7 +6746,7 @@ function renderDash(){
   // 안전재고 미달 품목
   tbl("dashShort", ["No","품목명","안전재고","CFE 현재고","부족","필요원두(kg)","MMS 가용(kg)","상태"],
     shorts.map((p,i)=>{
-      const need = stdKg(p, shortage(p)), avail = mmsByBean(p.bean);
+      const need = needKg(p, shortage(p)), avail = mmsByBean(p.bean);
       return `<tr><td class="rowno">${i+1}</td><td class="l">${p.name}</td><td>${fmt(p.safety)}</td><td>${fmt(p.cfe)}</td>
         <td class="bad">${fmt(shortage(p))}</td><td>${fmt(need)}</td><td>${fmt(avail)}</td>
         <td class="c">${avail>=need?'<span class="tag ok">MMS 충당가능</span>':`<span class="tag bad">로스팅요청 ${fmt(need-avail)}kg</span>`}</td></tr>`;
@@ -6959,21 +7059,21 @@ function nextBatchNo(bean, d){
 /* 이미 만들어진 지시(대기)를 1배치 kg 단위로 가른다 — 428kg → 57kg × 7 + 29kg */
 function kgCutOf(o){
   const p = prodById(o.product_id); if (!p) return null;
-  const per = virtBatchKg(p.bean), kg = stdKg(p, o.qty_plan);
+  const per = virtBatchKg(p.bean), kg = needKg(p, o.qty_plan);
   if (!(per > 0) || kg <= per + 0.0001 || batchParts(o.batch_plan).length > 1) return null;
   const d = o.work_date, n = Math.max(0, Math.round(Number(o.qty_plan)||0));
-  const perEa = Math.max(1, Math.floor(per / (Number(p.std_g||0)/1000)));
+  const perEa = Math.max(1, Math.floor(per / (Number(p.std_g||0)/1000 * (1 + lossPctOf(p)/100))));
   let no = nextBatchNo(p.bean, d), left = n; const cut = [];
   while (left > 0) { const ea = Math.min(perEa, left); left -= ea; no++;
     const vb = { bean:p.bean, roast_date:d, batch:no };
-    cut.push({ ea, text:`${batchLabel(vb)} ${fmt(stdKg(p, ea))}kg`, short:batchShort(vb), full:batchFull(vb), per }); }
+    cut.push({ ea, text:`${batchLabel(vb)} ${fmt(needKg(p, ea))}kg`, short:batchShort(vb), full:batchFull(vb), per }); }
   return cut.length > 1 ? cut : null;
 }
 async function splitOrderByKg(id, quiet){
   const o = ordById(id); if (!o) return false;
   if (o.status !== "대기") { if (!quiet) toast("이미 시작한 지시는 못 나눕니다"); return false; }
   const cut = kgCutOf(o); if (!cut) { if (!quiet) toast("1배치보다 작아서 나눌 게 없습니다"); return false; }
-  if (!quiet && !(await ask(`${o.product_name || prodById(o.product_id)?.name} ${fmt(o.qty_plan)}EA (${fmt(stdKg(prodById(o.product_id), o.qty_plan))}kg) 를\n1배치 ${fmt(cut[0].per)}kg 기준 ${cut.length}건으로 나눕니다.\n\n` +
+  if (!quiet && !(await ask(`${o.product_name || prodById(o.product_id)?.name} ${fmt(o.qty_plan)}EA (${fmt(needKg(prodById(o.product_id), o.qty_plan))}kg) 를\n1배치 ${fmt(cut[0].per)}kg 기준 ${cut.length}건으로 나눕니다.\n\n` +
     cut.map(x=>`· ${x.text} → ${fmt(x.ea)}EA · 일련번호 ${x.short}`).join("\n") + `\n\n현장 카드도 ${cut.length}장으로 갈라집니다.`, { title:"배치로 나누기", yes:`${cut.length}건으로 나누기` }))) return false;
   const r = await mesSplitOrder({ order_id:id, idem:`osk-${id}-${uid()}`,
     cut: cut.map(x=>({ ea:x.ea, batch_plan:x.text, serial:x.short, serial_full:x.full,
@@ -7015,7 +7115,7 @@ function batchPlanOf(d){
     const per = virtBatchKg(bean); if (!(per>0)) return;
     let no = nextBatchNo(bean, d), remain = 0, cur = null;
     byBean[bean].forEach(({o,p})=>{
-      const g = Number(p.std_g)/1000; let left = Math.max(0, Math.round(Number(o.qty_plan)||0)); const parts = [];
+      const g = Number(p.std_g)/1000 * (1 + lossPctOf(p)/100); let left = Math.max(0, Math.round(Number(o.qty_plan)||0)); const parts = [];
       let guard = 0;
       while (left > 0 && guard++ < 500) {
         if (remain < g - 0.0001) { no++; cur = { bean, roast_date:d, batch:no }; remain = per; }
@@ -7024,7 +7124,7 @@ function batchPlanOf(d){
         if (last && last.b === cur) { last.ea += ea; } else parts.push({ b:cur, ea });
         remain = Math.round((remain - ea*g)*1000)/1000; left -= ea;
       }
-      parts.forEach(x=>{ x.text = `${batchLabel(x.b)} ${fmt(stdKg(p, x.ea))}kg`; x.short = batchShort(x.b); x.full = batchFull(x.b); });
+      parts.forEach(x=>{ x.text = `${batchLabel(x.b)} ${fmt(needKg(p, x.ea))}kg`; x.short = batchShort(x.b); x.full = batchFull(x.b); });
       if (parts.length) plan.push({ o, p, parts, per });
     });
   });
@@ -7063,7 +7163,7 @@ function planBatches(rows){
   const d = $("woDate")?.value || today();
   const virt = {};                         // bean → { n: 다음 배치번호, list:[가상 배치] }
   rows.forEach(r=>{
-    let need = stdKg(r.p, r.ea);
+    let need = needKg(r.p, r.ea);
     r.picks = []; r.lack = 0;
     for (const b of sortBatches(DB.mms.filter(m=>m.bean===r.p.bean && remain[m.id] > 0 && !isHeld(m)))) {
       if (need <= 0.0001) break;
@@ -7229,7 +7329,9 @@ function renderPlan(){
         onclick="setPlanCompact(${isCompact()?"false":"true"})">간단히 보기 ${isCompact()?"켬":"끔"}</button>` +
     ` <label style="margin-left:8px" title="재고 배치가 없을 때 이 kg 단위로 예정 배치를 나눕니다 · 원두별로 기준정보에 1배치 kg이 있으면 그 값이 먼저">1배치 기본
         <input type="text" inputmode="decimal" class="num" style="width:56px" value="${fmt(batchKgDefault())}" onchange="setBatchKgDefault(this.value)"> kg</label>` +
-    ` <button class="btn" style="height:28px;padding:0 9px;font-size:12px" onclick="editBatchKgRules()" title="${batchKgRules().map(r=>`${r.match} ${r.kg}kg`).join(" · ")||"규칙 없음"}">원두별 규칙 ${batchKgRules().length}</button>`;
+    ` <button class="btn" style="height:28px;padding:0 9px;font-size:12px" onclick="editBatchKgRules()" title="${batchKgRules().map(r=>`${r.match} ${r.kg}kg`).join(" · ")||"규칙 없음"}">원두별 규칙 ${batchKgRules().length}</button>` +
+    ` <label style="margin-left:8px" title="포장할 때 흘리고 남는 원두 — 필요원두 = 표준투입 × (1+로스율). 품목별 값은 기준정보 › 품목 표">로스율 기본
+        <input type="text" inputmode="decimal" class="num" style="width:48px" value="${lossCfg().def}" data-f="lossdef" onchange="setLossDefault(this.value)"> %</label>`;
   const CX = isCompact();
   if (CX) tbl("planMach", ["기계","가용(h)","사용(h)","여유(h)","배정 EA"],
     DB.machines.map(m=>{
@@ -7258,9 +7360,9 @@ function renderPlan(){
   const mh = DB.machines.map(m=>
     `<button class="mhead" onclick="allToMach('${m.id}')" title="만들 수 있는 품목을 전부 ${m.name}로 몰아줍니다">${m.name}</button>`);
   tbl("planGrid", CX ? ["No","품목명","계획EA",...mh,"미배정","배분"]
-                     : ["No","품목명","분쇄도","안전","CFE",'<span class="tag buf">여유분</span>',"계획EA","필요원두(kg)","사용할 배치 (선입선출)",...mh,"미배정","배분"],
+                     : ["No","품목명","분쇄도","안전","CFE",'<span class="tag buf">여유분</span>',"계획EA",`필요원두(kg)${lossCfg().def||Object.keys(lossCfg().items).length?'<br><span class="hint" style="padding:0;font-size:10px">로스율 포함</span>':""}`,"사용할 배치 (선입선출)",...mh,"미배정","배분"],
     rows.map((r,i)=>{
-      const need = stdKg(r.p,r.ea), avail = mmsByBean(r.p.bean);
+      const need = needKg(r.p,r.ea), avail = mmsByBean(r.p.bean);
       const warnPick = r.picks.some(x=>shelfState(x.b.roast_date)!=="ok");
       return `<tr><td class="rowno">${i+1}</td>
         <td class="l">${r.p.name}${r.p.ica?' <span class="tag warn">이카</span>':''}${CX ? `${isGround(r.p.grind)?` <span class="tag warn">${r.p.grind}</span>`:''}${(()=>{ const pc = planCalc(r.p); return (!(r.p.id in planEA) && pc.buf) ? ` <span class="tag buf">+${fmt(pc.buf)}</span>` : ""; })()}<div class="hint" style="padding:0;font-size:10.5px">원두 ${fmt(need)}kg${warnPick?' · <span class="warn">상미기한 주의</span>':''}${r.lack>0?` · <span class="bad">로스팅요청 ${fmt(r.lack)}kg</span>`:''}</div>` : ''}</td>
@@ -7312,7 +7414,7 @@ function renderPlan(){
     }),
     (CX ? `<td colspan="2" class="c">합 계</td><td>${fmt(rows.reduce((s,r)=>s+r.ea,0))}</td>`
         : `<td colspan="5" class="c">합 계</td><td class="bufc">${(()=>{ const t = rows.filter(r=>!(r.p.id in planEA)).reduce((s,r)=>s+planCalc(r.p).buf,0); return t?`+${fmt(t)}`:"—"; })()}</td><td>${fmt(rows.reduce((s,r)=>s+r.ea,0))}</td>
-     <td>${fmt(rows.reduce((s,r)=>s+stdKg(r.p,r.ea),0))}</td>
+     <td>${fmt(rows.reduce((s,r)=>s+needKg(r.p,r.ea),0))}</td>
      <td class="l">${(()=>{ const n=new Set(); rows.forEach(r=>r.picks.forEach(x=>n.add(x.b.id)));
        const lack=rows.reduce((s,r)=>s+r.lack,0);
        return `배치 ${n.size}개 사용` + (lack>0?` · 부족 ${fmt(lack)}kg`:""); })()}</td>`) +
@@ -7370,10 +7472,13 @@ function splitByBatch(r, qty){
   const tot = picks.reduce((s,x)=>s+Number(x.kg||0), 0);
   if (!(tot>0)) return [{ b:picks[0].b, kg:0, ea:n }];
   const out = []; let left = n;
+  const perEa = Number(r.p.std_g||0)/1000 * (1 + lossPctOf(r.p)/100);        // 1개에 드는 원두 (로스 포함)
   picks.forEach((x,i)=>{
-    const ea = (i === picks.length-1) ? left : Math.min(left, Math.round(n * Number(x.kg)/tot));
+    /* 그 배치에서 실제로 만들 수 있는 개수만 — 올림하면 다음 배치 원두를 조금 끌어다 쓰게 된다 */
+    const fit = perEa > 0 ? Math.floor(Number(x.kg) / perEa + 0.0001) : left;
+    const ea = (i === picks.length-1) ? left : Math.min(left, fit);
     left -= ea;
-    out.push({ b:x.b, kg: Math.round(stdKg(r.p, ea)*100)/100, ea });
+    out.push({ b:x.b, kg: Math.round(needKg(r.p, ea)*100)/100, ea });
   });
   return out.filter(x=>x.ea > 0);
 }
@@ -7417,7 +7522,7 @@ function renderPlanByMach(rows){
             <td class="l" style="white-space:normal;line-height:1.6;font-size:11.5px">${
               x.b ? `<span class="tag ok">${batchLabel(x.b)} ${fmt(x.kg)}kg</span>`
                   : '<span class="tag bad">쓸 배치 없음</span>'}</td>
-            <td>${fmt(stdKg(r.p, x.ea))}</td>
+            <td>${fmt(needKg(r.p, x.ea))}</td>
             <td class="l">${bomOf(r.p.id).length
               ? `<b>${mixText(r.p, x.ea)}</b>`
               : (o ? labelSel(ordLabel(o), `setOrdLabel('${o.id}',this.value)`)
@@ -7433,7 +7538,7 @@ function renderPlanByMach(rows){
             <td class="l" style="white-space:normal;line-height:1.6;font-size:11.5px">${
               bs ? bs.split(" + ").map(t=>`<span class="tag ok">${t}</span>`).join(" ")
                  : '<span class="tag bad">쓸 배치 없음</span>'}</td>
-            <td>${fmt(stdKg(r.p, qty))}</td>
+            <td>${fmt(needKg(r.p, qty))}</td>
             <td class="l">${bomOf(r.p.id).length
               ? `<b>${mixText(r.p, qty)}</b><br><span class="hint" style="padding:0;font-size:11px">${
                   needOf(r.p, qty).map(x=>`${x.name} ${fmt(x.need)}${x.unit}`).join(" · ") || "BOM 없음"}</span>`
@@ -7448,7 +7553,7 @@ function renderPlanByMach(rows){
         }).join("")}
         <tr><td colspan="2" class="c"><b>소계</b></td>
           <td><b>${fmt(items.reduce((t,r)=>t+(mName===null?r.unalloc:(r.alloc[DB.machines.find(m=>m.name===mName)?.id]||0)),0))}</b></td>
-          <td></td><td><b>${fmt(items.reduce((t,r)=>t+stdKg(r.p, mName===null?r.unalloc:(r.alloc[DB.machines.find(m=>m.name===mName)?.id]||0)),0))}</b></td>
+          <td></td><td><b>${fmt(items.reduce((t,r)=>t+needKg(r.p, mName===null?r.unalloc:(r.alloc[DB.machines.find(m=>m.name===mName)?.id]||0)),0))}</b></td>
           <td></td>
           <td class="c"><b>${items.reduce((t,r)=>t+labelNeed(r.p, mName===null?r.unalloc:(r.alloc[DB.machines.find(m=>m.name===mName)?.id]||0)).bundles,0)}묶음</b></td>
           <td></td></tr>
@@ -8422,7 +8527,7 @@ function csvPlan(){
   lastPlanRows = rows;
   csv("생산계획", ["CFE코드","품목명","분쇄도","안전재고","CFE현재고","계획EA","필요원두kg","사용할배치","부족kg",...DB.machines.map(m=>m.name),"미배정","배분방식","라벨","부자재소요"],
     rows.map(r=>[r.p.code, r.p.name, r.p.grind, r.p.safety, r.p.cfe, r.ea,
-      Math.round(stdKg(r.p,r.ea)*100)/100,
+      Math.round(needKg(r.p,r.ea)*100)/100,
       r.picks.map(x=>`${batchLabel(x.b)} ${fmt(x.kg)}kg`).join(" + "), r.lack||"",
       ...DB.machines.map(m=>r.alloc[m.id] ? `${r.alloc[m.id]}${r.flag[m.id]==="no"?" (불가)":r.flag[m.id]==="max"?" (최대초과)":r.flag[m.id]==="min"?" (소량)":""}` : 0),
       r.unalloc, r.manual?"수동":"자동", labelText(r.p, r.ea),
@@ -8510,7 +8615,7 @@ function dayFlow(dateStr){
    ══════════════════════════════════════════════════════════════ */
 function beanNeeds(){
   const need = {};
-  planRows().forEach(r=>{ need[r.p.bean] = (need[r.p.bean]||0) + stdKg(r.p, r.ea); });
+  planRows().forEach(r=>{ need[r.p.bean] = (need[r.p.bean]||0) + needKg(r.p, r.ea); });
   return need;
 }
 function renderRoast(){
@@ -9087,20 +9192,20 @@ async function inLabel(id){
   if (ans===null) return;
   const n = Math.round(numOf(ans));
   if (!(n>0)) return toast("숫자를 적으세요");
-  /* 봉투 LOT — 입고할 때 한 번만 적는다. 생산할 때는 이 번호가 저절로 붙는다 (선입선출) */
-  let lot = "";
-  if (L.kind === "봉투" || isFullBag(L)) {
-    const lv = await askText(`${L.name}\n\n이 박스의 LOT 번호 (봉투에 인쇄된 번호)\n모르면 비우고 확인`, "", "봉투 LOT");
-    if (lv === null) return;
-    lot = String(lv).trim();
-  }
+  /* LOT — 입고할 때 한 번만 적는다 (모든 부자재). 생산할 때는 선입선출로 저절로 붙는다 */
+  const lv = await askText(`${L.name}\n\n이 박스의 LOT 번호 (박스·봉투에 인쇄된 번호)\n모르면 비우고 확인`, "", `${L.kind} LOT`);
+  if (lv === null) return;
+  const lot = String(lv).trim();
+  if (!(await ask(`${L.name}\n\n입고 ${fmt(n)}${u}${lot?` · LOT ${lot}`:" · LOT 없음"} · ${today()}\n보유 ${fmt(L.stock)} → ${fmt(Number(L.stock||0)+n)}${u}\n\n저장하시겠습니까?`, { title:"입고 저장", yes:"저장" }))) return;
   const r = await mesMoveMaterial({ material_id:L.id, kind:"입고", qty:n,
     note:`발주 입고 ${fmt(n)}${u}${lot?` · LOT ${lot}`:""}`, idem:`min-${L.id}-${uid()}` });
   if (r && r.ok && lot) {
     const all = matLots(); const list = [...(all[L.id]||[])];
-    list.push({ lot, qty:n, date:today(), by:CURRENT_USER||"" });
-    all[L.id] = list.slice(-40); SETTINGS[MAT_LOT_KEY] = all; saveSetting(MAT_LOT_KEY, all);
+    list.push({ lot, qty:n, date:today(), at:nowISO(), by:CURRENT_USER||"" });
+    all[L.id] = list.slice(-60); SETTINGS[MAT_LOT_KEY] = all; saveSetting(MAT_LOT_KEY, all);
+    logAudit("부자재 LOT 입고", L.name, `LOT ${lot} · ${fmt(n)}${u}`);
   }
+  if (!r || !r.ok) return ask(`입고하지 못했습니다 — ${r?.message||"알 수 없는 오류"}\n\n재고는 그대로입니다.`, { title:"실패", yes:"확인" });
   await mesTell(r, `${L.name} +${fmt(n)}${u}${lot?` · LOT ${lot}`:""} → 보유 ${fmt(r?.after ?? L.stock)}${u}`);
 }
 /* ══ 봉투 LOT 자동 — 입고 때 적은 LOT 를 선입선출로 지금 쓰는 LOT 로 계산한다 ══
@@ -9110,10 +9215,9 @@ const MAT_LOT_KEY = "mat_lots";
 const matLots = () => { const v = SETTINGS[MAT_LOT_KEY]; return (v && typeof v === "object") ? v : {}; };
 function curLotOf(M){
   if (!M) return "";
-  const list = matLots()[M.id] || []; if (!list.length) return "";
-  let left = Number(M.stock||0);
-  for (let i = list.length-1; i >= 0; i--) { left -= Number(list[i].qty||0); if (left <= 0) return list[i].lot; }
-  return list[0].lot;                    // 재고가 입고 합보다 많으면 제일 오래된 LOT
+  const lots = lotLedger(M); if (!lots.length) return "";
+  const cur = lots.find(l=>l.st === "사용 중") || lots.find(l=>l.left > 0) || lots[lots.length-1];
+  return cur ? cur.lot : "";
 }
 /* 이 품목이 쓰는 봉투 — 풀패키지면 그 봉투, 아니면 BOM 의 공용 봉투, 없으면 규격이 같은 봉투 */
 function bagMatOf(p){
@@ -9124,7 +9228,7 @@ function bagMatOf(p){
       || DB.materials.find(m=>m.kind==="봉투" && String(m.name+m.spec).includes(specLabel(p.spec_g))) || null;
 }
 const autoLotOf = o => { const p = prodById(o?.product_id); return curLotOf(bagMatOf(p)); };
-async function saveLots(all){ SETTINGS[MAT_LOT_KEY] = all; renderBase(); renderWork(); const r = await saveSetting(MAT_LOT_KEY, all); if (r && r.ok === false) toast("저장 실패 — 서버 연결 확인"); }
+async function saveLots(all){ SETTINGS[MAT_LOT_KEY] = all; renderBase(); renderWork(); const r = await saveSetting(MAT_LOT_KEY, all); if (r && r.ok === false) toast("LOT 저장 실패 — " + (r.message || "서버 연결 확인")); }
 /* 이미 재고로 잡힌 봉투에 LOT 만 붙인다 — 재고는 그대로 */
 async function attachLot(mid){
   if (!(await requireUser())) return;
@@ -9132,23 +9236,108 @@ async function attachLot(mid){
   const lv = await askText(`${M.name}\n지금 재고 ${fmt(M.stock)}${unitOf(M)}\n\n지금 쓰고 있는 박스의 LOT 번호`, "", "기존 재고에 LOT 붙이기");
   if (lv === null || !String(lv).trim()) return;
   const all = matLots(); const list = [...(all[mid]||[])];
-  list.push({ lot:String(lv).trim(), qty:Number(M.stock||0), date:today(), by:CURRENT_USER||"", note:"기존 재고" });
-  all[mid] = list; await saveLots(all);
+  list.push({ lot:String(lv).trim(), qty:Number(M.stock||0), date:today(), at:nowISO(), by:CURRENT_USER||"", note:"기존 재고" });
+  all[mid] = list; await saveLots(all); renderLots();
   logAudit("봉투 LOT", M.name, `기존 재고 ${fmt(M.stock)} 에 LOT ${String(lv).trim()}`);
   toast(`${M.name} — LOT ${String(lv).trim()} 붙였습니다`);
+}
+/* ══ LOT 장부 — 자재 하나의 LOT 들에 잔량·사용량·상태를 매기고, 사용 이력(생산)을 선입선출로 붙인다 ══ */
+function lotLedger(M){
+  const lots = (matLots()[M.id] || []).map((x,i)=>({ ...x, i, qty:Number(x.qty)||0, used:0, left:0, st:"", moves:[] }));
+  if (!lots.length) return lots;
+  /* 잔량 — 지금 재고를 새 박스부터 거꾸로 채운다 (오래된 박스가 먼저 소진) */
+  let left = Math.max(0, Number(M.stock||0));
+  for (let i = lots.length-1; i >= 0; i--) { const keep = Math.min(lots[i].qty, left); lots[i].left = Math.max(0, keep); left -= keep; if (left < 0) left = 0; }
+  lots.forEach(l=>{ l.used = Math.max(0, l.qty - l.left); l.st = l.left <= 0 ? "다 씀" : "대기"; });
+  const first = lots.findIndex(l=>l.left > 0); if (first >= 0) lots[first].st = "사용 중";
+  /* 사용 이력 — 첫 LOT 이후의 출고(−) 수불을 오래된 LOT 부터 채운다 */
+  const t0 = String(lots[0].at || (lots[0].date + "T00:00:00"));
+  const outs = DB.material_moves.filter(m=>(m.material_id||m.label_id)===M.id && Number(m.qty) < 0 && String(m.at || (m.date+"T00:00:00")) >= t0)
+    .sort((a,b)=>String(a.at||a.date).localeCompare(String(b.at||b.date)));
+  const cap = lots.map(l=>l.qty); let li = 0;
+  outs.forEach(mv=>{ let q = -Number(mv.qty);
+    while (q > 0.0001 && li < lots.length) { const take = Math.min(q, cap[li]);
+      if (take > 0) { lots[li].moves.push({ ...mv, take }); cap[li] -= take; q -= take; }
+      if (cap[li] <= 0.0001) li++; else break; } });
+  return lots;
+}
+let lotKindFilter = "";
+function setLotKind(k){ lotKindFilter = k; renderLots(); }
+function renderLots(){
+  if (!$("tLots")) return;
+  const showDone = !!$("lotShowDone")?.checked;
+  const mats = DB.materials.filter(M=>!lotKindFilter || M.kind===lotKindFilter);
+  const rows = []; let nUse = 0, nWait = 0, nDone = 0, nNone = 0;
+  mats.forEach(M=>{
+    const lots = lotLedger(M);
+    if (!lots.length) { nNone++; if (!lotKindFilter || true) rows.push({ M, none:true }); return; }
+    lots.forEach(l=>{ if (l.st==="사용 중") nUse++; else if (l.st==="대기") nWait++; else nDone++;
+      if (l.st === "다 씀" && !showDone) return; rows.push({ M, l }); });
+  });
+  const kinds = {}; DB.materials.forEach(M=>{ kinds[M.kind] = (kinds[M.kind]||0)+1; });
+  $("lotKindBtn").innerHTML = [["","전체"], ...MAT_KINDS.filter(k=>kinds[k]).map(k=>[k, `${k} ${kinds[k]}`])].map(([v,t])=>
+    `<button class="btn ${lotKindFilter===v?"primary":""}" style="height:28px;padding:0 9px;font-size:12px" onclick="setLotKind('${v}')">${t}</button>`).join("");
+  $("lotSum").innerHTML = ` <span class="tag ok">사용 중 ${nUse}</span> <span class="tag">대기 ${nWait}</span> <span class="tag warn">다 씀 ${nDone}</span>${nNone?` <span class="tag bad">LOT 없음 ${nNone}</span>`:""}`;
+  const edit = can("base");
+  tbl("tLots", ["자재","구분","LOT","입고일","입고수량","사용","잔량","상태","입력자",'<span class="fix">처리</span>'],
+    rows.map(r=>{
+      if (r.none) return `<tr><td class="l"><b>${r.M.name}</b> <span class="hint" style="padding:0">재고 ${fmt(r.M.stock)}${unitOf(r.M)}</span></td><td class="c"><span class="tag">${r.M.kind}</span></td>
+        <td class="l"><span class="bad">—</span></td><td class="c">—</td><td>—</td><td>—</td><td>${fmt(r.M.stock)}</td><td class="c"><span class="tag bad">LOT 없음</span></td><td class="c">—</td>
+        <td class="c fix">${edit?`<button class="btn primary" style="height:28px" onclick="attachLot('${r.M.id}')">기존 재고에 LOT 붙이기</button>`:""}</td></tr>`;
+      const l = r.l, u = unitOf(r.M);
+      return `<tr class="${l.st==="사용 중"?"":l.st==="다 씀"?"offrow":""}"><td class="l"><b>${r.M.name}</b> <span class="hint" style="padding:0">재고 ${fmt(r.M.stock)}${u}</span></td><td class="c"><span class="tag">${r.M.kind}</span></td>
+        <td class="l"><b>${l.lot}</b>${l.note?` <span class="hint" style="padding:0;font-size:11px">${l.note}</span>`:""}</td><td class="c">${l.date||"—"}</td>
+        <td>${fmt(l.qty)}</td><td>${l.used?fmt(l.used):"—"}</td><td><b>${fmt(l.left)}</b></td>
+        <td class="c">${l.st==="사용 중"?'<span class="tag ok">사용 중</span>':l.st==="대기"?'<span class="tag">대기</span>':'<span class="tag warn">다 씀</span>'}</td>
+        <td class="c">${l.by||"—"}</td>
+        <td class="c fix"><button class="btn" style="height:28px" onclick="lotHistory('${r.M.id}',${l.i})">이력 ${l.moves.length?`<b>${l.moves.length}</b>`:""}</button>
+          ${edit?`<button class="btn" style="height:28px" onclick="editLot('${r.M.id}',${l.i})">수정</button> <button class="btn danger" style="height:28px" onclick="delLot('${r.M.id}',${l.i})">지움</button>`:""}</td></tr>`; }),
+    rows.length ? `<td colspan="4" class="c">${rows.filter(r=>!r.none).length}개 LOT · 자재 ${mats.length}종</td><td>${fmt(rows.reduce((s,r)=>s+(r.l?r.l.qty:0),0))}</td><td>${fmt(rows.reduce((s,r)=>s+(r.l?r.l.used:0),0))}</td><td><b>${fmt(rows.reduce((s,r)=>s+(r.l?r.l.left:0),0))}</b></td><td colspan="3"></td>` : null);
+}
+/* 수불의 ref 는 실적 id 이거나 일련번호다 — 둘 다 찾아 본다 */
+function lotRefLog(m){ if (!m || !m.ref) return null; const r = String(m.ref); return DB.logs.find(x=>x.id===r) || DB.logs.find(x=>x.serial===r && logLive(x)) || null; }
+/* 그 LOT 가 쓰인 생산 — 수불의 ref(실적 id)로 일련번호·품목을 찾는다 */
+function lotHistory(mid, i){
+  const M = matById(mid); if (!M) return;
+  const l = lotLedger(M)[i]; if (!l) return;
+  $("lotHistWrap").style.display = "";
+  $("lotHistTitle").textContent = `${M.name} · LOT ${l.lot} (${l.date||"—"} 입고 ${fmt(l.qty)} · 잔량 ${fmt(l.left)})`;
+  tbl("tLotHist", ["일자","시각","구분","이 LOT 에서","내용","일련번호 · 품목","작업자"],
+    l.moves.length ? l.moves.map(m=>{ const lg = lotRefLog(m);
+      return `<tr><td class="c">${m.date||""}</td><td class="c">${String(m.at||"").slice(11,16)}</td>
+        <td class="c"><span class="tag ${/폐기|조정/.test(m.kind||"")?"bad":"warn"}">${m.kind||""}</span></td><td><b>−${fmt(m.take)}</b></td>
+        <td class="l">${m.note||""}</td><td class="l">${lg ? `<b>${lg.serial||"—"}</b> · ${lg.product_name||prodById(lg.product_id)?.name||""} ${fmt(lg.qty_ea)}EA` : (m.ref||"—")}</td><td class="c">${m.user||"—"}</td></tr>`; })
+      : [`<tr><td colspan="7" class="c hint" style="height:48px">이 LOT 에서 나간 기록이 아직 없습니다${l.st==="대기"?" — 아직 안 뜯은 박스":""}</td></tr>`]);
+  $("lotHistWrap").scrollIntoView({ behavior:"smooth", block:"start" });
+}
+/* 자재를 골라 LOT 와 함께 입고 */
+async function lotReceive(){
+  if (!(await requireUser())) return;
+  if (!DB.materials.length) return toast("부자재가 없습니다 — 부자재 재고 탭에서 먼저 등록하세요");
+  const list = [...DB.materials].sort((a,b)=>(MAT_KINDS.indexOf(a.kind)-MAT_KINDS.indexOf(b.kind)) || natCmp(a.name,b.name));
+  const pick = await ask("입고할 자재 번호를 적으세요:\n" + list.slice(0,40).map((M,i)=>`${i+1}. [${M.kind}] ${M.name} (재고 ${fmt(M.stock)})`).join("\n") + (list.length>40?`\n… (더 많으면 부자재 재고 탭의 [입고]를 쓰세요)`:""),
+    { prompt:true, value:"1", title:"LOT 입고 — 자재 선택" });
+  if (pick == null) return;
+  const M = list[Math.max(0, Math.round(numOf(pick))-1)]; if (!M) return toast("번호가 맞지 않습니다");
+  return inLabel(M.id);
+}
+function csvLots(){
+  const rows = [];
+  DB.materials.forEach(M=>lotLedger(M).forEach(l=>rows.push([M.kind, M.name, M.code||"", l.lot, l.date||"", l.qty, l.used, l.left, l.st, l.by||""])));
+  csv("부자재LOT", ["구분","자재","코드","LOT","입고일","입고수량","사용","잔량","상태","입력자"], rows);
 }
 async function editLot(mid, i){
   if (!(await requireUser())) return;
   const all = matLots(); const list = [...(all[mid]||[])]; const x = list[i]; if (!x) return;
   const lv = await askText(`LOT 번호 (${x.date||"—"} · ${fmt(x.qty)} · ${x.by||"—"})`, x.lot, "LOT 수정"); if (lv === null) return;
   const qv = await askText(`이 박스 수량`, String(x.qty||0), "LOT 수량"); if (qv === null) return;
-  list[i] = { ...x, lot:String(lv).trim(), qty:Math.round(numOf(qv)) }; all[mid] = list; await saveLots(all);
+  list[i] = { ...x, lot:String(lv).trim(), qty:Math.round(numOf(qv)) }; all[mid] = list; await saveLots(all); renderLots();
 }
 async function delLot(mid, i){
   if (!(await requireUser())) return;
   const all = matLots(); const list = [...(all[mid]||[])]; const x = list[i]; if (!x) return;
   if (!(await ask(`LOT ${x.lot} (${fmt(x.qty)}) 기록을 지울까요? 재고는 안 바뀝니다.`, { title:"LOT 지움", yes:"지움" }))) return;
-  list.splice(i,1); all[mid] = list; await saveLots(all);
+  list.splice(i,1); all[mid] = list; await saveLots(all); renderLots();
 }
 const lotOf = o => (o && o.lot) || autoLotOf(o);
 /* 부자재 폐기 — 손실로 따로 남긴다 */
@@ -10235,10 +10424,10 @@ function bufCapMap(d){
   if (BUF_CAP_CACHE.d === d && BUF_CAP_CACHE.at === DB.mms.length + "|" + JSON.stringify(SETTINGS[BUF_KEY]||"")+"|"+JSON.stringify(SETTINGS[BUF_TODAY_KEY]||"")) return BUF_CAP_CACHE.map;
   const left = {}; DB.mms.forEach(m=>{ if (Number(m.stock_kg)>0 && !isHeld(m)) left[m.bean] = (left[m.bean]||0) + Number(m.stock_kg); });
   const ps = PRODS();
-  ps.forEach(p=>{ const need = p.id in planEA ? 0 : planNeedRaw(p, d); left[p.bean] = (left[p.bean]||0) - stdKg(p, need); });   // 필요분 먼저
+  ps.forEach(p=>{ const need = p.id in planEA ? 0 : planNeedRaw(p, d); left[p.bean] = (left[p.bean]||0) - needKg(p, need); });   // 필요분 먼저
   const map = {};
   ps.forEach(p=>{ const want = bufEA(p, d); if (!(want > 0)) { map[p.id] = 0; return; }
-    const g = Number(p.std_g||0)/1000, can = g > 0 ? Math.max(0, Math.floor((left[p.bean]||0) / g + 0.0001)) : 0;
+    const g = Number(p.std_g||0)/1000 * (1 + lossPctOf(p)/100), can = g > 0 ? Math.max(0, Math.floor((left[p.bean]||0) / g + 0.0001)) : 0;
     const ea = Math.min(want, can); map[p.id] = ea; left[p.bean] = (left[p.bean]||0) - ea*g; });
   BUF_CAP_CACHE = { d, map, at: DB.mms.length + "|" + JSON.stringify(SETTINGS[BUF_KEY]||"")+"|"+JSON.stringify(SETTINGS[BUF_TODAY_KEY]||"") };
   return map;
@@ -10760,7 +10949,7 @@ async function addLog(){
   if (!p || qty<=0) return toast("품목과 생산EA를 확인하세요");
   const date = $("fDate").value || today();
   const inputRaw = $("fInput").value;
-  const input = inputRaw === "" ? null : (Number(inputRaw) || null);
+  const input = inputRaw === "" ? (lossPctOf(p) > 0 ? needKg(p, qty) : null) : (Number(inputRaw) || null);
   const leftRaw = $("fLeft").value;
 
   /* ★ 생산완료와 같은 엔진을 씁니다 (migrations/010·011).
@@ -11094,8 +11283,8 @@ function qcNextStep(o){
   const s = qcState(o);
   if (!s.rejected) return null;
   return s.hasLog
-    ? { label:"검수 반려 — 관리자 확인 필요",
-        note:"생산실적이 이미 등록돼 있습니다. 조치 후 다시 검수로 올리거나, 수량·품목이 틀렸다면 관리자가 실적을 정정·취소해야 합니다." }
+    ? { label:"검수 반려 — 조치 후 다시 올리세요",
+        note:"생산실적은 이미 등록돼 있습니다. 손본 뒤 [조치 완료 → 다시 검수로]를 누르면 검수 대기로 올라갑니다 · 수량·품목이 틀렸다면 관리자가 생산실적에서 정정·취소합니다." }
     : { label:"검수 반려 — 확인 필요",
         note:"조치 후 작업을 완료하면 다시 검수로 올라갑니다." };
 }
@@ -11324,10 +11513,10 @@ function renderStock(){
   const planToday = isCfe ? [] : planRows(), dd = tallyDay();
   const beanLeft = bn => {
     const rs = planToday.filter(x=>x.p.bean===bn);
-    const needKg = rs.reduce((t,x)=>t+stdKg(x.p, planCalc(x.p, dd).need),0);
-    const bufKg  = rs.reduce((t,x)=>t+stdKg(x.p, planCalc(x.p, dd).buf),0);
+    const needKg_ = rs.reduce((t,x)=>t+needKg(x.p, planCalc(x.p, dd).need),0);
+    const bufKg  = rs.reduce((t,x)=>t+needKg(x.p, planCalc(x.p, dd).buf),0);
     const stock = mmsByBean(bn);
-    return { needKg, bufKg, all: stock-needKg-bufKg, noBuf: stock-needKg };
+    return { needKg:needKg_, bufKg, all: stock-needKg_-bufKg, noBuf: stock-needKg_ };
   };
   const leftCell = v => `<td class="${v<0?"bad":""}">${v<0?`부족 ${fmt(-v)}`:fmt(v)}</td>`;
   const extraH = isCfe ? [] : ['<span class="tag buf">오늘 여유분(kg)</span>', "다 만들면 남는 원두", "여유분 못 만들면 남는 원두"];
@@ -12094,7 +12283,7 @@ function renderBase(){ renderBaseInner(); basePendApplyDOM(); }
 function renderBaseInner(){
   const prodList = sorted("tProd", DB.products);
   SHOWN.products = prodList.map(p=>p.id);
-  tbl("tProd", [selAllBox("products"),"CFE 코드","구분","채널","원두",'<span class="fixl">제품명</span>',"규격(g)","분쇄도","표준투입(g)","안전재고","CFE현재고","풀패키지","기본 라벨","묶음","이카전용","사용",""],
+  tbl("tProd", [selAllBox("products"),"CFE 코드","구분","채널","원두",'<span class="fixl">제품명</span>',"규격(g)","분쇄도","표준투입(g)","안전재고","CFE현재고",`<span title="비우면 기본 ${lossCfg().def}% (생산계획 상단)">로스율 %</span>`,"풀패키지","기본 라벨","묶음","이카전용","사용",""],
     prodList.map((p,i)=>`<tr class="${p.off?"offrow":""}${SEL.products.has(p.id)?" selrow":""}"><td class="rowno">${selBox("products",p.id,i)}${i+1}</td>
       <td class="l">${inp("products",p.id,"code",p.code)}</td>
       <td class="c">${inp("products",p.id,"category",p.category)}</td>
@@ -12106,6 +12295,7 @@ function renderBaseInner(){
       <td>${inp("products",p.id,"std_g",p.std_g,"number")}</td>
       <td>${inp("products",p.id,"safety",p.safety,"number")}</td>
       <td>${inp("products",p.id,"cfe",p.cfe,"number")}</td>
+      <td><input type="text" inputmode="decimal" class="num" style="width:56px" value="${lossCfg().items[p.id] ?? ""}" placeholder="${lossCfg().def}" data-f="loss:${p.id}" ${can("base")?"":"disabled"} onchange="setLossPct('${p.id}',this.value)" title="비우면 기본값"></td>
       <td class="c"><label class="chk-full" title="체크하면 파우치에 이미 인쇄된 풀패키지 — 라벨을 안 붙입니다">
         <input type="checkbox" ${isFullPack(p)?"checked":""} onchange="setFullPack('${p.id}',this.checked)">
         <span>${PACK_FULL}</span></label></td>
@@ -12250,25 +12440,7 @@ function renderBaseInner(){
         matKindFilter||"원하는 구분"}</b>로 바꾸면 여기로 옮겨집니다.</div></td></tr>`;
   }
 
-  /* 봉투 LOT 내역 — 자재마다 입고 순서대로, 선입선출로 상태를 매긴다 */
-  (()=>{ if (!$("tMatLot")) return;
-    const bags = DB.materials.filter(M=>M.kind==="봉투" || isFullBag(M));
-    const rows = [];
-    bags.forEach(M=>{
-      const list = matLots()[M.id] || []; let left = Number(M.stock||0);
-      const st = new Array(list.length).fill("다 씀");
-      for (let i = list.length-1; i >= 0; i--) { if (left <= 0) break; st[i] = left >= Number(list[i].qty||0) ? "대기" : "사용 중"; left -= Number(list[i].qty||0); }
-      /* 제일 오래된 남은 박스가 "사용 중" — 위 계산에서 '대기'로 찍힌 것 중 가장 앞의 것을 사용 중으로 */
-      const firstLeft = st.findIndex(x=>x!=="다 씀"); if (firstLeft >= 0) st[firstLeft] = "사용 중";
-      if (!list.length) rows.push({ M, lot:"", qty:null, date:"", by:"", st:"LOT 없음", idx:-1 });
-      list.forEach((x,i)=>rows.push({ M, lot:x.lot, qty:x.qty, date:x.date||"", by:x.by||"", st:st[i], idx:i }));
-    });
-    tbl("tMatLot", ["자재","LOT","입고일","수량","입력자","상태",""],
-      rows.map(r=>`<tr class="${r.st==="사용 중"?"":r.st==="다 씀"?"":""}"><td class="l"><b>${r.M.name}</b> <span class="hint" style="padding:0">${r.M.kind} · 재고 ${fmt(r.M.stock)}</span></td>
-        <td class="l"><b>${r.lot||'<span class="bad">—</span>'}</b></td><td class="c">${r.date||"—"}</td><td>${r.qty!=null?fmt(r.qty):"—"}</td><td class="c">${r.by||"—"}</td>
-        <td class="c">${r.st==="사용 중"?'<span class="tag ok">사용 중</span>':r.st==="대기"?'<span class="tag">대기</span>':r.st==="다 씀"?'<span class="tag warn">다 씀</span>':'<span class="tag bad">LOT 없음</span>'}</td>
-        <td class="c">${r.idx<0 ? `<button class="btn primary" onclick="attachLot('${r.M.id}')">기존 재고에 LOT 붙이기</button>` : `<button class="btn" onclick="editLot('${r.M.id}',${r.idx})">수정</button> <button class="btn danger" onclick="delLot('${r.M.id}',${r.idx})">지움</button>`}</td></tr>`));
-  })();
+  renderLots();
   tbl("tLabelMv", ["일자","시각","부자재","구분","수량","이전","이후","내용","작업자"],
     [...DB.material_moves].sort((a,b)=>String(b.at).localeCompare(String(a.at))).slice(0,60)
       .map(m=>`<tr><td class="c">${m.date}</td><td class="c">${String(m.at||"").slice(11,16)}</td>
@@ -12407,7 +12579,7 @@ async function setSharedAccount(loginId, on){
   if (!isSystemAdmin()) return toast("시스템 관리자만 바꿀 수 있습니다");
   const list = sharedLogins().filter(x=>x!==loginId); if (on) list.push(loginId);
   SETTINGS[SHARED_KEY] = list; renderBase(); syncUserUI();
-  const r = await saveSetting(SHARED_KEY, list); if (r && r.ok === false) toast("저장 실패 — 서버 연결 확인");
+  const r = await saveSetting(SHARED_KEY, list); if (r && r.ok === false) toast("저장 실패 — " + (r.message || "서버 연결 확인"));
   logAudit("공용 계정", loginId, on ? "작업자 선택 허용" : "본인 고정");
   toast(on ? `${loginId} — 공용 계정: 들어와서 작업자를 고릅니다` : `${loginId} — 본인 작업자로 고정`);
 }
@@ -12604,7 +12776,7 @@ function printWorkOrder(){
     </div>
     <div class="meta"><span><b>작업일</b> ${d}</span><span><b>발행</b> ${CURRENT_USER||"—"}</span>
       <span><b>총 계획</b> ${fmt(rows.reduce((s,r)=>s+r.ea,0))} EA</span>
-      <span><b>필요 원두</b> ${fmt(rows.reduce((s,r)=>s+stdKg(r.p,r.ea),0))} kg</span>
+      <span><b>필요 원두</b> ${fmt(rows.reduce((s,r)=>s+needKg(r.p,r.ea),0))} kg</span>
       <span><b>라벨</b> ${labN} 묶음</span></div>
     ${byMach.map(({m,items})=>`
       <table><thead>
@@ -12619,7 +12791,7 @@ function printWorkOrder(){
           const mfg = (r.picks && r.picks[0]) ? r.picks[0].b.roast_date : "";
           return `<tr><td>${r.p.code||""}</td><td>${r.p.name}${isGround(r.p.grind)?` (${r.p.grind})`:""}</td>
           <td style="text-align:right"><b>${fmt(q)}</b></td><td style="font-size:10.5px">${bs}</td>
-          <td style="text-align:right">${fmt(stdKg(r.p, q))}</td>
+          <td style="text-align:right">${fmt(needKg(r.p, q))}</td>
           <td style="text-align:center;font-size:10.5px">${labelText(r.p, q)||"-"}</td>
           <td style="text-align:center;font-size:10.5px">${o?.serial||""}</td><td></td><td></td></tr>
           <tr><td colspan="9" style="font-size:10px;background:#F5F7FC;border-top:0">
@@ -12629,7 +12801,7 @@ function printWorkOrder(){
             · 원산지 <b>${B?.compose||"— 원두 마스터에 없음"}</b></td></tr>`; }).join("")}
         <tr><td colspan="2" style="text-align:center"><b>소계</b></td>
           <td style="text-align:right"><b>${fmt(items.reduce((s,r)=>s+r.alloc[m.id],0))}</b></td><td></td>
-          <td style="text-align:right"><b>${fmt(items.reduce((s,r)=>s+stdKg(r.p,r.alloc[m.id]),0))}</b></td>
+          <td style="text-align:right"><b>${fmt(items.reduce((s,r)=>s+needKg(r.p,r.alloc[m.id]),0))}</b></td>
           <td style="text-align:center"><b>${items.reduce((s,r)=>s+labelNeed(r.p,r.alloc[m.id]).bundles,0)}묶음</b></td>
           <td colspan="3"></td></tr>
       </tbody></table>`).join("")}
@@ -13537,7 +13709,7 @@ function preview(){
     pRows.forEach(r=>{ if (r.why) return; const k = `${r.date}|${r.p.id}|${r.qty}`; if (seen.has(k)) r.why = "중복 줄"; else seen.add(k); });
     /* 원두가 모자라서 실패할 줄을 미리 표시 — 날짜순으로 누적해 본다 */
     const left = {}; DB.mms.forEach(m=>{ if (Number(m.stock_kg)>0 && !isHeld(m)) left[m.bean] = (left[m.bean]||0) + Number(m.stock_kg); });
-    pRows.forEach(r=>{ if (r.why) return; const kg = stdKg(r.p, r.qty); const b = r.p.bean;
+    pRows.forEach(r=>{ if (r.why) return; const kg = needKg(r.p, r.qty); const b = r.p.bean;
       if ((left[b]||0) + 0.0001 < kg) { r.warn = `원두 부족 ${fmt(kg-(left[b]||0))}kg`; r.short = true; } left[b] = (left[b]||0) - kg; });
     const okN = pRows.filter(r=>!r.why).length;
     const days = [...new Set(pRows.filter(r=>!r.why).map(r=>r.date))];
@@ -13547,7 +13719,7 @@ function preview(){
         <td class="l">${r.p ? `<b>${r.p.name}</b><br><span class="hint" style="padding:0;font-size:11px">원두 ${r.p.bean}</span>` : "—"}</td>
         <td>${r.qty??"—"}</td><td class="c">${r.worker||"—"}</td><td class="c">${r.mach||"—"}</td>
         <td class="c">${r.why ? `<span class="tag ${r.why==="이미 있음"||r.why==="중복 줄"?"warn":"bad"}">${r.why}</span>` : r.warn ? `<span class="tag ${r.warn==="배치 재고 없음"||r.short?"bad":"warn"}" title="${r.short||r.warn==="배치 재고 없음"?"이 원두 배치가 모자라 등록이 실패합니다 — 로스팅 입고를 먼저 넣으세요":"이 날짜보다 늦게 로스팅된 배치가 붙게 됩니다 — 그 전 배치를 먼저 입고하세요"}">${r.warn}</span>` : '<span class="tag ok">등록</span>'}</td></tr>`).join("") +
-      `</tbody><tfoot><tr><td colspan="8" class="c">${okN}건 등록 가능 / 전체 ${pRows.length}건 · 합계 ${fmt(pRows.filter(r=>!r.why).reduce((s,r)=>s+r.qty,0))}EA${pRows.some(r=>r.why==="이미 있음")?` · <span class="warn">이미 있는 ${pRows.filter(r=>r.why==="이미 있음").length}건은 건너뜀</span>`:""}${pRows.some(r=>r.short)?` · <span class="bad">원두 부족 ${pRows.filter(r=>r.short).length}건 — 로스팅 입고 먼저</span>`:""}${pRows.some(r=>r.warn&&!r.short)?` · <span class="warn">배치 날짜 확인 ${pRows.filter(r=>r.warn&&!r.short).length}건</span>`:""}</td></tr></tfoot></table>`;
+      `</tbody><tfoot><tr><td colspan="8" class="c">${okN}건 등록 가능 / 전체 ${pRows.length}건 · 합계 ${fmt(pRows.filter(r=>!r.why).reduce((s,r)=>s+r.qty,0))}EA${pRows.some(r=>r.why==="이미 있음")?` · <span class="warn">이미 있는 ${pRows.filter(r=>r.why==="이미 있음").length}건은 건너뜀</span>`:""}${pRows.some(r=>r.short&&!r.why)?` · <span class="bad">원두 부족 ${pRows.filter(r=>r.short&&!r.why).length}건 — 로스팅 입고 먼저</span>`:""}${pRows.some(r=>r.warn&&!r.short&&!r.why)?` · <span class="warn">배치 날짜 확인 ${pRows.filter(r=>r.warn&&!r.short&&!r.why).length}건</span>`:""}</td></tr></tfoot></table>`;
     $("pApply").style.display = okN ? "block" : "none";
     return;
   }
@@ -13860,7 +14032,7 @@ async function applyPaste(){
     for (let i=0;i<rows.length;i++){
       const r = rows[i];
       toast(`등록 중… ${i+1} / ${rows.length}`);
-      const res = await mesRecordLogManual({ product_id:r.p.id, qty:r.qty, date:r.date,
+      const res = await mesRecordLogManual({ product_id:r.p.id, qty:r.qty, date:r.date, input_kg: lossPctOf(r.p) > 0 ? needKg(r.p, r.qty) : null,
         machine:r.mach || "", worker:r.worker || "", lot: autoLotOf({ product_id:r.p.id }) || "",
         label_id: labelPick(r.p), idem:`logx-${r.date}-${r.p.id}-${i}-${uid()}` });
       if (res && res.ok) okN++; else fail.push(`${r.date} ${r.p.name} ${fmt(r.qty)} — ${res?.message||"?"}`);
@@ -14294,7 +14466,7 @@ const MES_ERR = (code, message, extra) =>
 const inputKgFor = (p, qty, actual) =>
   (actual !== null && actual !== undefined && actual !== "")
     ? Math.round(Number(actual)*1000)/1000
-    : Math.round(stdKg(p, qty)*1000)/1000;
+    : Math.round(needKg(p, qty)*1000)/1000;
 
 /* ── 생산완료 (로컬 엔진) ─────────────────────────────────────
    migrations/004 의 finish_work() 와 같은 순서·같은 판정 */
@@ -14502,7 +14674,7 @@ async function finishWork(id){
      이 줄은 화면에서 먼저 걸러 주는 것이고,
      "RPC 완성 → 테스트 → 화면 전환 → 직접쓰기 차단" 이 끝날 때까지 남겨 둔다. */
   if (o.log_id && DB.logs.some(l=>l.id===o.log_id))
-    return toast(`이미 생산실적이 등록된 지시입니다 (일련번호 ${o.serial||"-"}) — 수정은 생산실적 화면에서 하세요`);
+    return qcState(o).rejected ? resubmitQc(id) : toast(`이미 생산실적이 등록된 지시입니다 (일련번호 ${o.serial||"-"}) — 수정은 생산실적 화면에서 하세요`);
   const p = prodById(o.product_id); if(!p) return toast("품목을 찾을 수 없습니다");
   /* ★ 일련번호 확인 — 자동으로 매긴 번호를 보여 주고, 봉지와 다르면 여기서 고친다 */
   const sn0 = o.serial || makeSerial(o.work_date);
@@ -14555,8 +14727,8 @@ async function finishWork(id){
   if (needsActualKg(p, o)) {
     const a = await askText(
       `실제 투입한 원두 (kg)
-계산값 ${fmt(stdKg(p, good))}kg — 모르면 그대로 두고 확인하세요`,
-      String(Math.round(stdKg(p, good)*10)/10), "실제 투입량");
+계산값 ${fmt(needKg(p, good))}kg (표준 ${fmt(stdKg(p, good))} + 로스 ${lossPctOf(p)}%) — 모르면 그대로 두고 확인하세요`,
+      String(Math.round(needKg(p, good)*10)/10), "실제 투입량");
     if (a === null) return;
     if (numOf(a) > 0) actualKg = numOf(a);
   }
@@ -14565,8 +14737,9 @@ async function finishWork(id){
      멱등키를 지금 만든다. 더블클릭·재전송·새로고침 재시도가 전부 같은 키로 간다. */
   const key = `fw-${o.id}-${uid()}`;
   const btnBusy = setBusy(`완료 처리 중…`);
+  /* 로스율이 있으면 표준 × (1+로스%) 를 투입량으로 보낸다 — 서버도 그만큼 원두를 뺀다 */
   const r = await mesFinishWork({
-    order_id:o.id, good, ng, ng_type:ngType, input_kg:actualKg,
+    order_id:o.id, good, ng, ng_type:ngType, input_kg: actualKg != null ? actualKg : (lossPctOf(p) > 0 ? needKg(p, good) : null),
     worker:CURRENT_USER, idem:key });
   btnBusy();
 
@@ -14607,7 +14780,7 @@ function setBusy(text){
    (지우지 않은 이유: 옛 동작과 비교할 일이 있을 수 있어서) */
 function logFromOrder(o, p, qty){
   const date = o.work_date || today();
-  const input = stdKg(p, qty);
+  const input = needKg(p, qty);
   const log = { id:uid(), work_date:date, serial:o.serial || makeSerial(date),
     serial_full:o.serial_full||"", label_id:ordLabel(o), lot:o.lot||"",
     product_id:p.id, ...pSnap(p), machine:o.machine, worker:CURRENT_USER,
@@ -15021,6 +15194,7 @@ function renderWork(){
           <div class="r2">${q.at ? String(q.at).slice(0,16).replace("T"," ") : ""}${
             q.by ? ` · ${q.by}` : ""}${q.count > 1 ? ` · 반려 ${q.count}회` : ""}</div>
           ${n ? `<div class="r3">${n.note}</div>` : ""}
+          ${q.hasLog ? `<div style="margin-top:8px"><button class="btn primary" style="height:34px" onclick="event.stopPropagation();resubmitQc('${o.id}')">조치 완료 → 다시 검수로</button></div>` : ""}
         </div>`; })()}
       ${kInfoHTML(p?.bean, o)}
       <div class="big"><b>${fmt(o.qty_done)}</b> <span>/ ${fmt(o.qty_plan)} 개</span></div>
@@ -15225,9 +15399,17 @@ function renderTrace(){
   const ords = DB.orders.filter(o=>[o.order_no,o.serial,o.lot].some(x=>String(x||"").toLowerCase().includes(q))
     || logs.some(l=>l.id===o.log_id));
   logs.push(...DB.logs.filter(l=>ords.some(o=>o.log_id===l.id) && !logs.includes(l)));
-  if (!logs.length && !ords.length && !mms.length) { $("trOut").innerHTML = `<div class="wempty">찾은 기록이 없습니다</div>`; return; }
+  /* 부자재 LOT 로 찾기 — 그 LOT 가 어느 생산에 쓰였는지 */
+  const lotHits = [];
+  DB.materials.forEach(M=>lotLedger(M).forEach(l=>{ if (has(l.lot)) lotHits.push({ M, l }); }));
+  const lotHtml = lotHits.map(({M,l})=>`<div class="panel" style="margin-bottom:14px"><div class="panel-h">부자재 LOT ${l.lot} <span class="r hint">${M.kind} · ${M.name}</span></div>
+      <div style="padding:10px 18px;font-size:13px">${l.date||"—"} 입고 <b>${fmt(l.qty)}</b>${unitOf(M)} · 사용 <b>${fmt(l.used)}</b> · 잔량 <b>${fmt(l.left)}</b> · <span class="tag ${l.st==="사용 중"?"ok":l.st==="다 씀"?"warn":""}">${l.st}</span> · 입력 ${l.by||"—"}
+        ${l.moves.length ? `<div style="margin-top:8px">이 LOT 가 쓰인 생산:<br>${l.moves.map(m=>{ const lg = lotRefLog(m);
+          return `· ${m.date} ${lg?`<b>${lg.serial||"—"}</b> ${lg.product_name||prodById(lg.product_id)?.name||""} ${fmt(lg.qty_ea)}EA`:(m.note||m.kind)} — ${fmt(m.take)}${unitOf(M)}`; }).join("<br>")}</div>` : `<div class="hint" style="padding:6px 0 0">아직 쓰인 기록 없음</div>`}
+      </div></div>`).join("");
+  if (!logs.length && !ords.length && !mms.length && !lotHits.length) { $("trOut").innerHTML = `<div class="wempty">찾은 기록이 없습니다</div>`; return; }
 
-  $("trOut").innerHTML = mms.slice(0,6).map(batchCard).join("") + logs.map(l=>{
+  $("trOut").innerHTML = lotHtml + mms.slice(0,6).map(batchCard).join("") + logs.map(l=>{
     const p = prodById(l.product_id);
     const o = DB.orders.find(x=>x.log_id===l.id);
     const cs = CONSL().filter(c=>c.log_id===l.id);          /* C-4 살아 있는 것만 */
@@ -15273,7 +15455,7 @@ let helpFilter = "접수";
 function setHelpFilter(k){ helpFilter = k; renderHelp(); }
 async function saveHelp(list){
   SETTINGS[HELP_KEY] = list.slice(-300); renderHelp(); helpBadge();
-  const r = await saveSetting(HELP_KEY, SETTINGS[HELP_KEY]); if (r && r.ok === false) toast("저장 실패 — 서버 연결 확인");
+  const r = await saveSetting(HELP_KEY, SETTINGS[HELP_KEY]); if (r && r.ok === false) toast("문의가 이 기기에만 남았습니다 — " + (r.message || "서버 연결 확인") + " (039 SQL 필요)");
 }
 const helpIsAdmin = () => isSystemAdmin() || loginRole() === "admin";
 function helpScreens(){
@@ -15347,6 +15529,185 @@ function renderHelp(){
     </div>`).join("")
     : `<div class="wempty" style="padding:30px">${f === "전체" ? "문의가 없습니다" : `${f} 상태인 문의가 없습니다`}<br><span>위에서 적어 보내면 여기 쌓입니다</span></div>`;
 }
+
+/* ══════════════════════════════════════════════════════════════
+   일괄 입력 — 기준정보 표를 여러 줄 한 번에. [저장] → "N건 저장하시겠습니까?" → 줄마다 성공/실패와 사유
+   ══════════════════════════════════════════════════════════════ */
+let bulkT = "";
+/* 서버에 한 줄 저장하고 결과를 기다린다 (save() 는 결과를 안 기다리므로 여기선 따로) */
+async function saveRowAsync(t, row){
+  if (!sb) return { ok:true };
+  try { const { error } = await sb.from(tb(t)).upsert(row); return error ? { ok:false, message: friendlyDbErr(error.message||String(error)) } : { ok:true }; }
+  catch(e){ return { ok:false, message: friendlyDbErr(e?.message||String(e)) }; }
+}
+function friendlyDbErr(m){
+  m = String(m||"");
+  if (/permission denied|row-level security|RLS/i.test(m)) return "권한 없음 — 이 계정은 이 표를 고칠 수 없습니다";
+  if (/duplicate key|unique/i.test(m)) return "같은 값이 이미 있습니다 (중복)";
+  if (/foreign key/i.test(m)) return "연결된 기준정보가 없습니다 (원두·품목 먼저 등록)";
+  if (/column .* does not exist/i.test(m)) return "서버 표에 없는 칸입니다 — " + m;
+  if (/Failed to fetch|network|Load failed/i.test(m)) return "서버 연결 끊김 — 다시 시도";
+  return m;
+}
+const BULK_DEFS = {
+  products: { title:"품목 일괄 입력", table:"products", tab:"prod",
+    hint:"제품명·규격은 꼭 적고, CFE 코드를 비우면 자동으로 만듭니다 · 원두는 원두 표에 있는 이름 그대로 · 표준투입을 비우면 규격과 같게",
+    cols:[ { k:"code", l:"CFE 코드", w:110, ph:"CFE0001" }, { k:"bean", l:"원두", w:170, list:"beanDL" },
+           { k:"name", l:"제품명", w:230, req:true, ph:"원두 에스쇼콜라 1kg" }, { k:"spec_g", l:"규격(g)", w:80, num:true, req:true },
+           { k:"grind", l:"분쇄도", w:100, sel:GRINDS, def:"홀빈" }, { k:"std_g", l:"표준투입(g)", w:90, num:true, ph:"=규격" },
+           { k:"safety", l:"안전재고", w:80, num:true }, { k:"cfe", l:"CFE현재고", w:80, num:true },
+           { k:"channel", l:"채널", w:90, sel:CHANNELS, def:"일반" }, { k:"pack_type", l:"포장", w:110, sel:[PACK_LABEL, PACK_FULL], def:PACK_LABEL } ],
+    validate(v, i, all){
+      if (!v.name) return "제품명 없음"; if (!(Number(v.spec_g) > 0)) return "규격(g) 없음";
+      const ck = codeKey(v.code);
+      if (ck && DB.products.some(p=>codeKey(p.code)===ck)) return `코드 ${v.code} 이미 있음`;
+      if (ck && all.some((o,j)=>j<i && codeKey(o.code)===ck)) return `코드 ${v.code} 가 위 줄과 중복`;
+      if (DB.products.some(p=>String(p.name).trim()===v.name.trim())) return "같은 제품명이 이미 있음";
+      if (all.some((o,j)=>j<i && String(o.name).trim()===v.name.trim())) return "제품명이 위 줄과 중복";
+      if (v.bean && !DB.beans.some(b=>b.name===v.bean)) return `원두 "${v.bean}" 가 원두 표에 없음`;
+      return ""; },
+    async save(v){
+      const p = P(v.bean||"", Number(v.spec_g)||0, Number(v.cfe)||0, Number(v.safety)||0,
+        { code:v.code||"", grind:v.grind||"홀빈", name:v.name.trim(), std:Number(v.std_g)||Number(v.spec_g)||0, ch:v.channel||"일반" });
+      p.pack_type = v.pack_type || PACK_LABEL; if (!p.code) p.code = makeCode(p);
+      const r = await saveRowAsync("products", p); if (r.ok) DB.products.push(p); return r; } },
+  beans: { title:"원두 일괄 입력", table:"beans", tab:"beans",
+    hint:"원두명은 꼭 · MMS 코드 · 머신 종류(S35_하바나 싱글 / S70_시그니처 블렌드 …) · 컬러·품목보고번호·원산지는 한글표시사항에 들어가니 채우세요",
+    cols:[ { k:"mms_code", l:"MMS 코드", w:100, ph:"MMS0001" }, { k:"machine", l:"머신 종류", w:170, ph:"S35_일반 싱글" },
+           { k:"name", l:"원두명", w:200, req:true }, { k:"color", l:"컬러", w:80 }, { k:"report_no", l:"품목보고번호", w:130 },
+           { k:"compose", l:"원산지", w:220, ph:"커피원두 100% (콜롬비아산)" }, { k:"note", l:"적요", w:120 }, { k:"launch", l:"출시일", w:110, ph:"2026-10-01" } ],
+    validate(v, i, all){
+      if (!v.name) return "원두명 없음";
+      if (DB.beans.some(b=>b.name===v.name.trim())) return "같은 원두명이 이미 있음";
+      if (all.some((o,j)=>j<i && o.name.trim()===v.name.trim())) return "원두명이 위 줄과 중복";
+      const ck = codeKey(v.mms_code);
+      if (ck && DB.beans.some(b=>codeKey(b.mms_code)===ck)) return `MMS 코드 ${v.mms_code} 이미 있음`;
+      if (ck && all.some((o,j)=>j<i && codeKey(o.mms_code)===ck)) return `MMS 코드 ${v.mms_code} 가 위 줄과 중복`;
+      return ""; },
+    async save(v){
+      const b = { id:uid(), name:v.name.trim(), mms_code:v.mms_code||"", machine:v.machine||"", color:v.color||"", report_no:v.report_no||"",
+        compose:v.compose||"", note:v.note||"", launch:v.launch||"", end_date:"" };
+      const r = await saveRowAsync("beans", b); if (r.ok) DB.beans.push(b); return r; } },
+  materials: { title:"부자재 일괄 입력", table:"materials", tab:"label",
+    hint:"구분·이름은 꼭 · 1묶음은 라벨이면 25 같은 묶음 장수 · 초기재고를 적으면 입고로 기록되고 LOT 를 같이 적으면 LOT 관리에 들어갑니다",
+    cols:[ { k:"kind", l:"구분", w:100, sel:MAT_KINDS, def:"봉투" }, { k:"name", l:"자재명", w:220, req:true }, { k:"code", l:"코드", w:100 },
+           { k:"spec", l:"규격", w:110 }, { k:"unit", l:"단위", w:60, ph:"EA" }, { k:"pack_qty", l:"1묶음", w:70, num:true },
+           { k:"safety", l:"안전재고", w:80, num:true }, { k:"stock", l:"초기재고", w:80, num:true }, { k:"lot", l:"LOT", w:120, ph:"박스 LOT" } ],
+    validate(v, i, all){
+      if (!v.name) return "자재명 없음"; if (!MAT_KINDS.includes(v.kind)) return "구분 없음";
+      if (DB.materials.some(M=>M.name.trim()===v.name.trim() && M.kind===v.kind)) return "같은 구분·이름이 이미 있음";
+      if (all.some((o,j)=>j<i && o.name.trim()===v.name.trim() && o.kind===v.kind)) return "위 줄과 중복";
+      return ""; },
+    async save(v){
+      const k = v.kind || "봉투";
+      const m = { id:uid(), code:v.code||"", name:v.name.trim(), kind:k, spec:v.spec||"", unit:v.unit||MAT_UNIT[k]||"EA",
+        pack_qty: Number(v.pack_qty) || (k==="라벨" ? PACK_DEFAULT : 1), stock:0, safety:Number(v.safety)||0, note:"", last_in:null, last_use:null };
+      const r = await saveRowAsync("materials", m); if (!r.ok) return r;
+      DB.materials.push(m);
+      const q = Math.round(Number(v.stock)||0);
+      if (q > 0) {
+        const mv = await mesMoveMaterial({ material_id:m.id, kind:"입고", qty:q, note:`초기재고${v.lot?` · LOT ${v.lot}`:""}`, idem:`bk-${m.id}` });
+        if (!mv || !mv.ok) return { ok:false, message:`자재는 만들었지만 초기재고를 못 넣음 — ${mv?.message||""}` };
+        if (v.lot) { const all = matLots(); all[m.id] = [ ...(all[m.id]||[]), { lot:String(v.lot).trim(), qty:q, date:today(), at:nowISO(), by:CURRENT_USER||"" } ]; SETTINGS[MAT_LOT_KEY] = all; saveSetting(MAT_LOT_KEY, all); }
+      }
+      return { ok:true }; } },
+  machines: { title:"기계 일괄 입력", table:"machines", tab:"mach",
+    hint:"기계명은 꼭 · 규격별 EA/h 는 그 기계가 한 시간에 몇 개 포장하는지 (0 이면 그 규격 불가)",
+    cols:[ { k:"name", l:"기계명", w:140, req:true }, { k:"workers", l:"인원", w:60, num:true, def:1 }, { k:"hours", l:"가동(h)", w:70, num:true, def:7 },
+           { k:"per_person", l:"능력", w:100, sel:["인원비례","기계기준"], def:"인원비례" },
+           { k:"s1000", l:"1kg EA/h", w:80, num:true }, { k:"s500", l:"500g EA/h", w:80, num:true }, { k:"s200", l:"200g EA/h", w:80, num:true }, { k:"s100", l:"100g EA/h", w:80, num:true },
+           { k:"label_sec", l:"라벨 초/EA", w:80, num:true, def:3 }, { k:"min_ea", l:"최소투입", w:80, num:true }, { k:"max_ea", l:"1품목 최대", w:90, num:true },
+           { k:"can_grind", l:"분쇄", w:80, sel:["가능","불가"], def:"가능" }, { k:"ica_only", l:"이카전용", w:80, sel:["아니오","예"], def:"아니오" } ],
+    validate(v, i, all){ if (!v.name) return "기계명 없음"; if (DB.machines.some(m=>m.name===v.name.trim())) return "같은 기계명이 이미 있음"; if (all.some((o,j)=>j<i && o.name.trim()===v.name.trim())) return "위 줄과 중복"; return ""; },
+    async save(v){
+      const m = { id:uid(), name:v.name.trim(), workers:Number(v.workers)||1, hours:Number(v.hours)||7, per_person:(v.per_person||"인원비례")==="인원비례",
+        s1000:Number(v.s1000)||0, s500:Number(v.s500)||0, s200:Number(v.s200)||0, s100:Number(v.s100)||0, ica_only:v.ica_only==="예", can_grind:(v.can_grind||"가능")==="가능",
+        label_sec:Number(v.label_sec)||0, min_ea:Number(v.min_ea)||0, max_ea:Number(v.max_ea)||0 };
+      const r = await saveRowAsync("machines", m); if (r.ok) DB.machines.push(m); return r; } },
+  workers: { title:"생산자 일괄 입력", table:"workers", tab:"work",
+    hint:"시스템 관리자만 · 이름은 꼭 · 로그인 계정은 저장 뒤 [계정 관리]에서 따로 만듭니다",
+    cols:[ { k:"name", l:"이름", w:140, req:true }, { k:"role", l:"직급", w:110, sel:RANKS, def:"사원" }, { k:"perm", l:"업무 역할", w:130, sel:["현장 작업자","현장 관리자","검수·출고","관리자"], def:"현장 작업자" } ],
+    validate(v, i, all){ if (!isSystemAdmin()) return "시스템 관리자만 추가할 수 있음"; if (!v.name) return "이름 없음"; if (DB.workers.some(w=>w.name===v.name.trim())) return "같은 이름이 이미 있음"; if (all.some((o,j)=>j<i && o.name.trim()===v.name.trim())) return "위 줄과 중복"; return ""; },
+    async save(v){
+      const permKey = Object.keys(ROLES).find(k=>ROLES[k]===v.perm) || "floor";
+      const w = { id:uid(), name:v.name.trim(), role:v.role||"사원", perm:permKey };
+      const r = await saveRowAsync("workers", w); if (r.ok) DB.workers.push(w); return r; } },
+  mms: { title:"MMS 배치 일괄 입력 (로스팅 입고)", table:"mms", tab:"mms",
+    hint:"원두명은 원두 표 그대로 · 로스팅일 · 그날 몇 번째 배치 · kg — 같은 날 같은 번호가 있으면 실패로 알려줍니다",
+    cols:[ { k:"bean", l:"원두", w:220, req:true, list:"beanDL" }, { k:"roast_date", l:"로스팅일", w:130, date:true, req:true }, { k:"batch", l:"그날 몇 번째", w:90, num:true, req:true }, { k:"kg", l:"재고(kg)", w:90, num:true, req:true } ],
+    validate(v, i, all){
+      if (!v.bean) return "원두 없음"; if (!DB.beans.some(b=>b.name===v.bean.trim())) return `원두 "${v.bean}" 가 원두 표에 없음`;
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(v.roast_date||"")) return "로스팅일 없음"; if (!(Number(v.batch) > 0)) return "배치 번호 없음"; if (!(Number(v.kg) > 0)) return "kg 없음";
+      if (DB.mms.some(m=>m.bean===v.bean.trim() && m.roast_date===v.roast_date && Number(m.batch)===Number(v.batch))) return `${v.roast_date} ${v.batch}번 배치가 이미 있음`;
+      if (all.some((o,j)=>j<i && o.bean.trim()===v.bean.trim() && o.roast_date===v.roast_date && Number(o.batch)===Number(v.batch))) return "위 줄과 중복";
+      return ""; },
+    async save(v){ const r = await mesAddMms({ bean:v.bean.trim(), roast_date:v.roast_date, batch:Number(v.batch), kg:Number(v.kg)||0, idem:`bkm-${uid()}` }); return r && r.ok ? { ok:true } : { ok:false, message:r?.message||"만들지 못함" }; } },
+};
+function openBulk(t){
+  const def = BULK_DEFS[t]; if (!def) return;
+  const need = TCAP[t] || "base";
+  if (t === "workers" ? !isSystemAdmin() : !can(need)) return toast(t === "workers" ? "시스템 관리자만 생산자를 추가할 수 있습니다" : "권한이 없습니다 — 기준정보 담당만");
+  bulkT = t; $("bkTitle").textContent = def.title; $("bkHint").textContent = def.hint;
+  $("bkTbl").innerHTML = `<thead><tr><th>No</th>${def.cols.map(c=>`<th style="min-width:${c.w}px">${c.l}${c.req?' <span class="bad">*</span>':""}</th>`).join("")}<th>상태</th></tr></thead><tbody></tbody>`;
+  bulkAddRows(5);
+  $("bulk").style.display = "block";
+  setTimeout(()=>$("bkTbl").querySelector("tbody input, tbody select")?.focus(), 30);
+}
+function closeBulk(){ $("bulk").style.display = "none"; }
+function bulkClear(){ $("bkTbl").querySelector("tbody").innerHTML = ""; bulkAddRows(5); }
+function bulkAddRows(n){
+  const def = BULK_DEFS[bulkT]; const tb_ = $("bkTbl").querySelector("tbody"); if (!def || !tb_) return;
+  for (let i=0;i<n;i++){
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td class="no"></td>` + def.cols.map(c=>{
+      if (c.sel) return `<td><select data-bk="${c.k}">${c.sel.map(o=>`<option ${o===c.def?"selected":""}>${o}</option>`).join("")}</select></td>`;
+      return `<td><input type="${c.date?"date":"text"}" data-bk="${c.k}" data-f="bk:${c.k}:${Date.now()}${i}" ${c.num?'inputmode="decimal"':""} value="${c.def!=null?c.def:""}" placeholder="${c.ph||""}" ${c.list?`list="${c.list}"`:""}></td>`; }).join("") + `<td class="why"></td>`;
+    tb_.appendChild(tr);
+  }
+  [...tb_.rows].forEach((r,i)=>r.cells[0].textContent = i+1);
+}
+function bulkRows(){
+  const def = BULK_DEFS[bulkT];
+  return [...$("bkTbl").querySelectorAll("tbody tr")].map(tr=>{
+    const v = {}; def.cols.forEach(c=>{ const el = tr.querySelector(`[data-bk="${c.k}"]`); v[c.k] = String(el?.value ?? "").trim(); });
+    const filled = def.cols.some(c=>!c.sel && c.def == null && v[c.k] !== "") || def.cols.some(c=>c.req && v[c.k] !== "");
+    return { tr, v, filled };
+  });
+}
+async function bulkSave(){
+  const def = BULK_DEFS[bulkT]; if (!def) return;
+  if (!(await requireUser())) return;
+  const rows = bulkRows().filter(r=>r.filled);
+  rows.forEach(r=>{ r.tr.className = ""; r.tr.querySelector(".why").textContent = ""; });
+  if (!rows.length) return toast("적은 줄이 없습니다");
+  const vals = rows.map(r=>r.v);
+  const checks = rows.map((r,i)=>({ r, err: def.validate(r.v, i, vals) }));
+  const bad = checks.filter(c=>c.err), good = checks.filter(c=>!c.err);
+  bad.forEach(c=>{ c.r.tr.className = "bad"; c.r.tr.querySelector(".why").textContent = c.err; });
+  if (!good.length) return ask(`저장할 수 있는 줄이 없습니다.\n\n${bad.slice(0,10).map(c=>`· ${c.r.tr.cells[0].textContent}번 줄 — ${c.err}`).join("\n")}`, { title:"저장 안 됨", yes:"확인" });
+  if (!(await ask(`${def.title.replace(" 일괄 입력","")} ${good.length}건을 저장하시겠습니까?` +
+      (bad.length ? `\n\n문제가 있는 ${bad.length}건은 건너뜁니다 (표에 빨갛게 표시):\n${bad.slice(0,8).map(c=>`· ${c.r.tr.cells[0].textContent}번 줄 — ${c.err}`).join("\n")}${bad.length>8?`\n… 외 ${bad.length-8}건`:""}` : ""),
+      { title:"저장", yes:`${good.length}건 저장` }))) return;
+  const okRows = [], fails = [];
+  for (const c of good) {
+    const res = await def.save(c.r.v);
+    if (res && res.ok) { c.r.tr.className = "ok"; c.r.tr.querySelector(".why").innerHTML = '<span class="ok">저장됨</span>'; okRows.push(c.r); }
+    else { c.r.tr.className = "bad"; c.r.tr.querySelector(".why").textContent = res?.message || "실패"; fails.push({ r:c.r, m:res?.message || "실패" }); }
+  }
+  logAudit("일괄 입력", def.title.replace(" 일괄 입력",""), `성공 ${okRows.length} · 실패 ${fails.length + bad.length}`);
+  renderAll();
+  const nm = c => c.tr.querySelector('[data-bk="name"]')?.value || c.tr.querySelector('[data-bk="bean"]')?.value || `${c.tr.cells[0].textContent}번 줄`;
+  await ask(`저장 결과 — 성공 ${okRows.length}건${fails.length||bad.length ? ` · 실패 ${fails.length + bad.length}건` : ""}` +
+    (fails.length ? `\n\n저장 실패 (서버):\n${fails.map(f=>`· ${nm(f.r)} — ${f.m}`).join("\n")}` : "") +
+    (bad.length ? `\n\n건너뜀 (입력 문제):\n${bad.slice(0,10).map(c=>`· ${nm(c.r)} — ${c.err}`).join("\n")}` : "") +
+    (fails.length || bad.length ? `\n\n실패한 줄은 표에 남아 있습니다 — 고쳐서 다시 [저장]을 누르세요.` : ""),
+    { title: fails.length || bad.length ? "일부 실패" : "저장 완료", yes:"확인" });
+  /* 성공한 줄은 지운다 — 실패한 줄만 남겨서 고치게 */
+  okRows.forEach(r=>r.tr.remove());
+  const tb_ = $("bkTbl").querySelector("tbody"); [...tb_.rows].forEach((r,i)=>r.cells[0].textContent = i+1);
+  if (!tb_.rows.length) closeBulk();
+}
+$("bulk").addEventListener("keydown", e=>{ if (e.key === "Escape") closeBulk(); });
 
 /* ══════════════════════════════════════════════════════════════
    재고 세기 — 부자재·라벨 / CFE 완제품을 화면에서 바로 적는다 (엑셀 없이)
@@ -15478,7 +15839,7 @@ async function saveCloseRec(d, rec){
   Object.keys(L).sort().slice(0, -60).forEach(k=>delete L[k]);       // 60일만 둔다
   SETTINGS[CLOSE_LOG_KEY] = L; renderClose();
   const r = await saveSetting(CLOSE_LOG_KEY, L);
-  if (r && r.ok === false) toast("저장 실패 — 서버 연결을 확인하세요");
+  if (r && r.ok === false) toast("마감 기록이 이 기기에만 남았습니다 — " + (r.message || "서버 연결 확인") + " (039 SQL 필요)");
 }
 function closeItemText(it){ return it.t || CLOSE_AUTO[it.auto]?.t || ""; }
 function renderClose(){
