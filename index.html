@@ -1088,6 +1088,7 @@
     <button class="btn" id="reloadBtn" onclick="reloadDB()">새로고침</button>
     <span class="st" id="stDb"></span>
     <span class="st" id="stLive" style="display:none"></span>
+    <button class="favbtn" onclick="openFind()" title="조회 — 품목·배치·LOT·작업자로 찾기">🔍</button>
     <button class="favbtn" id="bellBtn" onclick="toggleBell()" title="알림" style="position:relative">🔔<span id="bellN" class="bellN" style="display:none">0</span></button>
     <button class="favbtn" id="favBtn" onclick="toggleFav()" title="이 화면을 즐겨찾기에 넣기 / 빼기">☆</button>
     <div class="avatar" id="avatar" onclick="toggleAcct()" title="계정 메뉴">—</div>
@@ -1122,6 +1123,7 @@
     <button data-s="req" data-r="admin"><span class="ico">✉</span><span class="lb">요청서</span></button>
     <button data-s="stock" data-r="admin"><span class="ico">▣</span><span class="lb">재고확인</span></button>
     <button data-s="trace" data-r="admin,qc"><span class="ico">⌕</span><span class="lb">이력추적</span></button>
+    <button data-s="find" data-r="admin,lead,qc"><span class="ico">☰</span><span class="lb">조회</span></button>
     <div class="grp" data-r="admin"></div>
     <button data-s="loss" data-r="admin"><span class="ico">▽</span><span class="lb">로스관리</span></button>
     <button data-s="capa" data-r="admin,lead"><span class="ico">◔</span><span class="lb">생산분석</span></button>
@@ -1315,6 +1317,27 @@
 </section>
 
 <!-- ══════ 문의 센터 — 오류·요청·질문을 적어 두면 관리자가 보고 고친다 ══════ -->
+<!-- ══════ 조회 — 기간 + 검색어 + 조건 → 결과 → 상세이력 (11) ══════ -->
+<section class="screen" id="s-find">
+  <div class="cond" style="flex-wrap:wrap;gap:6px">
+    <label>기간 <input type="date" id="fdFrom"> ~ <input type="date" id="fdTo"></label>
+    <span id="fdQuick"></span>
+    <input type="text" id="fdQ" placeholder="검색어 — 품목·일련번호·배치·LOT·작업자·사유 아무거나" style="width:300px" onkeydown="if(event.key==='Enter')renderFind()">
+    <button class="btn primary" onclick="renderFind()">조회</button>
+    <button class="btn" onclick="fdReset()">조건 초기화</button>
+    <span style="margin-left:auto"></span>
+    <button class="btn" onclick="csvFind()">엑셀 다운로드</button>
+  </div>
+  <div class="cond" id="fdFilters" style="flex-wrap:wrap;gap:6px;border-top:0"></div>
+  <div class="subtabs" id="fdTabs"></div>
+  <div class="body">
+    <h2 class="page">조회<small id="asof-find"></small></h2>
+    <div class="guide"><b>날짜를 몰라도 찾습니다.</b> 기간 + 검색어 + 아래 조건을 같이 걸면 전부 만족하는 것만 나옵니다 (빈 조건은 무시) · 위 탭으로 생산 · 검수/반려 · 출고 · 원두 배치 · 부자재 · 재고조정 · 로스 · 부적합 · 작업자 · 설비를 바꿔 봅니다 · 줄을 누르면 그 건의 <b>이력추적</b>(계획→지시→시작→중단→완료→검수→반려→조치→출고)으로 갑니다 · 조회된 것은 아래에 바로 집계됩니다.</div>
+    <div class="cards" id="fdCards"></div>
+    <div class="panel"><div class="panel-h" id="fdTitle">결과</div><div class="panel-b"><table id="fdTbl"></table></div></div>
+  </div>
+</section>
+
 <!-- ══════ 생산분석 — 생산시간 · CAPA · 회고 (046) ══════ -->
 <section class="screen" id="s-capa">
   <div class="cond">
@@ -6507,6 +6530,7 @@ renderFavs();
 
 /* ══ 업데이트 내역 — 어디에 뭘 바꿨는지 (최근 것이 위) ══ */
 const CHANGELOG = [
+  ["2026-10-28", "조회 (새 화면 · 상단 🔍)", "기간(오늘·어제·최근 7일·이번 주·지난주·이번 달·지난달·올해·직접) + 검색어 + 조건(품목·규격·배치·LOT·설비·작업자·상태·검수자·반려 사유·처리상태·자재 종류·구분·시간대)을 같이 걸어 생산 · 검수/반려 · 출고 · 원두 배치 · 부자재 · 재고조정 · 로스 · 부적합 · 작업자 · 설비 기록을 찾고 바로 집계(건수·수량·중량·시간·EA/h·kg/h·로스·부적합·반려) · 줄을 누르면 이력추적 · 엑셀"],
   ["2026-10-28", "현장 작업 › 일시정지 · 참여 (046 SQL)", "[⏸ 일시정지]/[▶ 재개] (사유: 설비 이상·품목 변경·사이즈 변경·원두/부자재/검수 대기·작업자 이동·휴게·청소·기타) — 중단시간은 생산시간에서 뺌 · [참여]/[빠짐]으로 작업자별 투입시간 · 카드에 생산 경과시간 표시 · 생산실적에 실제 생산시간"],
   ["2026-10-28", "생산분석 (새 화면)", "기간(일·주·월·연·지정)별 총 생산수량·중량·실제 생산시간·중단·시간당 EA/kg·투입 인시·인시당 · 중량별/설비별/품목별 CAPA · 시간대별 생산 · 작업자별 투입시간 · 중단 사유별 · 건별 표 · 월간 회고(전월 대비·계획 대비·품질·운영) · 연간 월별 비교 · 최근 90일 CAPA 로 예상 생산시간·인원 (오늘 계획도 자동)"],
   ["2026-10-28", "출고 › [반려] (045 SQL)", "출고 대기에서 수량·품목·배치/LOT·포장·라벨 문제가 보이면 반려 — 수량(일부/전체)·사유·일시·처리자 기록 · 현장 반려 칸에 \"출고 반려\"로 올라가 조치 → 재검수 → 출고 · 나머지는 출고 대기에 남음"],
@@ -6777,7 +6801,7 @@ function renderOne(s){
   ({ dash:renderDash, plan:renderPlan, roast:renderRoast, req:renderReq, log:renderLog,
      stock:renderStock, pqc:renderPqc, cal:renderCal, loss:renderLoss, base:renderBase,
      work:renderWork, qc:renderQc, ship:renderShip, order:renderOrder, trace:renderTrace,
-     rw:renderRw, mt:renderMt, close:renderClose, count:renderCount, help:renderHelp, capa:renderCapa })[s]?.();
+     rw:renderRw, mt:renderMt, close:renderClose, count:renderCount, help:renderHelp, capa:renderCapa, find:renderFind })[s]?.();
 }
 /* ★ 기준 순서 — 품목은 CFE 코드 번호, 원두는 MMS 코드 번호, 부자재는 구분→코드→이름 순.
      표·카드·계획·집계·여유분·재고 세기 전부 이 순서를 따른다 (머리글 정렬을 누르면 그게 우선) */
@@ -9613,7 +9637,10 @@ function renderLots(){
     rows.length ? `<td colspan="4" class="c">${rows.filter(r=>!r.none).length}개 LOT · 자재 ${mats.length}종</td><td>${fmt(rows.reduce((s,r)=>s+(r.l?r.l.qty:0),0))}</td><td>${fmt(rows.reduce((s,r)=>s+(r.l?r.l.used:0),0))}</td><td><b>${fmt(rows.reduce((s,r)=>s+(r.l?r.l.left:0),0))}</b></td><td colspan="3"></td>` : null);
 }
 /* 수불의 ref 는 실적 id 이거나 일련번호다 — 둘 다 찾아 본다 */
-function lotRefLog(m){ if (!m || !m.ref) return null; const r = String(m.ref); return DB.logs.find(x=>x.id===r) || DB.logs.find(x=>x.serial===r && logLive(x)) || null; }
+function lotRefLog(m){ if (!m || !m.ref) return null; const r = String(m.ref); const byId = DB.logs.find(x=>x.id===r); if (byId) return byId;
+  /* 일련번호는 원두마다 겹친다(2801 = 그 원두의 28일 1번) — 수불 메모에 적힌 품목명으로 가려낸다 */
+  const c = DB.logs.filter(x=>x.serial===r && logLive(x)); if (!c.length) return null;
+  const note = String(m.note||""); return c.find(x=>x.product_name && note.includes(x.product_name)) || c.find(x=>{ const M = matById(m.material_id||m.label_id); const p = prodById(x.product_id); return M && p && (bagMatOf(p)?.id===M.id || labelOf(p)?.id===M.id || p.label_id===M.id); }) || c[0]; }
 /* 그 LOT 가 쓰인 생산 — 수불의 ref(실적 id)로 일련번호·품목을 찾는다 */
 function lotHistory(mid, i){
   const M = matById(mid); if (!M) return;
@@ -13400,7 +13427,7 @@ function rtBadge(){
    · 이제 지금 보고 있는 화면만 바로 그리고, 나머지는 쉬는 틈에 하나씩 그린다
    · 지금 화면에서 숫자를 치고 있을 때만 손을 뗄 때까지 기다린다 */
 const SCREENS = ["dash","plan","roast","req","log","stock","pqc","cal","loss","base",
-                 "work","qc","ship","order","trace","rw","mt","capa"];
+                 "work","qc","ship","order","trace","rw","mt","capa","find"];
 const curScreen = () => (document.querySelector(".screen.on")?.id || "s-dash").replace(/^s-/, "");
 const idle = f => (window.requestIdleCallback ? requestIdleCallback(f, { timeout:600 }) : setTimeout(f, 30));
 let RT_REST = null;
@@ -16111,6 +16138,157 @@ function renderTrace(){
       </div>
     </div>`;
   }).join("");
+}
+
+/* ══════════════════════════════════════════════════════════════
+   조회 — 기간 + 검색어 + 조건 → 결과 → 상세이력 (11)
+   모든 기록을 같은 모양으로 펴서(날짜·품목·규격·배치·LOT·설비·작업자·상태·검수자·사유·처리·자재…) 한 조건으로 거른다
+   ══════════════════════════════════════════════════════════════ */
+const FD_TABS = [["prod","생산"],["qc","검수·반려"],["ship","출고"],["bean","원두 배치"],["mat","부자재"],["adj","재고조정"],["loss","로스"],["ng","부적합"],["worker","작업자"],["mach","설비"]];
+let fdTab = "prod"; const FD = { product:"", spec:"", batch:"", lot:"", machine:"", worker:"", status:"", qcby:"", reason:"", handling:"", matkind:"", movekind:"", hour:"" };
+function fdQuickSet(k){
+  const d = new Date(), iso = x => x.toISOString().slice(0,10); let f, t = iso(d);
+  const dow = d.getDay();
+  if (k === "today") f = t;
+  else if (k === "yday") { const y = new Date(d); y.setDate(d.getDate()-1); f = t = iso(y); }
+  else if (k === "7d") { const y = new Date(d); y.setDate(d.getDate()-6); f = iso(y); }
+  else if (k === "week") { const w = new Date(d); w.setDate(d.getDate()-dow); f = iso(w); }
+  else if (k === "lweek") { const w = new Date(d); w.setDate(d.getDate()-dow-7); f = iso(w); const e = new Date(w); e.setDate(w.getDate()+6); t = iso(e); }
+  else if (k === "month") f = iso(new Date(d.getFullYear(), d.getMonth(), 1));
+  else if (k === "lmonth") { f = iso(new Date(d.getFullYear(), d.getMonth()-1, 1)); t = iso(new Date(d.getFullYear(), d.getMonth(), 0)); }
+  else if (k === "year") f = `${d.getFullYear()}-01-01`;
+  else if (k === "all") { f = ""; t = ""; }
+  $("fdFrom").value = f; $("fdTo").value = t; renderFind();
+}
+function fdReset(){ $("fdFrom").value = ""; $("fdTo").value = ""; $("fdQ").value = ""; Object.keys(FD).forEach(k=>FD[k]=""); renderFind(); }
+function openFind(q){ if (q != null) $("fdQ").value = q; go("find"); setTimeout(()=>$("fdQ")?.focus(), 50); }
+function setFdTab(t){ fdTab = t; renderFind(); }
+const fdBatchOf = o => batchParts(o?.batch_plan).map(x=>x.text.split(" ")[0]).join(" ");
+/* 각 기록을 같은 모양으로 */
+function fdRows(){
+  const out = [];
+  const push = r => { r.text = [r.date, r.product, r.spec, r.batch, r.lot, r.machine, r.worker, r.status, r.qcby, r.reason, r.handling, r.mat, r.matkind, r.movekind, r.serial, r.note, r.extra].filter(Boolean).join(" ").toLowerCase(); out.push(r); };
+  if (fdTab === "prod" || fdTab === "worker" || fdTab === "mach" || fdTab === "loss") {
+    DB.logs.filter(l=>logLive(l)).forEach(l=>{ const c = capaRow(l); if (!c) return; const o = c.o;
+      const rj = o ? DB.qc_rejections.filter(x=>x.order_id===o.id || DB.orders.some(y=>y.split_from===o.id && y.id===x.order_id)) : [];
+      push({ tab:"prod", date:l.work_date, at:o?.done_at||l.created_at, product:c.p.name, spec:c.specT, specN:c.spec, batch:l.batch_codes||fdBatchOf(o), lot:l.lot||o?.lot||"", machine:c.machine, worker:[l.worker, ...(c.workers.map(w=>w.name))].filter(Boolean).join(", "),
+        status:o?.status||"실적", serial:l.serial, qty:c.qty, kg:c.kg, t:c.t, workers:c.workers, manSec:c.manSec, loss:c.loss, lossFlag:l.loss_flag, lossReason:l.loss_reason, inKg:Number(l.input_kg||0), ng:Number(o?.qty_ng||0), rej:rj.reduce((s,x)=>s+Number(x.qty_affected||0),0),
+        qcby:o?.qc_by||"", reason:l.loss_reason||"", handling:"", note:o?.note||"", started:o?.first_started_at||o?.started_at, done:o?.done_at, q: l.serial||l.lot, pid:c.p.id }); });
+  }
+  if (fdTab === "qc") {
+    DB.orders.filter(o=>o.qc_at || DB.qc_rejections.some(r=>r.order_id===o.id)).forEach(o=>{ const p = prodById(o.product_id); const rjs = DB.qc_rejections.filter(r=>r.order_id===o.id);
+      if (!rjs.length) push({ tab:"qc", date:String(o.qc_at||"").slice(0,10), at:o.qc_at, product:p?.name||o.product_name, spec:specLabel(Number(p?.spec_g)||0), batch:fdBatchOf(o), lot:lotOf(o), machine:o.machine, worker:o.done_by, status:"정상", qcby:o.qc_by, reason:"", handling:"", qty:Number(o.qty_done||0), serial:o.serial, note:"", q:o.serial||o.lot, oid:o.id, extra:"검수 완료" });
+      rjs.forEach(r=>push({ tab:"qc", date:String(r.created_at||"").slice(0,10), at:r.created_at, product:p?.name||o.product_name, spec:specLabel(Number(p?.spec_g)||0), batch:fdBatchOf(o), lot:lotOf(o), machine:o.machine, worker:o.done_by, status: r.stage==="ship" ? "출고 반려" : "반려", qcby:r.created_by_name, reason:r.reason_note||"", handling: r.resolved ? (r.handling==="resubmitted" ? "재검수" : r.handling==="scrap" ? "폐기" : r.handling==="bean" ? "원두로 합침" : r.handling||"처리") : "조치 필요", qty:Number(r.qty_affected||0), serial:o.serial, note:r.handling_note||"", q:o.serial||o.lot, oid:o.id, extra:`${r.resolved?"재검수 "+(o.status==="검수완료"||o.status==="출고완료"?"완료":o.status==="생산완료"?"대기":"안 함"):""}${r.merged_batch?" 취합 "+r.merged_batch:""}` })); });
+  }
+  if (fdTab === "ship") {
+    DB.orders.filter(o=>o.status==="출고완료" || o.status==="검수완료").forEach(o=>{ const p = prodById(o.product_id); const sr = DB.qc_rejections.some(r=>r.stage==="ship" && (r.order_id===o.id || DB.orders.some(y=>y.split_from===o.id && y.id===r.order_id)));
+      push({ tab:"ship", date:String(o.ship_at||o.qc_at||"").slice(0,10), at:o.ship_at||o.qc_at, product:p?.name||o.product_name, spec:specLabel(Number(p?.spec_g)||0), batch:fdBatchOf(o), lot:lotOf(o), machine:o.machine, worker:o.ship_by||"", status:o.status==="출고완료"?"출고완료":"출고 대기", qcby:o.qc_by, reason:"", handling: sr ? "출고 반려 있음" : "", qty:Number(o.qty_done||0), serial:o.serial, note:o.channel||"", q:o.serial||o.lot, oid:o.id, extra:sr?"출고 반려":"" }); });
+  }
+  if (fdTab === "bean") {
+    DB.stock_moves.filter(m=>m.kind==="원두").forEach(m=>{ const b = DB.mms.find(x=>x.id===m.mms_id); const lg = m.ref_type==="log" ? DB.logs.find(l=>l.id===m.ref_id) : null;
+      push({ tab:"bean", date:m.move_date, at:m.at||m.created_at, product:lg?.product_name||"", spec:"", batch: b ? batchLabel(b) : (m.bean||""), lot:"", machine:lg?.machine||"", worker:m.user_name||m.user||"", status:m.reason, movekind:m.reason, qty:Number(m.qty||0), unit:"kg", serial:lg?.serial||"", note:m.note||"", mat:m.bean||b?.bean||"", q: lg?.serial || (b ? batchLabel(b) : m.bean) }); });
+    if (!DB.stock_moves.some(m=>m.kind==="원두")) DB.consumptions.forEach(c=>{ const lg = DB.logs.find(l=>l.id===c.log_id); push({ tab:"bean", date:c.work_date, at:c.created_at, product:c.product_name, batch:c.batch_code, worker:lg?.worker||"", status:"생산", movekind:"생산", qty:-Number(c.used_kg||0), unit:"kg", serial:lg?.serial||"", mat:c.bean, q:lg?.serial||c.batch_code }); });
+  }
+  if (fdTab === "mat") {
+    DB.material_moves.forEach(m=>{ const M = matById(m.material_id||m.label_id); const lg = lotRefLog(m);
+      push({ tab:"mat", date:m.date, at:m.at, product:lg?.product_name||"", spec:M?.spec||"", batch:"", lot:(()=>{ if (!M) return ""; const L = lotLedger(M).find(l=>l.moves.some(x=>x.id===m.id)); return L ? L.lot : (String(m.note||"").match(/LOT (\S+)/)||[])[1]||""; })(), machine:lg?.machine||"", worker:m.user||m.user_name||"", status:m.kind, movekind:m.kind, mat:M?.name||m.label_name||"", matkind:M?.kind||"", qty:Number(m.qty||0), unit:M?unitOf(M):"", serial:lg?.serial||(typeof m.ref==="string"&&m.ref.length<12?m.ref:""), note:m.note||"", q: lg?.serial || "" }); });
+  }
+  if (fdTab === "adj") {
+    DB.stock_moves.filter(m=>/재고확인|직접수정|조정|실측|이행/.test(String(m.reason||""))).forEach(m=>{ const p = m.product_id ? prodById(m.product_id) : null; const M = m.material_id ? matById(m.material_id) : null; const b = m.mms_id ? DB.mms.find(x=>x.id===m.mms_id) : null;
+      push({ tab:"adj", date:m.move_date, at:m.at||m.created_at, product:p?.name||"", mat:M?.name||m.bean||"", matkind:M?.kind||(m.kind||""), batch:b?batchLabel(b):"", movekind:m.reason, status:m.reason, qty:Number(m.qty||0), unit:m.unit||"", worker:m.user_name||m.user||"", note:m.note||"", q:p?.name||M?.name||m.bean||"" }); });
+    DB.adjust.forEach(a=>push({ tab:"adj", date:a.adj_date, at:a.created_at, mat:a.bean||"", batch:a.batch_code||"", movekind:a.kind, status:a.kind, qty:Number(a.delta||0), unit:"kg", worker:a.user||"", note:a.note||"", q:a.batch_code||a.bean }));
+  }
+  if (fdTab === "ng") {
+    PQCL().forEach(x=>push({ tab:"ng", date:x.date, at:x.created_at, product:x.product_name||prodById(x.product_id)?.name||"", spec:specLabel(Number(prodById(x.product_id)?.spec_g)||0), machine:x.machine||"", worker:x.worker||"", status:x.type, reason:x.type, handling:x.action||"", qty:Number(x.qty||0), note:x.note||"", q:(String(x.note||"").match(/WO-[\w-]+/)||[])[0]||x.product_name }));
+  }
+  return out;
+}
+function fdHourOf(r){ const t = r.at || r.done; return t ? Number(String(new Date(t).getHours())) : null; }
+function fdFilter(rows){
+  const f = $("fdFrom").value, t = $("fdTo").value, q = ($("fdQ").value||"").trim().toLowerCase();
+  const has = (v, k) => !k || String(v||"").toLowerCase().includes(k.toLowerCase());
+  return rows.filter(r=>{
+    if (f && (r.date||"") < f) return false; if (t && (r.date||"") > t) return false;
+    if (q && !q.split(/\s+/).every(w=>r.text.includes(w))) return false;
+    if (FD.product && !has(r.product, FD.product) && !has(r.mat, FD.product)) return false;
+    if (FD.spec && r.spec !== FD.spec) return false;
+    if (FD.batch && !has(r.batch, FD.batch)) return false;
+    if (FD.lot && !has(r.lot, FD.lot)) return false;
+    if (FD.machine && !has(r.machine, FD.machine)) return false;
+    if (FD.worker && !has(r.worker, FD.worker) && !has(r.qcby, FD.worker)) return false;
+    if (FD.status && r.status !== FD.status) return false;
+    if (FD.qcby && !has(r.qcby, FD.qcby)) return false;
+    if (FD.reason && !has(r.reason, FD.reason)) return false;
+    if (FD.handling && !has(r.handling, FD.handling)) return false;
+    if (FD.matkind && r.matkind !== FD.matkind) return false;
+    if (FD.movekind && r.movekind !== FD.movekind) return false;
+    if (FD.hour !== "" && FD.hour != null && fdHourOf(r) !== Number(FD.hour)) return false;
+    return true;
+  });
+}
+function fdSel(k, label, opts){ return `<label style="font-size:12.5px">${label} <select onchange="FD.${k}=this.value;renderFind()" style="max-width:150px"><option value="">전체</option>${opts.map(o=>`<option ${FD[k]===o?"selected":""}>${o}</option>`).join("")}</select></label>`; }
+function fdTxt(k, label, ph){ return `<label style="font-size:12.5px">${label} <input type="text" value="${FD[k]||""}" placeholder="${ph||""}" style="width:110px" onchange="FD.${k}=this.value;renderFind()" onkeydown="if(event.key==='Enter'){FD.${k}=this.value;renderFind()}"></label>`; }
+function renderFind(){
+  if (!$("fdTbl")) return;
+  $("fdTabs").innerHTML = FD_TABS.map(([v,t])=>`<button class="subtab ${fdTab===v?"on":""}" onclick="setFdTab('${v}')">${t}</button>`).join("");
+  $("fdQuick").innerHTML = [["today","오늘"],["yday","어제"],["7d","최근 7일"],["week","이번 주"],["lweek","지난주"],["month","이번 달"],["lmonth","지난달"],["year","올해"],["all","전체"]].map(([k,t])=>`<button class="btn" style="height:28px;padding:0 8px;font-size:12px" onclick="fdQuickSet('${k}')">${t}</button>`).join(" ");
+  const all = fdRows(); const uniq = k => [...new Set(all.map(r=>r[k]).filter(Boolean))].sort(natCmp);
+  const specs = [...new Set(DB.products.map(p=>specLabel(Number(p.spec_g)||0)))].sort(natCmp);
+  const F = [];
+  F.push(fdTxt("product", "품목/자재", "에스쇼콜라"));
+  if (["prod","qc","ship","loss","ng","worker","mach"].includes(fdTab)) F.push(fdSel("spec", "규격", specs));
+  if (!["ng","mat"].includes(fdTab)) F.push(fdTxt("batch", "배치", "26102801"));
+  if (["prod","qc","ship","mat","loss"].includes(fdTab)) F.push(fdTxt("lot", "LOT", ""));
+  if (!["mat","adj","bean"].includes(fdTab)) F.push(fdSel("machine", "설비", DB.machines.map(m=>m.name)));
+  F.push(fdSel("worker", "작업자", [...new Set([...DB.workers.map(w=>w.name), ...uniq("worker").flatMap(x=>String(x).split(", "))])].filter(Boolean).sort(natCmp)));
+  F.push(fdSel("status", fdTab==="prod"?"생산상태":fdTab==="qc"?"정상/반려":fdTab==="ship"?"출고상태":"구분", uniq("status")));
+  if (fdTab === "qc") { F.push(fdSel("qcby", "검수자", uniq("qcby"))); F.push(fdTxt("reason", "반려 사유", "")); F.push(fdSel("handling", "처리상태", uniq("handling"))); }
+  if (fdTab === "loss") { F.push(fdSel("handling", "판정", ["정상","이상 (초과)","이상 (미달)","미확정 (다음 생산에 합산)"])); F.push(fdTxt("reason", "로스 사유", "")); }
+  if (fdTab === "mat") { F.push(fdSel("matkind", "자재 종류", MAT_KINDS)); F.push(fdSel("movekind", "입고/사용/조정", uniq("movekind"))); }
+  if (fdTab === "bean" || fdTab === "adj") F.push(fdSel("movekind", "구분", uniq("movekind")));
+  if (["prod","worker","mach"].includes(fdTab)) F.push(`<label style="font-size:12.5px">시간대 <select onchange="FD.hour=this.value;renderFind()"><option value="">전체</option>${Array.from({length:24},(_,i)=>`<option value="${i}" ${String(FD.hour)===String(i)?"selected":""}>${String(i).padStart(2,"0")}시</option>`).join("")}</select></label>`);
+  $("fdFilters").innerHTML = F.join(" ");
+  let rows = fdFilter(all);
+  if (fdTab === "loss") rows = rows.filter(r=>r.lossFlag || r.inKg).filter(r=>!FD.handling || LOSS_FLAG_T[r.lossFlag]===FD.handling);
+  rows.sort((a,b)=>String(b.at||b.date).localeCompare(String(a.at||a.date)));
+  /* 집계 */
+  const n = rows.length, qty = rows.reduce((s,r)=>s+Number(r.qty||0),0);
+  let cards = [["건수", fmt(n), ""]];
+  if (["prod","worker","mach"].includes(fdTab)) { const S = capaSum(rows.map(r=>({ qty:r.qty, kg:r.kg, t:r.t, manSec:r.manSec, workers:r.workers }))); const lf = rows.filter(r=>r.lossFlag && r.lossFlag!=="open"); const lk = lf.reduce((s,r)=>s+r.loss,0), li = lf.reduce((s,r)=>s+r.inKg,0);
+    cards = [["생산 건수", fmt(n), ""], ["총 생산수량", fmt(S.qty), "EA"], ["총 생산중량", fmt(S.kg), "kg"], ["총 생산시간", fmtDur(S.active), `${S.nT}건 측정`], ["평균 EA/h", S.qph!=null?fmt(S.qph):"—", ""], ["평균 kg/h", S.kgph!=null?fmt(S.kgph):"—", ""], ["투입 인시", fmtDur(S.man), ""], ["총 로스", `${fmt(Math.round(lk*100)/100)} kg`, li?`평균 ${pct(lk,li)}`:""], ["부적합 수량", fmt(rows.reduce((s,r)=>s+r.ng,0)), "EA"], ["반려 수량", fmt(rows.reduce((s,r)=>s+r.rej,0)), "EA"]]; }
+  else if (fdTab === "qc") cards = [["건수", fmt(n), ""], ["정상", fmt(rows.filter(r=>r.status==="정상").length), "건"], ["반려", fmt(rows.filter(r=>r.status!=="정상").length), `건 · ${fmt(rows.filter(r=>r.status!=="정상").reduce((s,r)=>s+r.qty,0))}EA`], ["조치 필요", fmt(rows.filter(r=>r.handling==="조치 필요").length), "건"]];
+  else if (fdTab === "loss") { const lf = rows.filter(r=>r.lossFlag && r.lossFlag!=="open"); const lk = lf.reduce((s,r)=>s+r.loss,0), li = lf.reduce((s,r)=>s+r.inKg,0); cards = [["건수", fmt(n), ""], ["총 로스", `${fmt(Math.round(lk*100)/100)} kg`, ""], ["평균 로스율", li?pct(lk,li):"—", ""], ["이상", fmt(rows.filter(r=>r.lossFlag==="high"||r.lossFlag==="low").length), "건"]]; }
+  else cards = [["건수", fmt(n), ""], ["수량 합계", fmt(Math.round(qty*100)/100), rows[0]?.unit||"EA"], ["입고(+)", fmt(Math.round(rows.filter(r=>r.qty>0).reduce((s,r)=>s+r.qty,0)*100)/100), ""], ["사용·감소(−)", fmt(Math.round(rows.filter(r=>r.qty<0).reduce((s,r)=>s-r.qty,0)*100)/100), ""]];
+  $("fdCards").innerHTML = cards.map(([a,b,c])=>`<div class="card"><div class="lb">${a}</div><div class="vl">${b} <small>${c}</small></div></div>`).join("");
+  $("fdTitle").innerHTML = `${FD_TABS.find(x=>x[0]===fdTab)[1]} ${fmt(n)}건 <span class="r hint">줄을 누르면 이력추적</span>`;
+  const click = r => r.q ? `style="cursor:pointer" onclick="openTraceQ('${String(r.q).replace(/'/g,"")}')"` : "";
+  const td = (v, cls="") => `<td class="${cls}">${v==null||v===""?"—":v}</td>`;
+  if (["prod","worker","mach"].includes(fdTab)) {
+    if (fdTab === "prod") tbl("fdTbl", ["일자","완료 일시","일련번호","품목","규격","배치","LOT","설비","작업자","상태","수량","중량(kg)","생산시간","EA/h","로스","부적합","반려"],
+      rows.map(r=>`<tr ${click(r)}>${td(r.date,"c")}${td(dtFull(r.done),"c")}<td class="l"><b>${r.serial||"—"}</b></td>${td(r.product,"l")}${td(r.spec,"c")}${td(r.batch,"l")}${td(r.lot,"c")}${td(r.machine,"c")}${td(r.worker,"l")}<td class="c">${r.status}</td>${td(fmt(r.qty))}${td(fmt(r.kg))}${td(r.t?fmtDur(r.t.active):"",'c')}${td(r.t&&r.t.active>0?fmt(Math.round(r.qty/(r.t.active/3600))):"")}<td class="${r.lossFlag==="high"||r.lossFlag==="low"?"bad":""}">${r.lossFlag?`${fmt(Math.round(r.loss*100)/100)} ${LOSS_FLAG_T[r.lossFlag]||""}`:"—"}</td>${td(r.ng||"")}${td(r.rej||"")}</tr>`));
+    else { const key = fdTab === "worker" ? "worker" : "machine"; const g = {}; rows.forEach(r=>{ (fdTab==="worker" ? (r.workers.length ? r.workers.map(w=>w.name) : [r.worker||"—"]) : [r.machine||"미기록"]).forEach(k=>{ (g[k] = g[k]||[]).push(r); }); });
+      tbl("fdTbl", [fdTab==="worker"?"작업자":"설비","생산 건수","수량","중량(kg)","생산시간","EA/h","kg/h","투입 인시","로스","부적합","반려","최근 생산"], Object.entries(g).sort((a,b)=>b[1].length-a[1].length).map(([k,v])=>{ const S = capaSum(v.map(r=>({ qty:r.qty, kg:r.kg, t:r.t, manSec: fdTab==="worker" ? (r.workers.find(w=>w.name===k)?.sec||0) : r.manSec, workers:r.workers })));
+        return `<tr><td class="l"><b>${k}</b></td><td>${v.length}</td><td>${fmt(S.qty)}</td><td>${fmt(S.kg)}</td><td>${fmtDur(S.active)}</td><td>${S.qph!=null?fmt(S.qph):"—"}</td><td>${S.kgph!=null?fmt(S.kgph):"—"}</td><td>${fmtDur(S.man)}</td><td>${fmt(Math.round(v.reduce((s,r)=>s+(r.lossFlag&&r.lossFlag!=="open"?r.loss:0),0)*100)/100)}</td><td>${fmt(v.reduce((s,r)=>s+r.ng,0))}</td><td>${fmt(v.reduce((s,r)=>s+r.rej,0))}</td><td class="c">${v[0].date}</td></tr>`; })); }
+  } else if (fdTab === "qc") tbl("fdTbl", ["일시","품목","규격","일련번호","배치","LOT","검수자","정상/반려","수량","반려 사유","처리상태","조치 내용","재검수"],
+      rows.map(r=>`<tr ${click(r)}>${td(dtFull(r.at),"c")}${td(r.product,"l")}${td(r.spec,"c")}<td class="l"><b>${r.serial||"—"}</b></td>${td(r.batch,"l")}${td(r.lot,"c")}${td(r.qcby,"c")}<td class="c"><span class="tag ${r.status==="정상"?"ok":"bad"}">${r.status}</span></td>${td(fmt(r.qty))}${td(r.reason,"l")}<td class="c">${r.handling?`<span class="tag ${r.handling==="조치 필요"?"bad":"warn"}">${r.handling}</span>`:"—"}</td>${td(r.note,"l")}${td(r.extra,"c")}</tr>`));
+  else if (fdTab === "ship") tbl("fdTbl", ["출고 일시","품목","규격","일련번호","배치","LOT","출고처","출고상태","수량","검수자","출고자","출고 반려"],
+      rows.map(r=>`<tr ${click(r)}>${td(dtFull(r.at),"c")}${td(r.product,"l")}${td(r.spec,"c")}<td class="l"><b>${r.serial||"—"}</b></td>${td(r.batch,"l")}${td(r.lot,"c")}${td(r.note,"c")}<td class="c"><span class="tag ${r.status==="출고완료"?"ok":"warn"}">${r.status}</span></td>${td(fmt(r.qty))}${td(r.qcby,"c")}${td(r.worker,"c")}${td(r.extra,"c")}</tr>`));
+  else if (fdTab === "bean") tbl("fdTbl", ["일시","원두","배치","구분","kg","관련 생산 (일련번호 · 품목)","설비","작업자","비고"],
+      rows.map(r=>`<tr ${click(r)}>${td(r.at?dtFull(r.at):r.date,"c")}${td(r.mat,"l")}<td class="l"><b>${r.batch||"—"}</b></td><td class="c"><span class="tag ${r.qty>0?"ok":"warn"}">${r.movekind}</span></td><td class="${r.qty<0?"bad":""}">${r.qty>0?"+":""}${fmt(r.qty)}</td>${td(r.serial?`<b>${r.serial}</b> · ${r.product}`:"","l")}${td(r.machine,"c")}${td(r.worker,"c")}${td(r.note,"l")}</tr>`));
+  else if (fdTab === "mat") tbl("fdTbl", ["일시","자재","종류","규격","구분","수량","LOT","관련 생산 (일련번호 · 품목)","작업자","비고"],
+      rows.map(r=>`<tr ${click(r)}>${td(r.at?dtFull(r.at):r.date,"c")}${td(r.mat,"l")}${td(r.matkind,"c")}${td(r.spec,"c")}<td class="c"><span class="tag ${r.qty>0?"ok":"warn"}">${r.movekind}</span></td><td class="${r.qty<0?"bad":""}">${r.qty>0?"+":""}${fmt(r.qty)}${r.unit}</td>${td(r.lot,"c")}${td(r.serial?`<b>${r.serial}</b> · ${r.product}`:"","l")}${td(r.worker,"c")}${td(r.note,"l")}</tr>`));
+  else if (fdTab === "adj") tbl("fdTbl", ["일시","대상","종류","배치","구분","변동","작업자","비고"],
+      rows.map(r=>`<tr ${click(r)}>${td(r.at?dtFull(r.at):r.date,"c")}${td(r.product||r.mat,"l")}${td(r.matkind,"c")}${td(r.batch,"l")}<td class="c"><span class="tag">${r.movekind}</span></td><td class="${r.qty<0?"bad":"ok"}">${r.qty>0?"+":""}${fmt(r.qty)}${r.unit||""}</td>${td(r.worker,"c")}${td(r.note,"l")}</tr>`));
+  else if (fdTab === "loss") tbl("fdTbl", ["완료 일시","일련번호","품목","규격","설비","작업자","배치에서 뺀(kg)","정상 생산(kg)","로스(kg)","로스율","판정","사유"],
+      rows.map(r=>`<tr ${click(r)}>${td(dtFull(r.done),"c")}<td class="l"><b>${r.serial||"—"}</b></td>${td(r.product,"l")}${td(r.spec,"c")}${td(r.machine,"c")}${td(r.worker,"l")}${td(fmt(r.inKg))}${td(fmt(r.kg))}<td class="${r.loss>.005?"bad":"ok"}">${fmt(Math.round(r.loss*100)/100)}</td>${td(r.inKg?pct(r.loss, r.inKg):"")}<td class="c">${r.lossFlag?`<span class="tag ${LOSS_FLAG_C[r.lossFlag]||""}">${LOSS_FLAG_T[r.lossFlag]}</span>`:"—"}</td>${td(r.lossReason,"l")}</tr>`));
+  else if (fdTab === "ng") tbl("fdTbl", ["일시","품목","규격","설비","유형","수량","조치","작업자","내용"],
+      rows.map(r=>`<tr ${click(r)}>${td(r.at?dtFull(r.at):r.date,"c")}${td(r.product,"l")}${td(r.spec,"c")}${td(r.machine,"c")}<td class="c"><span class="tag bad">${r.status}</span></td>${td(fmt(r.qty))}${td(r.handling,"c")}${td(r.worker,"c")}${td(r.note,"l")}</tr>`));
+}
+function openTraceQ(q){ go("trace"); $("trQ").value = q; renderTrace(); }
+function csvFind(){
+  const rows = $("fdTbl") ? [...document.querySelectorAll("#fdTbl thead th")].map(th=>th.innerText) : [];
+  const body = [...document.querySelectorAll("#fdTbl tbody tr")].map(tr=>[...tr.children].map(td=>td.innerText));
+  csv(`조회_${FD_TABS.find(x=>x[0]===fdTab)[1]}`, rows, body);
 }
 
 /* ══════════════════════════════════════════════════════════════
