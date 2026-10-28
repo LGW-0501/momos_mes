@@ -2005,7 +2005,16 @@
   </div>
   <div class="body">
     <h2 class="page">로스관리<small id="asof-loss"></small></h2>
+    <div class="guide"><b>생산 완료 때 적은 투입 · 남은 원두로 건별 로스를 확정합니다.</b> 남은 원두를 <b>다음 생산에 합산</b>하면 그 건은 미확정으로 두고, 이어진 생산이 끝날 때 <b>전체 투입 − 전체 정상 생산 − 최종 보관 잔량</b>으로 한 번에 확정합니다 · 로스율이 <b>기준 ± 허용 오차</b>를 벗어나면 <span class="tag bad">이상</span>으로 표시되고 작업자가 적은 사유가 같이 남습니다 · 기준은 아래에서 품목·설비별로 바꿀 수 있고, 쌓인 평균·편차를 보고 조정하세요.</div>
     <div class="cards" id="lossCards"></div>
+    <div class="panel"><div class="panel-h">기준 로스율 · 허용 오차 <span class="r hint">품목에 적은 값 › 설비 값 › 기본값 순서로 적용 · 비우면 다음 단계 값</span></div>
+      <div id="lossRule" style="padding:10px 18px"></div></div>
+    <div class="panel"><div class="panel-h">생산 건별 로스 <span class="r hint">이어진 생산(잔량 합산)은 한 묶음으로 · [로스] 로 다시 적을 수 있습니다</span></div>
+      <div class="panel-b"><table id="lossLogTbl"></table></div></div>
+    <div class="cols2">
+      <div class="panel"><div class="panel-h">품목별 평균 로스율 · 편차 <span class="r hint">확정된 건만</span></div><div class="panel-b"><table id="lossAvgP"></table></div></div>
+      <div class="panel"><div class="panel-h">설비별 평균 로스율 · 편차</div><div class="panel-b"><table id="lossAvgM"></table></div></div>
+    </div>
     <div class="panel"><div class="panel-h">일별 로스 추이</div>
       <div style="padding:10px;height:220px"><canvas id="chLoss"></canvas></div></div>
     <div class="panel"><div class="panel-h">일별 로스</div>
@@ -3425,13 +3434,65 @@ const stdKg = (p,ea) => (Number(ea)||0) * Number(p.std_g||0) / 1000;
 /* ★ 로스율 — 포장할 때 흘리고 남는 원두. 필요원두 = 표준투입 × (1 + 로스율%). 계획·배치 나누기·생산 차감에 전부 적용.
      기본값은 생산계획 상단, 품목별 값은 기준정보 › 품목 표 (공용 설정 loss_pct) */
 const LOSS_KEY = "loss_pct";
-const lossCfg = () => { const c = SETTINGS[LOSS_KEY]; return (c && typeof c === "object") ? { def:Number(c.def)||0, items:(c.items && typeof c.items==="object") ? c.items : {} } : { def:0, items:{} }; };
+/* 설정 모양: { def:기준%, tol:허용오차%p, items:{품목id:기준%}, tol_items:{품목id:오차}, machines:{설비명:{pct,tol}} } */
+const lossCfg = () => { const c = SETTINGS[LOSS_KEY]; const o = (c && typeof c === "object") ? c : {};
+  const obj = x => (x && typeof x === "object") ? x : {};
+  return { def:Number(o.def)||0, tol:(o.tol != null && o.tol !== "" && Number(o.tol) >= 0) ? Number(o.tol) : 0.5,
+           items:obj(o.items), tol_items:obj(o.tol_items), machines:obj(o.machines) }; };
 const lossPctOf = p => { const c = lossCfg(); const v = p && c.items[p.id]; return (v != null && v !== "" && Number(v) >= 0) ? Number(v) : c.def; };
+/* 판정 기준 — 품목에 적은 값 > 설비에 적은 값 > 기본 */
+function lossRuleOf(p, machine){
+  const c = lossCfg(); const m = machine ? c.machines[machine] : null;
+  const num = v => (v != null && v !== "" && Number(v) >= 0) ? Number(v) : null;
+  const pct = num(p && c.items[p.id]) ?? num(m && m.pct) ?? c.def;
+  const tol = num(p && c.tol_items[p.id]) ?? num(m && m.tol) ?? c.tol;
+  return { pct, tol, lo:Math.max(0, Math.round((pct - tol)*100)/100), hi:Math.round((pct + tol)*100)/100 };
+}
 const needKg = (p,ea) => Math.round(stdKg(p,ea) * (1 + lossPctOf(p)/100) * 1000) / 1000;
-function setLossDefault(v){ const c = lossCfg(); c.def = Math.max(0, Number(v)||0); SETTINGS[LOSS_KEY] = c; renderAll(); saveSetting(LOSS_KEY, c); toast(`기본 로스율 ${c.def}%`); }
-function setLossPct(pid, v){ const c = lossCfg(); const t = String(v).trim(); if (t === "") delete c.items[pid]; else c.items[pid] = Math.max(0, Number(t)||0); SETTINGS[LOSS_KEY] = c; keepFocus(renderAll); saveSetting(LOSS_KEY, c); }
+function saveLossCfg(c, msg){ SETTINGS[LOSS_KEY] = c; keepFocus(renderAll); saveSetting(LOSS_KEY, c).then(r=>{ if (r && r.ok === false) toast("로스 기준 저장 실패 — " + (r.message||"서버 연결 확인")); else if (msg) toast(msg); }); }
+function setLossDefault(v){ const c = lossCfg(); c.def = Math.max(0, Number(v)||0); saveLossCfg(c, `기본 로스율 ${c.def}%`); }
+function setLossTol(v){ const c = lossCfg(); c.tol = Math.max(0, Number(v)||0); saveLossCfg(c, `허용 오차 ±${c.tol}%p`); }
+function setLossPct(pid, v){ const c = lossCfg(); const t = String(v).trim(); if (t === "") delete c.items[pid]; else c.items[pid] = Math.max(0, Number(t)||0); saveLossCfg(c); }
+function setLossPctTol(pid, v){ const c = lossCfg(); const t = String(v).trim(); if (t === "") delete c.tol_items[pid]; else c.tol_items[pid] = Math.max(0, Number(t)||0); saveLossCfg(c); }
+function setLossMach(name, k, v){ const c = lossCfg(); const t = String(v).trim(); const m = { ...(c.machines[name]||{}) };
+  if (t === "") delete m[k]; else m[k] = Math.max(0, Number(t)||0);
+  if (Object.keys(m).length) c.machines[name] = m; else delete c.machines[name]; saveLossCfg(c); }
+/* ── 생산 건별 로스 ──
+   input_kg   = 배치에서 뺀 kg (잔량 보관분은 빼지 않음) · carried_kg = 이전 생산 잔량을 받아 합산한 kg
+   leftover_to: next(다음 생산에 합산 — 이 건의 로스는 미확정) · loss(이 건의 로스로) · keep(잔량 보관 — 배치 재고에 그대로)
+   한 건 로스 = input_kg − 정상 생산 kg (옛 기록은 input − 표준 − 잔량) */
 const lossOf = l => { const p=prodById(l.product_id);
+  if (l.leftover_to) return Number(l.input_kg||0) - (p?stdKg(p,l.qty_ea):0);
   return Number(l.input_kg||0) - (p?stdKg(p,l.qty_ea):0) - Number(l.leftover_kg||0); };
+/* 사슬 — 잔량을 이어받은 생산들을 처음부터 끝까지 */
+function lossChainOf(l){
+  const seen = new Set(); let cur = l; const back = [];
+  while (cur && cur.carried_from && !seen.has(cur.id)) { seen.add(cur.id); const prev = DB.logs.find(x=>x.id===cur.carried_from); if (!prev) break; back.unshift(prev); cur = prev; }
+  const fwd = []; cur = l; seen.clear();
+  while (cur && !seen.has(cur.id)) { seen.add(cur.id); const nx = DB.logs.find(x=>x.carried_from===cur.id); if (!nx) break; fwd.push(nx); cur = nx; }
+  return [...back, l, ...fwd];
+}
+/* 사슬 합계 — 투입 = 배치에서 뺀 kg 합 + 마지막 보관 잔량 · 로스 = 배치에서 뺀 kg 합 − 정상 생산 kg 합 */
+function lossChainSum(chain){
+  const last = chain[chain.length-1];
+  const inBatch = chain.reduce((s,x)=>s+Number(x.input_kg||0),0);
+  const out = chain.reduce((s,x)=>{ const p=prodById(x.product_id); return s+(p?stdKg(p,x.qty_ea):0); },0);
+  const keep = last && last.leftover_to==="keep" ? Number(last.leftover_kg||0) : 0;
+  const lossKg = Math.round((inBatch - out)*1000)/1000;
+  const totalIn = Math.round((inBatch + keep)*1000)/1000;
+  const open = !!(last && last.leftover_to === "next");
+  return { inBatch, out, keep, totalIn, lossKg, pct: totalIn>0 ? Math.round(lossKg/totalIn*10000)/100 : 0, open, last, n:chain.length };
+}
+function lossFlagOf(pct, rule){ return pct > rule.hi ? "high" : pct < rule.lo ? "low" : "ok"; }
+const LOSS_FLAG_T = { ok:"정상", high:"이상 (초과)", low:"이상 (미달)", open:"미확정 (다음 생산에 합산)" };
+const LOSS_FLAG_C = { ok:"ok", high:"bad", low:"bad", open:"warn" };
+const LOSS_REASONS = ["설비 내부 잔량","바닥 낙하","중량 조정","부적합 발생","원두 이송 과정 손실","샘플/QC 사용","이전 생산 잔량 합산","기타 직접 입력"];
+/* 아직 받아 가지 않은 "다음 생산에 합산" 잔량 (같은 원두) */
+function openLeftovers(bean){
+  return DB.logs.filter(l=>l.leftover_to==="next" && Number(l.leftover_kg)>0 && logLive(l)
+      && (prodById(l.product_id)?.bean === bean) && !DB.logs.some(x=>x.carried_from===l.id && logLive(x)))
+    .sort((a,b)=>String(a.created_at).localeCompare(String(b.created_at)));
+}
 
 const ageDays = d => d ? Math.floor((new Date(today()) - new Date(d))/86400000) : 0;
 const daysLeft = d => SHELF_LIFE_DAYS - ageDays(d);
@@ -3701,6 +3762,8 @@ async function rpc(name, params, localFn, opt = {}){
           if (!UNLOADING && !opt.quiet) noteSaveFail("처리", name, null, m);
           return MES_ERR(isNetErr(m) ? "network" : "server", m);
         }
+        /* 지시 한 건을 바꾼 처리는 그 줄을 바로 다시 받아 둔다 (실시간 누락 대비) */
+        if (data && data.ok !== false && params && params.p_order_id) { try { await pullOrder(params.p_order_id); await pullWhere("order_events", "order_id", params.p_order_id); } catch(_){} }
         return data;
       } catch(e){
         const m = String(e?.message || e);
@@ -6094,6 +6157,9 @@ function setUser(n){
   if (w) toast(`실제 작업자: ${n}`);
 }
 const nowISO = () => new Date().toISOString();
+/* 날짜+시간 전체 — 이력에 쓰는 표기 (예: 2026.10.28 17:42) */
+const dtFull = iso => { if(!iso) return "—"; const t=new Date(iso); if(isNaN(t)) return "—";
+  return `${t.getFullYear()}.${String(t.getMonth()+1).padStart(2,"0")}.${String(t.getDate()).padStart(2,"0")} ${String(t.getHours()).padStart(2,"0")}:${String(t.getMinutes()).padStart(2,"0")}`; };
 const fmtDT = iso => { if(!iso) return "—"; const t=new Date(iso); if(isNaN(t)) return "—";
   return `${String(t.getMonth()+1).padStart(2,"0")}/${String(t.getDate()).padStart(2,"0")} ${String(t.getHours()).padStart(2,"0")}:${String(t.getMinutes()).padStart(2,"0")}`; };
 /* 재고 수기 조정 기록 — 역산할 때 이 값을 되돌려야 과거 잔량이 맞음 */
@@ -6260,6 +6326,12 @@ renderFavs();
 
 /* ══ 업데이트 내역 — 어디에 뭘 바꿨는지 (최근 것이 위) ══ */
 const CHANGELOG = [
+  ["2026-10-28", "현장 작업 › 생산 완료", "완료 뒤 카드가 \"생산중\" 으로 남던 문제 — 처리 직후 그 지시를 서버에서 다시 받아 화면을 맞춤 (실시간이 늦거나 끊겨도)"],
+  ["2026-10-28", "현장 작업 › 반려 칸", "반려된 건은 기계 카드에서 빼서 맨 위 ⚠ 반려 칸에 — 품목·배치·LOT·사유·반려 일시·조치 상태(조치 필요 / 재검수 대기) · 검수 완료되면 빠짐 · 반려 건이 기계를 막지 않음"],
+  ["2026-10-28", "날짜 + 시간", "작업 시작 · 생산 완료 · 검수 · 반려/조치 · 출고 · 입고 일시를 현장 카드·검수·출고·생산실적·작업지시·이력추적(작업 이력 전체)·LOT 이력에 표시 (예 2026.10.28 17:42)"],
+  ["2026-10-28", "부자재 LOT › 이력", "입고 일시 · 사용 일시 · 그 생산의 완료·검수·반려 일시 · LOT 기록 변경 이력(입고·수정·지움·붙이기)"],
+  ["2026-10-28", "생산 완료 › 남은 원두 · 로스 (040 SQL)", "완료 때 실제 투입 kg · 남은 원두 kg · 처리(다음 생산에 합산 / 이 건의 로스 / 잔량 보관) · 이전 잔량 합산 여부를 묻고, 로스율이 기준 ± 허용 오차를 벗어나면 사유 필수 · 합산한 생산은 사슬로 묶어 마지막 건에서 확정"],
+  ["2026-10-28", "로스관리", "기준 로스율 · 허용 오차(기본·설비별·품목별) 설정 · 생산 건별 로스(사슬 묶음·판정·사유) · 품목·설비별 평균 로스율·편차 · 생산실적 [로스] 버튼으로 다시 적기"],
   ["2026-10-28", "계정 메뉴 › 사용 설명서", "그림으로 된 사용 설명서(manual.html) — 로그인부터 마감까지 화면별 따라 하기 · 자주 묻는 질문 · 관리자 부록"],
   ["2026-10-28", "문의 · 마감 체크 · 라벨 안 함", "현장 작업자·검수 계정으로도 서버에 저장되게 (039 SQL — 전에는 그 기기에만 남고 \"저장 실패 — 서버 연결 확인\" 만 떴음) · 저장이 안 되면 이유를 그대로 보여 줌"],
   ["2026-10-28", "현장 작업 › 반려 카드", "[조치 완료 → 다시 검수로] — 반려된 건을 손본 뒤 실적 그대로 검수 대기로 되돌림 (038 SQL) · 검수에게 재검수 알림"],
@@ -9279,14 +9351,14 @@ function renderLots(){
     `<button class="btn ${lotKindFilter===v?"primary":""}" style="height:28px;padding:0 9px;font-size:12px" onclick="setLotKind('${v}')">${t}</button>`).join("");
   $("lotSum").innerHTML = ` <span class="tag ok">사용 중 ${nUse}</span> <span class="tag">대기 ${nWait}</span> <span class="tag warn">다 씀 ${nDone}</span>${nNone?` <span class="tag bad">LOT 없음 ${nNone}</span>`:""}`;
   const edit = can("base");
-  tbl("tLots", ["자재","구분","LOT","입고일","입고수량","사용","잔량","상태","입력자",'<span class="fix">처리</span>'],
+  tbl("tLots", ["자재","구분","LOT","입고 일시","입고수량","사용","잔량","상태","입력자",'<span class="fix">처리</span>'],
     rows.map(r=>{
       if (r.none) return `<tr><td class="l"><b>${r.M.name}</b> <span class="hint" style="padding:0">재고 ${fmt(r.M.stock)}${unitOf(r.M)}</span></td><td class="c"><span class="tag">${r.M.kind}</span></td>
         <td class="l"><span class="bad">—</span></td><td class="c">—</td><td>—</td><td>—</td><td>${fmt(r.M.stock)}</td><td class="c"><span class="tag bad">LOT 없음</span></td><td class="c">—</td>
         <td class="c fix">${edit?`<button class="btn primary" style="height:28px" onclick="attachLot('${r.M.id}')">기존 재고에 LOT 붙이기</button>`:""}</td></tr>`;
       const l = r.l, u = unitOf(r.M);
       return `<tr class="${l.st==="사용 중"?"":l.st==="다 씀"?"offrow":""}"><td class="l"><b>${r.M.name}</b> <span class="hint" style="padding:0">재고 ${fmt(r.M.stock)}${u}</span></td><td class="c"><span class="tag">${r.M.kind}</span></td>
-        <td class="l"><b>${l.lot}</b>${l.note?` <span class="hint" style="padding:0;font-size:11px">${l.note}</span>`:""}</td><td class="c">${l.date||"—"}</td>
+        <td class="l"><b>${l.lot}</b>${l.note?` <span class="hint" style="padding:0;font-size:11px">${l.note}</span>`:""}</td><td class="c" style="white-space:nowrap">${l.at?dtFull(l.at):(l.date||"—")}</td>
         <td>${fmt(l.qty)}</td><td>${l.used?fmt(l.used):"—"}</td><td><b>${fmt(l.left)}</b></td>
         <td class="c">${l.st==="사용 중"?'<span class="tag ok">사용 중</span>':l.st==="대기"?'<span class="tag">대기</span>':'<span class="tag warn">다 씀</span>'}</td>
         <td class="c">${l.by||"—"}</td>
@@ -9301,13 +9373,20 @@ function lotHistory(mid, i){
   const M = matById(mid); if (!M) return;
   const l = lotLedger(M)[i]; if (!l) return;
   $("lotHistWrap").style.display = "";
-  $("lotHistTitle").textContent = `${M.name} · LOT ${l.lot} (${l.date||"—"} 입고 ${fmt(l.qty)} · 잔량 ${fmt(l.left)})`;
-  tbl("tLotHist", ["일자","시각","구분","이 LOT 에서","내용","일련번호 · 품목","작업자"],
-    l.moves.length ? l.moves.map(m=>{ const lg = lotRefLog(m);
-      return `<tr><td class="c">${m.date||""}</td><td class="c">${String(m.at||"").slice(11,16)}</td>
+  $("lotHistTitle").textContent = `${M.name} · LOT ${l.lot} (입고 ${l.at?dtFull(l.at):(l.date||"—")} ${l.by||""} · ${fmt(l.qty)} · 잔량 ${fmt(l.left)})`;
+  const chg = DB.audit.filter(a=>/LOT/.test(String(a.action||"")) && String(a.target||"").includes(M.name) && String(a.detail||"").includes(l.lot))
+    .sort((a,b)=>String(b.at||b.created_at||"").localeCompare(String(a.at||a.created_at||"")));
+  tbl("tLotHist", ["사용 일시","구분","이 LOT 에서","내용","일련번호 · 품목","생산 완료","검수 · 반려","작업자"],
+    (l.moves.length ? l.moves.map(m=>{ const lg = lotRefLog(m); const od = lg ? DB.orders.find(x=>x.log_id===lg.id) : null; const rj = od ? lastEv(od,"qc_reject") : null;
+      return `<tr><td class="c" style="white-space:nowrap">${m.at?dtFull(m.at):(m.date||"")}</td>
         <td class="c"><span class="tag ${/폐기|조정/.test(m.kind||"")?"bad":"warn"}">${m.kind||""}</span></td><td><b>−${fmt(m.take)}</b></td>
-        <td class="l">${m.note||""}</td><td class="l">${lg ? `<b>${lg.serial||"—"}</b> · ${lg.product_name||prodById(lg.product_id)?.name||""} ${fmt(lg.qty_ea)}EA` : (m.ref||"—")}</td><td class="c">${m.user||"—"}</td></tr>`; })
-      : [`<tr><td colspan="7" class="c hint" style="height:48px">이 LOT 에서 나간 기록이 아직 없습니다${l.st==="대기"?" — 아직 안 뜯은 박스":""}</td></tr>`]);
+        <td class="l">${m.note||""}</td><td class="l">${lg ? `<b>${lg.serial||"—"}</b> · ${lg.product_name||prodById(lg.product_id)?.name||""} ${fmt(lg.qty_ea)}EA` : (m.ref||"—")}</td>
+        <td class="c" style="font-size:12px;white-space:nowrap">${od ? dtFull(od.done_at) : (lg ? dtFull(lg.created_at) : "—")}</td>
+        <td class="c" style="font-size:12px;white-space:nowrap">${od ? (od.qc_at ? `검수 ${dtFull(od.qc_at)}` : (qcFlow(od)||od.status)) : "—"}${rj?`<br><span class="bad">반려 ${dtFull(rj.at)}</span>`:""}</td><td class="c">${m.user||"—"}</td></tr>`; })
+      : [`<tr><td colspan="8" class="c hint" style="height:48px">이 LOT 에서 나간 기록이 아직 없습니다${l.st==="대기"?" — 아직 안 뜯은 박스":""}</td></tr>`])
+    .concat([`<tr><td colspan="8" class="l" style="background:#eef0f6;color:#1a1f36;font-weight:700">LOT 기록 변경 이력 ${chg.length}건 <span class="hint" style="padding:0">입고 · 수정 · 지움 · 붙이기</span></td></tr>`],
+      chg.length ? chg.map(a=>`<tr><td class="c" style="white-space:nowrap">${dtFull(a.at||a.created_at)}</td><td class="c"><span class="tag">${a.action}</span></td><td colspan="5" class="l">${a.detail||""}</td><td class="c">${a.user||a.user_name||"—"}</td></tr>`)
+                 : [`<tr><td colspan="8" class="c hint">변경 기록 없음 (입고 때 만들어진 그대로)</td></tr>`]));
   $("lotHistWrap").scrollIntoView({ behavior:"smooth", block:"start" });
 }
 /* 자재를 골라 LOT 와 함께 입고 */
@@ -9332,12 +9411,14 @@ async function editLot(mid, i){
   const lv = await askText(`LOT 번호 (${x.date||"—"} · ${fmt(x.qty)} · ${x.by||"—"})`, x.lot, "LOT 수정"); if (lv === null) return;
   const qv = await askText(`이 박스 수량`, String(x.qty||0), "LOT 수량"); if (qv === null) return;
   list[i] = { ...x, lot:String(lv).trim(), qty:Math.round(numOf(qv)) }; all[mid] = list; await saveLots(all); renderLots();
+  logAudit("부자재 LOT 수정", matById(mid)?.name||"", `LOT ${x.lot} ${fmt(x.qty)} → LOT ${list[i].lot} ${fmt(list[i].qty)}`);
 }
 async function delLot(mid, i){
   if (!(await requireUser())) return;
   const all = matLots(); const list = [...(all[mid]||[])]; const x = list[i]; if (!x) return;
   if (!(await ask(`LOT ${x.lot} (${fmt(x.qty)}) 기록을 지울까요? 재고는 안 바뀝니다.`, { title:"LOT 지움", yes:"지움" }))) return;
   list.splice(i,1); all[mid] = list; await saveLots(all); renderLots();
+  logAudit("부자재 LOT 지움", matById(mid)?.name||"", `LOT ${x.lot} (${fmt(x.qty)} · ${x.date||"—"}) 기록 지움`);
 }
 const lotOf = o => (o && o.lot) || autoLotOf(o);
 /* 부자재 폐기 — 손실로 따로 남긴다 */
@@ -11225,21 +11306,24 @@ function renderLog(){
         <td>${tEA&&v.ea?fmt(v.ea/tEA*100)+"%":"—"}</td><td>${v.ip?fmt(v.ip):"—"}</td></tr>`; }),
     `<td class="c">합 계</td><td>${fmt(tEA)}</td><td>${tEA?"100%":"—"}</td><td>${fmt(tIn)}</td>`);
 
-  tbl("logTbl", ["일련번호","품목","상태","배치 / LOT","기계","생산자","생산(EA)","수령(EA)","로스(kg)","잔량(kg)","확인 (입력·수령·검수)",'<span class="fix">관리</span>'],
-    sorted("logTbl", logs).map(l=>{ const p=prodById(l.product_id);
+  tbl("logTbl", ["일련번호","품목","상태","배치 / LOT","기계","생산자","완료 일시","생산(EA)","수령(EA)","로스(kg) · 판정","잔량(kg)","확인 (입력·수령·검수)",'<span class="fix">관리</span>'],
+    sorted("logTbl", logs).map(l=>{ const p=prodById(l.product_id); const od = DB.orders.find(x=>x.log_id===l.id);
       return `<tr><td class="l" style="font-weight:800">${l.serial||"—"}</td>
         <td class="l">${p?p.name:"?"}<br><span class="hint" style="padding:0">${p?.code||""}${isGround(p?.grind)?" · "+p.grind:""}</span></td>
         <td class="c">${statusBadge(l)}${l.edit_count?`<br><span class="tag warn" style="font-size:10.5px" title="${l.edit_note||""}">수정 ${l.edit_count}회</span>`:""}</td>
         <td class="l" style="font-size:11.5px">${l.batch_codes?`<span class="tag ok">${l.batch_codes}</span>`:"—"}
           <br>${l.lot?`<span class="tag warn">LOT ${l.lot}</span>`:'<span class="hint" style="padding:0">LOT 없음</span>'}</td>
-        <td class="c">${l.machine}</td><td class="c">${l.worker}</td><td><b>${fmt(l.qty_ea)}</b></td>
+        <td class="c">${l.machine}</td><td class="c">${l.worker}</td>
+        <td class="c" style="font-size:12px;white-space:nowrap">${dtFull(od?.done_at || l.created_at)}${od?.first_started_at||od?.started_at?`<br><span class="hint" style="padding:0">시작 ${dtFull(od.first_started_at||od.started_at)}</span>`:""}</td><td><b>${fmt(l.qty_ea)}</b></td>
         <td class="${Number(l.qty_diff||0)?'bad':''}">${l.received_qty!=null?fmt(l.received_qty):"—"}</td>
-        <td class="${lossOf(l)>.005?'bad':'ok'}">${fmt(lossOf(l))}</td><td>${fmt(l.leftover_kg)}</td>
+        <td class="${lossOf(l)>.005?'bad':'ok'}" style="white-space:nowrap">${fmt(lossOf(l))}${l.loss_flag?`<br><span class="tag ${LOSS_FLAG_C[l.loss_flag]||""}" style="font-size:10.5px" title="${l.loss_reason||""}${l.loss_note?" · "+l.loss_note:""}">${l.loss_flag==="open"?"미확정":LOSS_FLAG_T[l.loss_flag]}${l.loss_flag!=="open"&&l.loss_pct_actual!=null?` ${l.loss_pct_actual}%`:""}</span>`:""}</td>
+        <td style="white-space:nowrap">${fmt(l.leftover_kg)}${l.leftover_to?`<br><span class="hint" style="padding:0;font-size:11px">${({next:"다음 생산에",loss:"로스로",keep:"보관"})[l.leftover_to]||""}</span>`:""}${l.carried_kg>0?`<br><span class="hint" style="padding:0;font-size:11px">+이전 ${fmt(l.carried_kg)}</span>`:""}</td>
         <td class="sig">
           <div><b>입력</b> ${l.entered_by||"—"} <span class="hint" style="padding:0">${fmtDT(l.created_at)}</span></div>
           <div><b>수령</b> ${receiveCell(l)}</div>
           <div><b>검수</b> ${signCell(l,"checked")}</div></td>
         <td class="c fix"><button class="btn primary" onclick="openEdit('${l.id}')">수정</button>
+          <button class="btn" onclick="editLoss('${l.id}')" title="남은 원두 · 로스 다시 적기">로스</button>
           <button class="btn" onclick="printLabel('${l.id}')">라벨</button>
           <button class="btn danger" onclick="delLog('${l.id}')">삭제</button></td></tr>`; }));
 
@@ -11258,6 +11342,17 @@ const statusOf = l => l.status || (l.received_by ? "approved" : "pending");
    이미 있는 order_events(qc_reject/qc_pass) 와 qc_rejections 에서 읽습니다.
    orders.status 는 '생산중' 그대로입니다 — 상태전이를 건드리지 않으려고요.
    (SQL 쪽은 order_qc_state 뷰가 같은 일을 합니다) */
+/* 반려 흐름 — 조치 필요(반려된 생산중) · 재검수 대기(조치 후 다시 올림) · 검수 끝나면 null */
+function qcFlow(o){
+  if (!o || ["검수완료","출고완료"].includes(o.status)) return null;
+  const ev = DB.order_events.filter(e=>e.order_id===o.id && ["qc_reject","qc_resubmit","qc_pass"].includes(e.event))
+    .sort((a,b)=>(Number(a.seq)||0)-(Number(b.seq)||0) || String(a.at).localeCompare(String(b.at)));
+  const last = ev[ev.length-1]; if (!last) return null;
+  if (last.event === "qc_reject" && o.status === "생산중") return "조치 필요";
+  if (last.event === "qc_resubmit" && o.status === "생산완료") return "재검수 대기";
+  return null;
+}
+const lastEv = (o, ev) => DB.order_events.filter(e=>e.order_id===o.id && e.event===ev).sort((a,b)=>(Number(b.seq)||0)-(Number(a.seq)||0) || String(b.at).localeCompare(String(a.at)))[0] || null;
 function qcState(o){
   const ev = DB.order_events.filter(e => e.order_id === o.id
                && ["qc_reject","qc_pass"].includes(e.event))
@@ -11800,8 +11895,66 @@ function lossLogs(){
   const lm = d.toISOString().slice(0,7);
   return DB.logs.filter(l => r==="all" || (r==="tm"&&monthKey(l.work_date)===tm) || (r==="lm"&&monthKey(l.work_date)===lm));
 }
+/* 기준 설정 표 · 건별 로스 · 평균·편차 */
+function renderLossRule(){
+  const c = lossCfg(), edit = can("base");
+  const num = (v, fn, ph) => `<input type="text" inputmode="decimal" class="num" style="width:58px" value="${v ?? ""}" placeholder="${ph ?? ""}" ${edit?"":"disabled"} data-f="lr:${fn}" onchange="${fn}">`;
+  const machs = DB.machines.map(m=>m.name);
+  $("lossRule").innerHTML = `
+    <div style="display:flex;gap:18px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
+      <label>기본 기준 로스율 ${num(c.def, "setLossDefault(this.value)")} %</label>
+      <label>기본 허용 오차 ± ${num(c.tol, "setLossTol(this.value)")} %p</label>
+      <span class="hint" style="padding:0">→ 정상 범위 ${Math.max(0,c.def-c.tol)}% ~ ${c.def+c.tol}% · 예) 기준 2.0 · 오차 0.5 → 1.5~2.5% 가 정상</span></div>
+    <div class="cols2" style="gap:14px">
+      <div><div style="font-weight:700;margin-bottom:4px">설비별</div><table><thead><tr><th class="l">설비</th><th>기준 %</th><th>오차 ±%p</th><th>정상 범위</th></tr></thead><tbody>${
+        machs.map(n=>{ const m = c.machines[n]||{}; const r = lossRuleOf(null, n);
+          return `<tr><td class="l"><b>${n}</b></td><td>${num(m.pct, `setLossMach('${n}','pct',this.value)`, c.def)}</td><td>${num(m.tol, `setLossMach('${n}','tol',this.value)`, c.tol)}</td><td class="c">${r.lo}~${r.hi}%</td></tr>`; }).join("") || `<tr><td colspan="4" class="c hint">기계 없음</td></tr>`}</tbody></table></div>
+      <div><div style="font-weight:700;margin-bottom:4px">품목별 <span class="hint" style="padding:0">(기준정보 › 품목 표의 로스율 칸과 같은 값)</span></div><table><thead><tr><th class="l">품목</th><th>기준 %</th><th>오차 ±%p</th><th>정상 범위</th></tr></thead><tbody>${
+        PRODS().map(p=>{ const r = lossRuleOf(p, null);
+          return `<tr><td class="l">${p.name}</td><td>${num(c.items[p.id], `setLossPct('${p.id}',this.value)`, c.def)}</td><td>${num(c.tol_items[p.id], `setLossPctTol('${p.id}',this.value)`, c.tol)}</td><td class="c">${r.lo}~${r.hi}%</td></tr>`; }).join("") || `<tr><td colspan="4" class="c hint">품목 없음</td></tr>`}</tbody></table></div>
+    </div>`;
+}
+function renderLossLogs(logs){
+  /* 사슬 묶기 — 같은 사슬은 한 번만 */
+  const live = logs.filter(logLive).sort((a,b)=>String(b.created_at).localeCompare(String(a.created_at)));
+  const seen = new Set(), groups = [];
+  live.forEach(l=>{ if (seen.has(l.id)) return; const ch = lossChainOf(l); ch.forEach(x=>seen.add(x.id)); groups.push(ch); });
+  const toT = { next:"다음 생산에 합산", loss:"이 건의 로스", keep:"잔량 보관" };
+  const rows = [];
+  groups.forEach(ch=>{
+    const S = lossChainSum(ch), last = S.last;
+    const flag = last.loss_flag || (S.open ? "open" : null);
+    ch.forEach((l,i)=>{ const p = prodById(l.product_id); const od = DB.orders.find(x=>x.log_id===l.id); const own = lossOf(l); const isLast = i===ch.length-1;
+      const rule = last.loss_std!=null ? { pct:last.loss_std, tol:last.loss_tol } : lossRuleOf(p,l.machine);
+      rows.push(`<tr class="${ch.length>1?"chain":""}"><td class="c" style="white-space:nowrap;font-size:12px">${dtFull(od?.done_at||l.created_at)}</td>
+        <td class="l" style="white-space:nowrap"><b>${l.serial||"—"}</b> ${p?.name||l.product_name||""}${ch.length>1?` <span class="tag" style="font-size:10px">이어짐 ${i+1}/${ch.length}</span>`:""}<br><span class="hint" style="padding:0;font-size:11px">${l.machine||"—"} · ${l.worker||"—"} · ${fmt(l.qty_ea)}EA</span></td>
+        <td style="white-space:nowrap">${fmt(l.input_kg)}${l.carried_kg>0?`<br><span class="hint" style="padding:0;font-size:11px">+이전 ${fmt(l.carried_kg)}</span>`:""}</td>
+        <td>${p?fmt(stdKg(p,l.qty_ea)):"—"}</td>
+        <td style="white-space:nowrap">${Number(l.leftover_kg)>0?`${fmt(l.leftover_kg)}<br><span class="hint" style="padding:0;font-size:11px">${toT[l.leftover_to]||""}</span>`:"—"}</td>
+        <td class="${own>.005?"bad":"ok"}">${l.leftover_to==="next"?`<span class="hint" style="padding:0">이어짐</span>`:fmt(own)}</td>
+        ${isLast ? `<td style="white-space:nowrap"><b>${S.open?"—":fmt(S.lossKg)+"kg"}</b>${ch.length>1?`<br><span class="hint" style="padding:0;font-size:11px">${ch.length}건 합계</span>`:""}<br><b>${S.open?"":S.pct+"%"}</b></td>
+          <td class="c" style="white-space:nowrap">${flag?`<span class="tag ${LOSS_FLAG_C[flag]||""}">${LOSS_FLAG_T[flag]}</span>`:'<span class="hint" style="padding:0">기록 없음</span>'}<br><span class="hint" style="padding:0;font-size:11px">기준 ${rule.pct}% ± ${rule.tol??"?"}</span></td>
+          <td class="l" style="font-size:12px;min-width:120px">${last.loss_reason||""}${last.loss_note?`<br><span class="hint" style="padding:0">${last.loss_note}</span>`:""}${last.loss_by?`<br><span class="hint" style="padding:0">${last.loss_by} · ${fmtDT(last.loss_at)}</span>`:""}</td>`
+          : `<td colspan="3" class="c hint" style="font-size:11px">↓ 다음 생산으로 이어짐</td>`}
+        <td class="c fix"><button class="btn" style="height:28px" onclick="editLoss('${l.id}')">로스</button></td></tr>`); });
+  });
+  tbl("lossLogTbl", ["완료 일시","일련번호 · 품목","배치에서 뺀(kg)","정상 생산(kg)","남은 원두(kg)","건별 로스(kg)","확정 로스 · 로스율","판정","사유",'<span class="fix"></span>'], rows);
+}
+function renderLossAvg(logs){
+  const fin = logs.filter(l=>logLive(l) && l.loss_flag && l.loss_flag !== "open" && l.loss_pct_actual != null);
+  const stat = arr => { const n = arr.length; if (!n) return null; const m = arr.reduce((s,x)=>s+x,0)/n; const sd = Math.sqrt(arr.reduce((s,x)=>s+(x-m)*(x-m),0)/n); return { n, m:Math.round(m*100)/100, sd:Math.round(sd*100)/100, min:Math.min(...arr), max:Math.max(...arr), bad:0 }; };
+  const by = (key) => { const g = {}; fin.forEach(l=>{ const k = key(l); (g[k] = g[k]||[]).push(l); });
+    return Object.entries(g).map(([k,ls])=>{ const st = stat(ls.map(l=>Number(l.loss_pct_actual))); st.bad = ls.filter(l=>l.loss_flag!=="ok").length; return [k, st]; }).sort((a,b)=>b[1].n-a[1].n); };
+  const row = (k, st, rule) => `<tr><td class="l">${k}</td><td>${st.n}</td><td><b>${st.m}%</b></td><td>±${st.sd}</td><td>${st.min}~${st.max}%</td><td class="${st.bad?"bad":""}">${st.bad||"—"}</td><td class="c" style="font-size:12px">${rule}</td></tr>`;
+  tbl("lossAvgP", ["품목","건수","평균 로스율","편차(σ)","최소~최대","이상","지금 기준"],
+    by(l=>prodById(l.product_id)?.name||l.product_name||"?").map(([k,st])=>{ const p = DB.products.find(x=>x.name===k); const r = lossRuleOf(p, null); return row(k, st, `${r.pct}% ± ${r.tol}`); }),
+    fin.length ? "" : undefined);
+  tbl("lossAvgM", ["설비","건수","평균 로스율","편차(σ)","최소~최대","이상","지금 기준"],
+    by(l=>l.machine||"미기록").map(([k,st])=>{ const r = lossRuleOf(null, k); return row(k, st, `${r.pct}% ± ${r.tol}`); }));
+}
 function renderLoss(){
   const logs = lossLogs();
+  renderLossRule(); renderLossLogs(logs); renderLossAvg(logs);
   const tEA = logs.reduce((s,l)=>s+Number(l.qty_ea||0),0);
   const tStd = logs.reduce((s,l)=>{ const p=prodById(l.product_id); return s+(p?stdKg(p,l.qty_ea):0); },0);
   const tIn = logs.reduce((s,l)=>s+Number(l.input_kg||0),0);
@@ -11813,7 +11966,9 @@ function renderLoss(){
     <div class="card"><div class="lb">실제 투입량</div><div class="vl">${fmt(tIn)} <small>kg</small></div></div>
     <div class="card"><div class="lb">잔량</div><div class="vl">${fmt(tLf)} <small>kg</small></div></div>
     <div class="card ${tLo>.005?'red':'green'}"><div class="lb">로스 합계 (로스율)</div>
-      <div class="vl">${fmt(tLo)} <small>kg (${tIn?fmt(tLo/tIn*100):0}%)</small></div></div>`;
+      <div class="vl">${fmt(tLo)} <small>kg (${tIn?fmt(tLo/tIn*100):0}%)</small></div></div>
+    ${(()=>{ const bad = logs.filter(l=>logLive(l) && (l.loss_flag==="high"||l.loss_flag==="low")).length, op = logs.filter(l=>logLive(l) && l.loss_flag==="open").length;
+      return `<div class="card ${bad?'red':''}"><div class="lb">기준 벗어난 건 (이상)</div><div class="vl">${bad} <small>건${op?` · 미확정 ${op}`:""}</small></div></div>`; })()}`;
 
   const byD = {};
   logs.forEach(l=>{ const p=prodById(l.product_id), k=l.work_date;
@@ -11854,10 +12009,11 @@ function renderLoss(){
     Object.keys(byMo).sort().reverse().map(m=>`<tr><td class="c">${m}</td><td class="${byMo[m]>.005?'bad':''}">${fmt(byMo[m])}</td></tr>`));
 }
 function csvLoss(){
-  csv("로스관리", ["일자","일련번호","CFE코드","품목명","원두","기계","생산자","생산EA","표준kg","투입kg","잔량kg","로스kg"],
-    lossLogs().map(l=>{ const p=prodById(l.product_id);
-      return [l.work_date, l.serial||"", p?.code||"", p?.name||"", p?.bean||"", l.machine, l.worker, l.qty_ea,
-        p?Math.round(stdKg(p,l.qty_ea)*100)/100:"", l.input_kg, l.leftover_kg||0, Math.round(lossOf(l)*100)/100]; }));
+  csv("로스관리", ["완료일시","일자","일련번호","CFE코드","품목명","원두","기계","생산자","생산EA","정상생산kg","배치에서뺀kg","이전잔량kg","남은원두kg","처리","건별로스kg","확정로스kg","로스율%","기준%","오차","판정","사유","메모","기록자"],
+    lossLogs().map(l=>{ const p=prodById(l.product_id); const od = DB.orders.find(x=>x.log_id===l.id);
+      return [dtFull(od?.done_at||l.created_at), l.work_date, l.serial||"", p?.code||"", p?.name||"", p?.bean||"", l.machine, l.worker, l.qty_ea,
+        p?Math.round(stdKg(p,l.qty_ea)*100)/100:"", l.input_kg, l.carried_kg||0, l.leftover_kg||0, l.leftover_to||"", Math.round(lossOf(l)*100)/100,
+        l.loss_kg ?? "", l.loss_pct_actual ?? "", l.loss_std ?? "", l.loss_tol ?? "", l.loss_flag ? LOSS_FLAG_T[l.loss_flag] : "", l.loss_reason||"", l.loss_note||"", l.loss_by||""]; }));
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -13038,6 +13194,23 @@ function rtApply(t, ev, row, old){
   if (cur) Object.assign(cur, row);       // 같은 객체를 고쳐 쓴다 — 다른 곳이 잡고 있는 참조도 함께 바뀐다
   else DB[t].push(row);
   try { notifyChange(t, prev, cur || row, ev); } catch(e){ console.warn("알림", e); }
+}
+/* ★ 처리 직후 그 줄을 서버에서 다시 받는다 — 실시간이 늦거나 끊겨도 화면이 서버와 같게
+     (현장에서 [생산 완료]를 눌렀는데 카드가 "생산중" 으로 남던 문제) */
+async function pullWhere(t, col, val){
+  if (!sb || val == null) return;
+  try { const { data, error } = await sb.from(tb(t)).select("*").eq(col, val);
+    if (error || !Array.isArray(data)) return;
+    data.forEach(r=>{ try { rtApply(t, "UPDATE", r, null); } catch(_){} });
+  } catch(_){}
+}
+const pullOrder = id => pullWhere("orders", "id", id);
+async function pullAfterFinish(orderId, logId){
+  await pullOrder(orderId);
+  const o = ordById(orderId);
+  await Promise.all([ pullWhere("logs", "order_id", orderId), pullWhere("products", "id", o?.product_id),
+    logId ? pullWhere("consumptions", "log_id", logId) : null, pullWhere("order_events", "order_id", orderId),
+    o ? pullWhere("mms", "bean", prodById(o.product_id)?.bean) : null ]);
 }
 function startRealtime(){
   if (!sb || RT_CH || typeof sb.channel !== "function") return;
@@ -14361,7 +14534,8 @@ function runningOn(machineName, d){
 }
 function machineBusy(o){
   if (!o.machine) return null;
-  const run = runningOn(o.machine, o.work_date).filter(x=>x.id!==o.id);
+  /* 반려돼 조치 중인 건은 기계를 쓰고 있지 않다 — 다음 지시를 막지 않는다 */
+  const run = runningOn(o.machine, o.work_date).filter(x=>x.id!==o.id && qcFlow(x) !== "조치 필요");
   return run.length >= maxRunOf(o.machine) ? run : null;
 }
 async function startWork(id){
@@ -14618,6 +14792,7 @@ async function mesFinishWork(args){
         p_input_kg: (args.input_kg === "" || args.input_kg === undefined) ? null : args.input_kg,
         p_worker_id: args.worker_id || currentWorkerId(), p_idempotency: args.idem || null });
       if (error) return MES_ERR("server", error.message || String(error));
+      if (data && data.ok !== false) { try { await pullAfterFinish(args.order_id, data.log_id); } catch(_){} }
       return data;
     } catch(e){ return MES_ERR("network", String(e?.message || e)); }
   }
@@ -14632,6 +14807,7 @@ async function mesStartWork(args){
         p_order_id: args.order_id, p_worker_id: args.worker_id || null,
         p_idempotency: args.idem || null });
       if (error) return MES_ERR("server", error.message || String(error));
+      if (data && data.ok !== false) { try { await pullOrder(args.order_id); } catch(_){} }
       return data;
     } catch(e){ return MES_ERR("network", String(e?.message || e)); }
   }
@@ -14666,6 +14842,132 @@ async function setOrderLot(id){
   if (!r || !r.ok) return toast(r?.message || "LOT를 저장하지 못했습니다");
   o.lot = lot; renderWork(); renderOrder(); toast(lot ? `봉투 LOT ${lot}` : "봉투 LOT를 지웠습니다");
 }
+/* ══ 남은 원두 · 로스 — 생산 완료 때 묻고, 사슬로 이어 확정한다 ══
+   ① 실제 투입 kg (기본: 지시의 배치 kg)  ② 남은 원두 kg  ③ 남은 원두 처리 (다음 생산에 합산 / 이 건의 로스 / 잔량 보관)
+   ④ 같은 원두의 "다음 생산에 합산" 잔량이 기다리고 있으면 받았는지  ⑤ 확정 로스율 → 기준 ± 오차 판정 → 이상이면 사유 필수 */
+async function mesSetLogLoss(a){
+  return rpc("set_log_loss",
+    { p_log_id:a.log_id, p_leftover_kg:a.leftover_kg||0, p_leftover_to:a.leftover_to||null,
+      p_carried_from:a.carried_from||null, p_carried_kg:a.carried_kg||0,
+      p_loss_kg:a.loss_kg ?? null, p_loss_pct:a.loss_pct ?? null, p_loss_flag:a.loss_flag||null,
+      p_loss_std:a.loss_std ?? null, p_loss_tol:a.loss_tol ?? null,
+      p_reason:a.reason||null, p_note:a.note||null, p_user_name:CURRENT_USER, p_idempotency:a.idem },
+    () => {
+      const hit = idemHit(a.idem); if (hit) return hit;
+      const l = DB.logs.find(x=>x.id===a.log_id); if (!l) return MES_ERR("no_log", "생산실적을 찾을 수 없습니다");
+      Object.assign(l, { leftover_kg:a.leftover_kg||0, leftover_to:a.leftover_to||null, carried_from:a.carried_from||null, carried_kg:a.carried_kg||0,
+        loss_kg:a.loss_kg ?? null, loss_pct_actual:a.loss_pct ?? null, loss_flag:a.loss_flag||null, loss_std:a.loss_std ?? null, loss_tol:a.loss_tol ?? null,
+        loss_reason:a.reason||null, loss_note:a.note||null, loss_at:nowISO(), loss_by:CURRENT_USER });
+      save("logs", l);
+      logAudit("로스 기록", l.serial||"", `${l.product_name||""} · 잔량 ${fmt(a.leftover_kg||0)}kg (${a.leftover_to||"-"})${a.carried_kg?` · 이전 잔량 ${fmt(a.carried_kg)}kg 합산`:""} · 로스 ${a.loss_kg ?? "-"}kg (${a.loss_pct ?? "-"}%) ${a.loss_flag||"-"}${a.reason?` · 사유: ${a.reason}`:""}`);
+      const res = { ok:true, log_id:a.log_id }; idemPut(null, a.idem, "set_log_loss", a.log_id, res); return res;
+    });
+}
+const kgOf = v => Math.round((Number(String(v).replace(/[^\d.\-]/g,""))||0)*1000)/1000;
+/* 지시에 적힌 배치 kg — 없으면 로스율 포함 계산값 */
+function orderBatchKg(o, p, good){
+  const parts = batchParts(o?.batch_plan); const kg = parts.reduce((s,x)=>s+Number(x.kg||0),0);
+  if (kg > 0 && Number(o.qty_plan) > 0) return Math.round(kg * (Number(good)||0) / Number(o.qty_plan) * 1000) / 1000;
+  return needKg(p, good);
+}
+/* 생산 완료 때 — 투입 · 잔량 · 처리 · 합산 · 사유. 취소하면 null */
+async function lossPrompt(o, p, good, opt={}){
+  const nm = p?.name || o.product_name || "";
+  const outKg = stdKg(p, good);
+  /* ④ 먼저 — 같은 원두의 기다리는 잔량 */
+  const waits = openLeftovers(p?.bean).filter(l=>l.id !== opt.selfId);
+  let carried = null;
+  if (waits.length) {
+    const pick = await ask(`${nm}\n\n이 원두의 지난 생산에서 남긴 원두가 있습니다. 이번 생산에 합쳐 썼습니까?\n\n` +
+      waits.map((l,i)=>`${i+1}. 일련번호 ${l.serial||"—"} · ${l.product_name||prodById(l.product_id)?.name||""} · ${dtFull(l.loss_at||l.created_at)} · 남은 ${fmt(l.leftover_kg)}kg`).join("\n") +
+      `\n\n합쳐 썼으면 번호를 적고, 아니면 0 을 적으세요.`, { prompt:true, value:"1", title:"이전 생산 잔량 합산" });
+    if (pick === null) return null;
+    const i = Math.round(numOf(pick)) - 1; if (i >= 0 && waits[i]) carried = waits[i];
+  }
+  const ck = carried ? Number(carried.leftover_kg||0) : 0;
+  /* ① 실제 투입 */
+  const def = Math.round((orderBatchKg(o, p, good) + ck) * 10) / 10;
+  const a = await askText(`${nm} · 정상 ${fmt(good)}개 = ${fmt(outKg)}kg\n\n실제로 투입한 원두 (kg)${ck?`\n(이전 잔량 ${fmt(ck)}kg 포함해서 적으세요)`:""}\n모르면 그대로 두고 확인하세요`, String(def), "실제 투입량");
+  if (a === null) return null;
+  const actual = kgOf(a);
+  if (!(actual > 0)) { toast("투입량을 적어 주세요"); return null; }
+  /* ② 남은 원두 */
+  const lv = await askText(`${nm}\n\n포장이 끝나고 남은 원두 (kg)\n없으면 0`, "0", "남은 원두");
+  if (lv === null) return null;
+  const leftover = Math.max(0, kgOf(lv));
+  let to = "loss";
+  if (leftover > 0) {
+    to = await ask(`남은 원두 ${fmt(leftover)}kg 을 어떻게 합니까?`, { title:"남은 원두 처리", choices:[
+      { v:"next", label:"다음 생산에 합산", cls:"primary" }, { v:"loss", label:"이 건의 로스로" }, { v:"keep", label:"잔량으로 보관" }, { v:null, label:"취소" } ] });
+    if (!to) return null;
+  }
+  /* 배치에서 뺄 kg = 투입 − 이전 잔량(이미 빠진 것) − 보관 잔량(안 쓴 것) */
+  const batchKg = Math.max(0, Math.round((actual - ck - (to === "keep" ? leftover : 0)) * 1000) / 1000);
+  /* ⑤ 판정 — 다음 생산에 합산이면 미확정 */
+  const rule = lossRuleOf(p, o.machine);
+  const chain = carried ? lossChainOf(carried) : [];
+  const sumIn = chain.reduce((s,x)=>s+Number(x.input_kg||0),0) + batchKg;
+  const sumOut = chain.reduce((s,x)=>{ const q=prodById(x.product_id); return s+(q?stdKg(q,x.qty_ea):0); },0) + outKg;
+  const keep = to === "keep" ? leftover : 0;
+  const lossKg = Math.round((sumIn - sumOut) * 1000) / 1000, totalIn = Math.round((sumIn + keep) * 1000) / 1000;
+  const pct = totalIn > 0 ? Math.round(lossKg / totalIn * 10000) / 100 : 0;
+  let flag = to === "next" ? "open" : lossFlagOf(pct, rule), reason = null, note = null;
+  if (flag === "high" || flag === "low") {
+    const r = await ask(`로스가 기준을 벗어났습니다 — 사유를 고르세요\n\n${chain.length?`이어진 생산 ${chain.length+1}건 합계 · `:""}투입 ${fmt(totalIn)}kg · 정상 생산 ${fmt(sumOut)}kg${keep?` · 보관 ${fmt(keep)}kg`:""}\n로스 ${fmt(lossKg)}kg = ${pct}% (기준 ${rule.pct}% ± ${rule.tol}%p → 정상 ${rule.lo}~${rule.hi}%)`,
+      { title: flag === "high" ? "로스 이상 — 기준 초과" : "로스 이상 — 기준 미달", choices:[ ...LOSS_REASONS.map(x=>({ v:x, label:x, cls:"" })), { v:null, label:"취소" } ] });
+    if (!r) return null;
+    reason = r;
+    if (r === "기타 직접 입력") { const t = await askText("사유를 적어 주세요", "", "로스 사유"); if (t === null) return null; note = String(t).trim(); if (!note) { toast("사유를 적어 주세요"); return null; } }
+    else { const t = await askText("덧붙일 메모가 있으면 적으세요 (없으면 그대로 확인)", "", "메모"); if (t === null) return null; note = String(t).trim() || null; }
+  }
+  return { actual, leftover, to, batchKg, carried_from: carried ? carried.id : null, carried_kg: ck,
+           loss_kg: lossKg, loss_pct: pct, flag, rule, reason, note, chainN: chain.length + 1 };
+}
+async function recordLoss(logId, L){
+  if (!logId || !L) return { ok:false, message:"실적 id 없음" };
+  return mesSetLogLoss({ log_id:logId, leftover_kg:L.leftover, leftover_to:L.to, carried_from:L.carried_from, carried_kg:L.carried_kg,
+    loss_kg:L.loss_kg, loss_pct:L.loss_pct, loss_flag:L.flag, loss_std:L.rule.pct, loss_tol:L.rule.tol, reason:L.reason, note:L.note, idem:`loss-${logId}-${uid()}` });
+}
+/* 나중에 다시 적기 — 생산실적 · 로스관리의 [로스] 버튼 (재고는 안 바뀜 · 투입 kg 는 그대로) */
+async function editLoss(logId){
+  if (!(await requireUser())) return;
+  const l = DB.logs.find(x=>x.id===logId); if (!l) return;
+  const p = prodById(l.product_id); if (!p) return toast("품목을 찾을 수 없습니다");
+  const o = DB.orders.find(x=>x.log_id===l.id) || { batch_plan:l.batch_codes, qty_plan:l.qty_ea, machine:l.machine, product_name:l.product_name };
+  const good = Number(l.qty_ea)||0, outKg = stdKg(p, good);
+  const waits = openLeftovers(p.bean).filter(x=>x.id!==l.id && String(x.created_at) < String(l.created_at));
+  let carried = l.carried_from ? DB.logs.find(x=>x.id===l.carried_from) : null;
+  if (!carried && waits.length) {
+    const pick = await ask(`이 생산(${l.serial||"—"}) 전에 남긴 잔량이 있습니다. 합쳐 썼습니까?\n\n` + waits.map((x,i)=>`${i+1}. ${x.serial||"—"} · ${dtFull(x.loss_at||x.created_at)} · ${fmt(x.leftover_kg)}kg`).join("\n") + `\n\n합쳤으면 번호, 아니면 0`, { prompt:true, value:"0", title:"이전 생산 잔량 합산" });
+    if (pick === null) return; const i = Math.round(numOf(pick)) - 1; if (i >= 0 && waits[i]) carried = waits[i];
+  }
+  const ck = carried ? Number(carried.leftover_kg||0) : 0;
+  const lv = await askText(`${p.name} · 일련번호 ${l.serial||"—"}\n배치에서 뺀 원두 ${fmt(l.input_kg)}kg${ck?` + 이전 잔량 ${fmt(ck)}kg`:""} · 정상 생산 ${fmt(outKg)}kg\n\n포장 뒤 남은 원두 (kg)`, String(l.leftover_kg||0), "남은 원두");
+  if (lv === null) return; const leftover = Math.max(0, kgOf(lv));
+  let to = l.leftover_to || "loss";
+  if (leftover > 0) { to = await ask(`남은 원두 ${fmt(leftover)}kg 을 어떻게 했습니까?`, { title:"남은 원두 처리", choices:[
+      { v:"next", label:"다음 생산에 합산", cls:"primary" }, { v:"loss", label:"이 건의 로스로" }, { v:"keep", label:"잔량으로 보관" }, { v:null, label:"취소" } ] }); if (!to) return; }
+  const rule = lossRuleOf(p, l.machine);
+  const chain = carried ? lossChainOf(carried) : [];
+  const sumIn = chain.reduce((s,x)=>s+Number(x.input_kg||0),0) + Number(l.input_kg||0);
+  const sumOut = chain.reduce((s,x)=>{ const q=prodById(x.product_id); return s+(q?stdKg(q,x.qty_ea):0); },0) + outKg;
+  const keep = to === "keep" ? leftover : 0;
+  const lossKg = Math.round((sumIn - sumOut) * 1000) / 1000, totalIn = Math.round((sumIn + keep) * 1000) / 1000;
+  const pct = totalIn > 0 ? Math.round(lossKg / totalIn * 10000) / 100 : 0;
+  let flag = to === "next" ? "open" : lossFlagOf(pct, rule), reason = l.loss_reason || null, note = l.loss_note || null;
+  if (flag === "high" || flag === "low") {
+    const r = await ask(`로스가 기준을 벗어났습니다 — 사유를 고르세요\n\n투입 ${fmt(totalIn)}kg · 정상 생산 ${fmt(sumOut)}kg · 로스 ${fmt(lossKg)}kg = ${pct}% (정상 ${rule.lo}~${rule.hi}%)`,
+      { title: flag === "high" ? "로스 이상 — 기준 초과" : "로스 이상 — 기준 미달", choices:[ ...LOSS_REASONS.map(x=>({ v:x, label:x })), { v:null, label:"취소" } ] });
+    if (!r) return; reason = r;
+    const t = await askText(r === "기타 직접 입력" ? "사유를 적어 주세요" : "덧붙일 메모 (없으면 그대로 확인)", note || "", "메모"); if (t === null) return; note = String(t).trim() || null;
+    if (r === "기타 직접 입력" && !note) return toast("사유를 적어 주세요");
+  } else { reason = null; note = null; }
+  const r = await recordLoss(l.id, { leftover, to, carried_from: carried ? carried.id : null, carried_kg: ck, loss_kg:lossKg, loss_pct:pct, flag, rule, reason, note });
+  if (!r || r.ok === false) return toast("로스 기록 실패 — " + (r?.message || ""));
+  if (sb) await pullWhere("logs", "id", l.id);
+  renderAll(); toast(`로스 기록 — ${LOSS_FLAG_T[flag]} ${flag==="open"?"":`(${pct}%)`}`);
+}
+
 async function finishWork(id){
   if (!(await requireUser())) return;
   const o = ordById(id); if(!o) return;
@@ -14721,17 +15023,10 @@ async function finishWork(id){
     ngType = NG_TYPES[Math.max(0,Math.min(NG_TYPES.length-1,(Number(t)||9)-1))] || "기타";
   }
 
-  /* 실측 투입량 — 기본은 묻지 않는다 (Q-8).
-     품목이나 설비에 "실측 입력"이 켜진 경우에만 칸이 하나 늘어난다. */
-  let actualKg = null;
-  if (needsActualKg(p, o)) {
-    const a = await askText(
-      `실제 투입한 원두 (kg)
-계산값 ${fmt(needKg(p, good))}kg (표준 ${fmt(stdKg(p, good))} + 로스 ${lossPctOf(p)}%) — 모르면 그대로 두고 확인하세요`,
-      String(Math.round(needKg(p, good)*10)/10), "실제 투입량");
-    if (a === null) return;
-    if (numOf(a) > 0) actualKg = numOf(a);
-  }
+  /* ★ 남은 원두 · 로스 — 투입 kg · 잔량 · 처리 · 이전 잔량 합산 · 판정 · 사유 (040) */
+  const LZ = await lossPrompt(o, p, good);
+  if (LZ === null) return;
+  const actualKg = LZ.batchKg;                 // 배치에서 뺄 kg (= 투입 − 이전 잔량 − 보관 잔량)
 
   /* ── 여기부터는 한 건의 처리다 ──────────────────────────────
      멱등키를 지금 만든다. 더블클릭·재전송·새로고침 재시도가 전부 같은 키로 간다. */
@@ -14750,10 +15045,16 @@ async function finishWork(id){
                `원인을 고친 뒤 다시 누르시면 됩니다.`,
                { title:"완료하지 못했습니다", yes:"확인", only:true });
   }
+  /* 로스 기록 — 재고와는 별개 (실패해도 생산 완료는 그대로, 나중에 [로스]로 다시 적는다) */
+  if (!r.replayed) {
+    const lr = await recordLoss(r.log_id || o.log_id, LZ);
+    if (!lr || lr.ok === false) toast(`로스 기록을 못 남겼습니다 — 생산실적의 [로스]에서 다시 적으세요 (${lr?.message||""})`);
+    else if (sb) await pullWhere("logs", "id", r.log_id || o.log_id);
+  }
   renderAll();
   toast(r.replayed
     ? `이미 처리된 건입니다 (일련번호 ${r.serial}) — 중복 처리하지 않았습니다`
-    : `생산 완료 — 검수로 넘어갑니다 (일련번호 ${r.serial})`);
+    : `생산 완료 — 검수로 넘어갑니다 (일련번호 ${r.serial})${LZ.flag==="open" ? " · 남은 원두는 다음 생산에 합산" : LZ.flag!=="ok" ? ` · 로스 ${LZ.loss_pct}% 이상 기록` : ` · 로스 ${LZ.loss_pct}% 정상`}`);
 }
 
 /* 실측 투입량을 물을지 — 기본은 안 묻는다 (Q-8).
@@ -15005,7 +15306,7 @@ function renderOrder(){
         <td class="${o.qty_ng?"bad":""}">${o.qty_ng?fmt(o.qty_ng):"—"}</td>
         <td style="min-width:110px">${barHTML(pctOf(o), pctOf(o)>=100?"ok":"")}<span class="hint" style="padding:0;font-size:11px">${pctOf(o)}%</span></td>
         <td class="c">${stTag(o)}</td>
-        <td class="c" style="font-size:11.5px">${[o.started_by&&`시작 ${o.started_by}`,o.done_by&&`완료 ${o.done_by}`,o.qc_by&&`검수 ${o.qc_by}`].filter(Boolean).join("<br>")||"—"}</td>
+        <td class="c" style="font-size:11.5px;white-space:nowrap">${[o.started_by&&`시작 ${o.started_by} <span class="hint" style="padding:0">${fmtDT(o.first_started_at||o.started_at)}</span>`,o.done_by&&`완료 ${o.done_by} <span class="hint" style="padding:0">${fmtDT(o.done_at)}</span>`,o.qc_by&&`검수 ${o.qc_by} <span class="hint" style="padding:0">${fmtDT(o.qc_at)}</span>`,o.ship_by&&`출고 ${o.ship_by} <span class="hint" style="padding:0">${fmtDT(o.ship_at)}</span>`].filter(Boolean).join("<br>")||"—"}</td>
         <td class="c">${!lock && isMixedOrder(o) && stIdx(o)<1
             ? `<button class="btn primary" onclick="splitOrder('${o.id}')">배치별로 나누기</button> ` : ""}${
           lock?"":`<button class="btn danger" onclick="delOrder('${o.id}')">삭제</button>`}</td></tr>`;
@@ -15127,7 +15428,11 @@ function machKind(name){
 function renderWork(){
   const d = $("wkDate").value || today();
   if (!$("wkDate").value) $("wkDate").value = d;
-  const all  = ordsOf(d).filter(o=>stIdx(o) < 2);
+  /* ★ 반려 칸 — 반려된 건은 기계 카드에서 빼서 따로 모은다 (날짜와 상관없이, 검수 완료될 때까지) */
+  const rej = DB.orders.map(o=>({ o, f:qcFlow(o) })).filter(x=>x.f)
+    .sort((a,b)=>String(lastEv(b.o,"qc_reject")?.at||"").localeCompare(String(lastEv(a.o,"qc_reject")?.at||"")));
+  const rejIds = new Set(rej.filter(x=>x.f==="조치 필요").map(x=>x.o.id));
+  const all  = ordsOf(d).filter(o=>stIdx(o) < 2 && !rejIds.has(o.id));
   const done = ordsOf(d).filter(o=>stIdx(o) >= 2);
 
   /* 기계 순서대로 묶는다 — 기준정보에 없는 설비명(재작업 등)은 뒤에 붙인다 */
@@ -15142,8 +15447,10 @@ function renderWork(){
   const kinds = [...new Set([...DB.machines.map(m=>machKind(m.name)), ...groups.map(g=>machKind(g.name))].filter(Boolean))];
   if (un.length) kinds.push("미지정");
   const kindOf = g => g.name ? machKind(g.name) : "미지정";
-  if (wkMach && !kinds.includes(wkMach)) wkMach = "";
-  $("wkTabs").innerHTML = [["", "전체"], ...kinds.map(k=>[k,k])].map(([v,t])=>{
+  if (wkMach && wkMach !== "반려" && !kinds.includes(wkMach)) wkMach = "";
+  if (wkMach === "반려" && !rej.length) wkMach = "";
+  $("wkTabs").innerHTML = [["", "전체"], ...kinds.map(k=>[k,k]), ...(rej.length ? [["반려", `⚠ 반려 ${rej.length}`]] : [])].map(([v,t])=>{
+    if (v === "반려") return `<button class="subtab ${wkMach===v?"on":""}" style="${wkMach===v?"":"color:var(--bad)"}" onclick="setWkMach('${v}')">${t}</button>`;
     const n = v==="" ? all.length : groups.filter(g=>kindOf(g)===v).reduce((s,g)=>s+g.items.length,0);
     const run = v==="" ? all.filter(o=>o.status==="생산중").length
                        : groups.filter(g=>kindOf(g)===v).reduce((s,g)=>s+g.items.filter(o=>o.status==="생산중").length,0);
@@ -15170,7 +15477,21 @@ function renderWork(){
        title="배치가 안 적힌 대기 지시에 원두 배치 번호(일련번호)를 매기고, 1배치 kg를 넘는 건 가릅니다">배치 번호 매기기 ${nb}건</button>` : "") +
        (nd ? `<button class="btn" style="color:var(--bad)" onclick="cleanDupOrders()">중복 지시 정리 ${nd}건</button>` : ""); })();
 
-  const shown = wkMach ? groups.filter(g=>kindOf(g)===wkMach) : groups;
+  const shown = wkMach === "반려" ? [] : (wkMach ? groups.filter(g=>kindOf(g)===wkMach) : groups);
+  /* 반려 칸 — 품목 · 배치 · LOT · 사유 · 반려 일시 · 조치 상태 */
+  const rejPanel = (!rej.length || (wkMach && wkMach !== "반려")) ? "" : (()=>{
+    const n1 = rej.filter(x=>x.f==="조치 필요").length, n2 = rej.length - n1;
+    return `<div class="panel" id="wkRej" style="margin-bottom:14px;border:2px solid var(--bad)">
+      <div class="panel-h" style="color:var(--bad)">⚠ 반려 — 조치 필요 ${n1}건${n2?` · 재검수 대기 ${n2}건`:""}
+        <span class="r hint">손본 뒤 [조치 완료 → 다시 검수로] · 검수 완료되면 여기서 빠집니다 · 🔔 알림은 알려 주는 것, 이 칸은 지금 할 일</span></div>
+      <div class="panel-b"><table><thead><tr><th>상태</th><th class="l">품목 · 생산 완료</th><th>일련번호</th><th class="l">배치</th><th>봉투 LOT</th><th class="l">반려 사유 → 조치</th><th>반려 일시 · 검수자</th><th></th></tr></thead><tbody>${
+        rej.map(({o,f})=>{ const p = prodById(o.product_id); const rj = lastEv(o,"qc_reject"), rs = lastEv(o,"qc_resubmit"); const q = qcState(o);
+          return `<tr><td class="c" style="white-space:nowrap"><span class="tag ${f==="조치 필요"?"bad":"warn"}">${f}</span>${q.count>1?`<br><span class="hint" style="padding:0;font-size:11px">반려 ${q.count}회</span>`:""}</td>
+            <td class="l" style="white-space:nowrap"><b>${p?.name||o.product_name||""}</b> ${fmt(o.qty_done)}EA<br><span class="hint" style="padding:0">${o.machine||"—"} · 완료 ${dtFull(o.done_at)} ${o.done_by||""}</span></td>
+            <td class="c"><b>${o.serial||"—"}</b></td><td class="l" style="font-size:12px">${o.batch_plan||"—"}</td><td class="c">${lotOf(o)||"—"}</td>
+            <td class="l" style="font-size:12.5px;min-width:180px">⛔ ${rj?.note || q.reason || "(사유 없음)"}${f==="재검수 대기" ? `<br>🔁 ${rs?.note||"조치 내용 없음"} <span class="hint" style="padding:0">${dtFull(rs?.at)} ${rs?.user_name||""}</span>` : `<br><span class="bad">조치 후 다시 올려 주세요</span>`}</td>
+            <td class="c" style="font-size:12px;white-space:nowrap">${dtFull(rj?.at || q.at)}<br>${rj?.user_name || q.by || "—"}</td>
+            <td class="c" style="white-space:nowrap">${f==="조치 필요" ? `<button class="btn primary" style="height:30px" onclick="resubmitQc('${o.id}')">조치 완료 → 다시 검수로</button> <button class="btn" style="height:30px" onclick="ngWork('${o.id}')">부적합</button>` : `<button class="btn" style="height:30px" onclick="go('qc')">검수 화면</button>`} <button class="btn" style="height:30px" onclick="showQcHistory('${o.id}')">이력</button></td></tr>`; }).join("")}</tbody></table></div></div>`; })();
   const card = o=>{
     const p = prodById(o.product_id);
     const pct = pctOf(o), run = o.status==="생산중";
@@ -15181,7 +15502,8 @@ function renderWork(){
             <button onclick="moveOrd('${o.id}',-1)" title="먼저 하기">▲</button>
             <button onclick="moveOrd('${o.id}',1)" title="나중에 하기">▼</button></span>` : ""}</div>
         <div class="sub">${o.channel||"일반"}${o.serial?` · 일련번호 ${o.serial}`:""}${
-          o.batch_of>1?` · 배치 ${o.batch_seq}/${o.batch_of}`:""}</div>
+          o.batch_of>1?` · 배치 ${o.batch_seq}/${o.batch_of}`:""}${
+          run && o.started_at ? ` · <span title="작업 시작 일시">시작 ${dtFull(o.started_at)}${o.started_by?` ${o.started_by}`:""}</span>` : ""}</div>
       </div>
       ${(()=>{ const q = qcState(o); if (!q.rejected) return "";
         const n = qcNextStep(o);
@@ -15239,7 +15561,7 @@ function renderWork(){
     </div>`;
   };
 
-  $("wkCards").innerHTML = shown.length ? shown.map(g=>{
+  $("wkCards").innerHTML = rejPanel + (shown.length ? shown.map(g=>{
     const m   = DB.machines.find(x=>x.name===g.name);
     const ea  = g.items.reduce((t,o)=>t+Number(o.qty_plan||0),0);
     const madeEa = g.items.reduce((t,o)=>t+Number(o.qty_done||0),0);
@@ -15263,9 +15585,9 @@ function renderWork(){
       <div class="wcards">${g.items.map(card).join("")}</div>
     </div>`;
   }).join("")
-    : `<div class="wempty">${wkMach
+    : (wkMach === "반려" ? "" : `<div class="wempty">${wkMach
         ? `${wkMach} 에 할 작업이 없습니다<br><span>위 탭에서 [전체]를 누르면 다른 기계도 보입니다</span>`
-        : `오늘 할 작업이 없습니다<br><span>관리자가 작업지시를 내리면 기계별로 여기에 카드로 뜹니다</span>`}</div>`;
+        : `오늘 할 작업이 없습니다<br><span>관리자가 작업지시를 내리면 기계별로 여기에 카드로 뜹니다</span>`}</div>`));
 }
 
 /* ══ 검수 ══ */
@@ -15284,13 +15606,18 @@ function renderQc(){
     const l = DB.logs.find(x=>x.id===o.log_id);
     return `<div class="qcc" data-oid="${o.id}">
       <div class="hd"><div class="nm">${p?.name||""}</div>
-        <div class="sub">${o.channel}${o.serial?` · 일련번호 ${o.serial}`:""} · 생산 ${o.done_by||"—"} · ${fmt(o.qty_done)}개</div></div>
+        <div class="sub">${o.channel}${o.serial?` · 일련번호 ${o.serial}`:""} · 생산 ${o.done_by||"—"} · ${fmt(o.qty_done)}개${
+          qcFlow(o)==="재검수 대기" ? ` · <span class="tag warn" style="font-size:11px">재검수 (반려 ${qcState(o).count}회)</span>` : ""}</div></div>
       ${kInfoHTML(p?.bean, o, { mfg: mfgDateOf(o) || serialOfText(l?.batch_codes).full.slice(0,10) })}
       <div class="info">
         <div><span>일련번호</span><b>${o.serial||"—"}</b></div>
         <div><span>LOT</span><b>${o.lot||l?.lot||"—"}</b></div>
         <div><span>포장일</span><b>${o.work_date}</b></div>
         <div><span>사용 배치</span><b>${l?.batch_codes||"—"}</b></div>
+        <div><span>작업 시작</span><b>${dtFull(o.first_started_at||o.started_at)}${o.started_by?` <span class="hint" style="padding:0">${o.started_by}</span>`:""}</b></div>
+        <div><span>생산 완료</span><b>${dtFull(o.done_at)}</b></div>
+        ${(()=>{ const rs = lastEv(o,"qc_resubmit"), rj = lastEv(o,"qc_reject"); if (!rs || !rj) return "";
+          return `<div style="grid-column:1/-1"><span>반려 → 조치</span><b>${dtFull(rj.at)} ${rj.user_name||""} — ${rj.note||""}<br>조치 ${dtFull(rs.at)} ${rs.user_name||""} — ${rs.note||""}</b></div>`; })()}
       </div>
       <div class="info" style="background:var(--soft);border-radius:8px;padding:8px 10px;margin:6px 0">
         <div><span>생산완료수량</span><b>${fmt(o.qty_done)} EA</b></div>
@@ -15330,19 +15657,20 @@ function renderShip(){
       <div class="items">${os.map(o=>{ const p=prodById(o.product_id);
         return `<div class="item"><div class="top"><b style="flex:1">${p?.name||""}</b>
           <span class="hint" style="padding:0;font-size:11px">${o.serial||o.order_no}</span></div>
-          <div class="row">수량 <b>${fmt(o.qty_done)}</b> 개 <span class="calc">검수 ${o.qc_by||"—"}</span></div>
+          <div class="row">수량 <b>${fmt(o.qty_done)}</b> 개 <span class="calc">검수 ${o.qc_by||"—"} ${dtFull(o.qc_at)}</span></div>
+          <div class="row"><span class="calc">생산 완료 ${dtFull(o.done_at)} ${o.done_by||""}</span></div>
           <div class="mv"><button onclick="shipDone('${o.id}')">출고 완료</button></div></div>`; }).join("")}</div>
     </div>`).join("") + `</div>`
     : `<div class="wempty">출고할 것이 없습니다<br><span>검수가 끝나면 출고처별로 여기 모입니다</span></div>`;
 
-  tbl("shTbl", ["출고일","출고처","품목","수량","일련번호","LOT","검수자","출고자",""],
+  tbl("shTbl", ["출고 일시","출고처","품목","수량","일련번호","LOT","생산 완료","검수 완료","출고자",""],
     sorted("shTbl", gone).map(o=>{ const p=prodById(o.product_id);
-      return `<tr><td class="c">${String(o.ship_at||"").slice(0,10)}</td><td class="c"><span class="tag">${o.channel}</span></td>
+      return `<tr><td class="c">${dtFull(o.ship_at)}</td><td class="c"><span class="tag">${o.channel}</span></td>
         <td class="l">${p?.name||""}</td><td>${fmt(o.qty_done)}</td>
         <td class="l">${o.serial||"—"}</td><td class="l">${o.lot||"—"}</td>
-        <td class="c">${o.qc_by||"—"}</td><td class="c">${o.ship_by||"—"}</td>
+        <td class="c" style="font-size:12px">${dtFull(o.done_at)}<br>${o.done_by||"—"}</td><td class="c" style="font-size:12px">${dtFull(o.qc_at)}<br>${o.qc_by||"—"}</td><td class="c">${o.ship_by||"—"}</td>
         <td class="c"><button class="btn" onclick="shipBack('${o.id}')">출고취소</button></td></tr>`; }),
-    `<td colspan="3" class="c">최근 ${gone.length}건</td><td>${fmt(gone.reduce((s,o)=>s+Number(o.qty_done||0),0))}</td><td colspan="5"></td>`);
+    `<td colspan="3" class="c">최근 ${gone.length}건</td><td>${fmt(gone.reduce((s,o)=>s+Number(o.qty_done||0),0))}</td><td colspan="6"></td>`);
 }
 
 /* ══ LOT 추적 — 일련번호·LOT·지시번호 아무거나 넣으면 전체 이력 ══ */
@@ -15434,11 +15762,18 @@ function renderTrace(){
             `${DB.rework_in.filter(x=>x.rework_id===(DB.rework.find(w=>w.log_id===l.id)||{}).id)
                .map(x=>`${x.product_name} ${fmt(x.qty)}개${x.from_serial?` (${x.from_serial})`:""}`).join(" + ") || "투입 기록 없음"}`
             + ` → ${pName(l)} ${fmt(l.qty_ea)}개`)
-          : step(true, "포장 생산", `${l.work_date} · ${l.machine||"설비 미기록"} · ${l.worker||"—"} · ${fmt(l.qty_ea)}EA · 투입 ${fmt(l.input_kg)}kg`)}
-        ${step(!!l.lot, "LOT · 일련번호", `LOT ${l.lot||"—"} / 일련번호 ${l.serial}`)}
-        ${step(!!(o?.qc_by||l.checked_by), "검수", (o?.qc_by||l.checked_by) ? `${o?.qc_by||l.checked_by} · ${String(o?.qc_at||l.checked_at||"").slice(0,16).replace("T"," ")}` : "미검수")}
+          : step(true, "포장 생산", `${l.work_date} · ${l.machine||"설비 미기록"} · ${l.worker||"—"} · ${fmt(l.qty_ea)}EA · 투입 ${fmt(l.input_kg)}kg${l.carried_kg>0?` (+이전 잔량 ${fmt(l.carried_kg)}kg)`:""}` +
+              `<br>시작 <b>${dtFull(o?.first_started_at||o?.started_at)}</b> → 완료 <b>${dtFull(o?.done_at || l.created_at)}</b>` +
+              (l.leftover_to ? `<br>남은 원두 ${fmt(l.leftover_kg)}kg → ${({next:"다음 생산에 합산",loss:"이 건의 로스",keep:"잔량 보관"})[l.leftover_to]||""} · 로스 ${l.loss_flag==="open"?"미확정":`${fmt(l.loss_kg)}kg (${l.loss_pct_actual}%) ${LOSS_FLAG_T[l.loss_flag]||""}`}${l.loss_reason?` · 사유: ${l.loss_reason}${l.loss_note?" — "+l.loss_note:""}`:""}` : ""))}
+        ${step(!!l.lot, "LOT · 일련번호", `LOT ${l.lot||"—"} / 일련번호 ${l.serial}${(()=>{ const M = bagMatOf(prodById(l.product_id)); const led = M && l.lot ? lotLedger(M).find(x=>x.lot===l.lot) : null; return led ? ` · LOT 입고 ${dtFull(led.at)} ${led.by||""}` : ""; })()}`)}
+        ${(()=>{ const rj = o ? DB.order_events.filter(e=>e.order_id===o.id && ["qc_reject","qc_resubmit"].includes(e.event)).sort((a,b)=>(Number(a.seq)||0)-(Number(b.seq)||0)) : [];
+           return rj.length ? step(true, `검수 반려 · 조치 (${rj.filter(e=>e.event==="qc_reject").length}회)`, rj.map(e=>`${e.event==="qc_reject"?"⛔ 반려":"🔁 조치 완료 → 재검수"} <b>${dtFull(e.at)}</b> ${e.user_name||""}${e.note?` — ${e.note}`:""}`).join("<br>")) : ""; })()}
+        ${step(!!(o?.qc_by||l.checked_by), "검수 완료", (o?.qc_by||l.checked_by) ? `${o?.qc_by||l.checked_by} · <b>${dtFull(o?.qc_at||l.checked_at)}</b>` : "미검수")}
         ${step(ng.length, "부적합", ng.length ? ng.map(x=>`${x.type} ${fmt(x.qty)}EA`).join("<br>") : "없음")}
-        ${step(o?.status==="출고완료", "출고", o?.status==="출고완료" ? `${o.channel} · ${String(o.ship_at).slice(0,10)} · ${o.ship_by}` : (o?`${o.channel} · ${o.status}`:"출고 기록 없음"))}
+        ${step(o?.status==="출고완료", "출고", o?.status==="출고완료" ? `${o.channel} · <b>${dtFull(o.ship_at)}</b> · ${o.ship_by}` : (o?`${o.channel} · ${o.status}`:"출고 기록 없음"))}
+        ${(()=>{ const evs = o ? DB.order_events.filter(e=>e.order_id===o.id).sort((a,b)=>(Number(a.seq)||0)-(Number(b.seq)||0) || String(a.at).localeCompare(String(b.at))) : [];
+           const T = { create:"작업지시 생성", start:"작업 시작", finish:"생산 완료", stop:"작업 중단", resume:"작업 재개", edit_serial:"일련번호 수정", qc_reject:"검수 반려", qc_resubmit:"조치 완료 → 재검수", qc_pass:"검수 완료", ship:"출고 완료", unship:"출고 취소", edit:"수정", cancel:"취소" };
+           return evs.length ? step(true, `작업 이력 (${evs.length}건 · 날짜·시간)`, evs.map(e=>`<b>${dtFull(e.at)}</b> ${T[e.event]||e.event} ${e.from_status&&e.to_status?`(${e.from_status} → ${e.to_status})`:""} · ${e.user_name||"—"}${e.note?` — ${e.note}`:""}`).join("<br>")) : ""; })()}
       </div>
     </div>`;
   }).join("");
@@ -15609,6 +15944,7 @@ const BULK_DEFS = {
         const mv = await mesMoveMaterial({ material_id:m.id, kind:"입고", qty:q, note:`초기재고${v.lot?` · LOT ${v.lot}`:""}`, idem:`bk-${m.id}` });
         if (!mv || !mv.ok) return { ok:false, message:`자재는 만들었지만 초기재고를 못 넣음 — ${mv?.message||""}` };
         if (v.lot) { const all = matLots(); all[m.id] = [ ...(all[m.id]||[]), { lot:String(v.lot).trim(), qty:q, date:today(), at:nowISO(), by:CURRENT_USER||"" } ]; SETTINGS[MAT_LOT_KEY] = all; saveSetting(MAT_LOT_KEY, all); }
+        if (v.lot) logAudit("부자재 LOT 입고", m.name, `LOT ${String(v.lot).trim()} · ${fmt(q)} (일괄 입력 초기재고)`);
       }
       return { ok:true }; } },
   machines: { title:"기계 일괄 입력", table:"machines", tab:"mach",
