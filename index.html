@@ -2011,6 +2011,15 @@
   <div class="body">
     <h2 class="page">품질관리<small id="asof-pqc"></small></h2>
     <div class="cards" id="qCards"></div>
+    <div class="panel" id="qOpenWrap" style="border:2px solid var(--bad)">
+      <div class="panel-h" style="color:var(--bad)" id="qOpenHead">⚠ 부적합 — 조치 대기</div>
+      <div class="hint">현장에서 등록한 부적합(생산 중 · 완료 때 · 반려 칸)이 여기로 옵니다 — <b>[조치 등록]</b>으로 조치 · 원인 · 재발방지를 남기면 아래 상세에 이력으로 남습니다 (최근 60일)</div>
+      <div class="panel-b"><table id="qOpen"></table></div>
+    </div>
+    <div class="panel">
+      <div class="panel-h">검수 · 출고 반려 → 재작업 이력 <span class="r hint">반려 사유 · 반려자 → 조치(재포장 등) · 조치자 → 결과 · 최근 100건</span></div>
+      <div class="panel-b"><table id="qRej"></table></div>
+    </div>
     <div class="cols2">
       <div class="panel"><div class="panel-h">일별 발생 추이 (최근 30일)</div>
         <div style="padding:10px;height:220px"><canvas id="chPqcDay"></canvas></div></div>
@@ -4094,6 +4103,59 @@ async function mesCloseRejected(a){
       const r = { ok:true, qty, action:a.action }; idemPut(T, a.idem, "close_rejected", o.id, r); return r;
     });
   });
+}
+/* ══ 반려 건 삭제 — 현장으로 돌아온 반려 건을 지운다 (047) — Lee 2026-10-29 ══
+   "검수에서 반려가 되는 것도 좋아. 근데 현장작업에서 다시 돌아갈 경우 삭제 기능도 있어야 할 거 같아"
+   · 관리자(관리자 · 현장 관리자)만 — 현장 작업자에게는 버튼이 안 보인다
+   · 통째로 반려된 건: 생산실적을 취소(원두·부자재·완제품 재고 되돌림, 취소분개로 기록 남음) → 지시는 폐기 상태로 [삭제] 표시
+   · 부분 반려분(…-R): 생산 기록이 원래 건과 하나라 기록째 못 지운다 → 그 수량만 완제품 재고에서 빼고 끝냄
+   · 어느 쪽이든 "삭제" 를 직접 적고 사유를 남긴다 · 변경이력에 품목·일련번호·수량·사유가 남는다 */
+async function mesDeleteRejected(a){
+  return rpc("delete_rejected", { p_order_id:a.order_id, p_reason:a.reason, p_user_name:CURRENT_USER, p_idempotency:a.idem }, async () => {
+    const hit = idemHit(a.idem); if (hit) return hit;
+    const o = ordById(a.order_id); if (!o) return MES_ERR("no_order","작업지시를 찾을 수 없습니다");
+    if (o.status !== "생산중") return MES_ERR("bad_status", `반려된 생산중 건만 지울 수 있습니다 (지금 ${o.status})`);
+    const open = DB.qc_rejections.filter(r=>r.order_id===o.id && !r.resolved); if (!open.length) return MES_ERR("not_rejected","반려된 건이 아닙니다");
+    if (o.split_from) return MES_ERR("split","부분 반려분은 기록째 지울 수 없습니다");
+    if (!o.log_id) return MES_ERR("no_log","생산실적이 없습니다");
+    const v = await mesVoidLog({ log_id:o.log_id, reason:`반려 건 삭제 · ${a.reason}`, idem:`${a.idem}-void` });
+    if (!v || v.ok === false) return v;
+    return localTx(T => {
+      open.forEach(r=>{ T.upd(r, { resolved:true, resolved_at:nowISO(), resolved_by:CURRENT_USER, handling:"deleted", handling_note:`삭제 — ${a.reason}` }); save("qc_rejections", r); });
+      T.upd(o, { status:"폐기", note:`[삭제] ${a.reason}` }); save("orders", o);
+      pushEvent(T, o, "생산중", "폐기", "qc_delete", `[삭제] ${a.reason}`);
+      const r = { ok:true, returned_kg:v.returned_kg||0 }; idemPut(T, a.idem, "delete_rejected", o.id, r); return r;
+    });
+  });
+}
+async function deleteRejected(id){
+  if (!(await requireUser())) return;
+  if (!(can("log") || isManager())) return ask("반려 건 삭제는 관리자만 할 수 있습니다.\n관리자에게 요청하세요.", { title:"삭제 불가", yes:"확인", only:true });
+  const o = ordById(id); if (!o) return;
+  const q = qcState(o), p = prodById(o.product_id);
+  const nm = p?.name || o.product_name || "", n = Number(o.qty_done)||0;
+  const split = !!o.split_from;
+  if (!split && o.log_id && DB.orders.some(x=>x.id!==o.id && x.log_id===o.log_id && !["폐기"].includes(x.status)))
+    return ask(`이 생산실적에서 나뉜 다른 건(부분 반려·출고 대기)이 있어 기록째 지울 수 없습니다.\n생산실적 화면에서 관리자가 정정하세요.`, { title:"삭제 불가", yes:"확인", only:true });
+  const what = split
+    ? `부분 반려분이라 생산 기록은 원래 건과 하나입니다.\n→ 이 ${fmt(n)}개만 완제품 재고에서 빼고 끝냅니다 (원두 재고는 그대로).`
+    : `→ 생산실적을 취소하고 원두·부자재·완제품 재고를 되돌립니다.\n→ 기록은 지우지 않고 취소분개로 남습니다. 반려 칸에서 빠집니다.`;
+  if (!(await ask(`${nm} ${fmt(n)}개 · 일련번호 ${o.serial||"—"} · 배치 ${o.batch_plan||"—"}\n반려 사유: ${q.reason||"—"}\n\n${what}\n\n이 반려 건을 삭제하시겠습니까?`, { title:"반려 건 삭제 — 관리자", yes:"삭제 진행", danger:true }))) return;
+  const t = await askText(`되돌릴 수 없습니다. 확인을 위해 "삭제" 라고 적어 주세요.`, "", "삭제 확인");
+  if (t === null) return;
+  if (String(t).trim() !== "삭제") return toast("삭제하지 않았습니다");
+  const why = await askText("삭제 사유 (이력에 남습니다)", "", "삭제 사유");
+  if (why === null) return;
+  const reason = String(why).trim(); if (!reason) return toast("삭제 사유를 적어 주세요");
+  const busy = setBusy("삭제 처리 중…");
+  const r = split
+    ? await mesCloseRejected({ order_id:id, action:"scrap", note:`[삭제] ${reason}`, idem:`drj-${id}-${uid()}` })
+    : await mesDeleteRejected({ order_id:id, reason, idem:`drj-${id}-${uid()}` });
+  busy();
+  if (!r || r.ok === false) { quickRender(); return ask(`${r?.message||"지우지 못했습니다"}${/delete_rejected|schema cache/i.test(r?.message||"") ? "\n\n서버에 047_delete_rejected.sql 을 아직 실행하지 않았습니다." : ""}\n\n재고와 기록은 그대로입니다.`, { title:"삭제하지 못했습니다", yes:"확인", only:true }); }
+  logAudit("반려 건 삭제", o.order_no||"", `${nm} ${fmt(n)}개 · 일련번호 ${o.serial||"—"} · 배치 ${o.batch_plan||"—"} · 반려 사유 ${q.reason||"—"} · ${split?"부분 반려분 — 완제품 재고에서 뺌":`생산실적 취소 · 원두 ${fmt(r.returned_kg||0)}kg 되돌림`} · 삭제 사유: ${reason}`);
+  if (sb) { await Promise.all([ pullWhere("products","id",o.product_id), pullWhere("logs","order_id",o.split_from||o.id) ]).catch(()=>{}); }
+  quickRender(); toast(`반려 건을 삭제했습니다 — ${nm} ${fmt(n)}개`);
 }
 const FIX_ACTIONS = [ "재포장", "재실링", "라벨 교체", "제조일자·일련번호 수정", "이물 제거 후 재포장", "중량 재조정", "이상 없음 — 재확인만", "원두로 되돌려 다른 배치와 합침", "폐기", "기타 직접 입력" ];
 async function resubmitQc(id){
@@ -6533,6 +6595,9 @@ renderFavs();
 
 /* ══ 업데이트 내역 — 어디에 뭘 바꿨는지 (최근 것이 위) ══ */
 const CHANGELOG = [
+  ["2026-10-29", "품질관리 › 부적합 조치 (048 SQL)", "현장에서 등록한 부적합(생산 중·완료 때·반려 칸)이 맨 위 \"⚠ 부적합 — 조치 대기\" 로 올라옴 → [조치 등록]: 조치(폐기·원두로 되돌림·재포장→정상품·재작업 후 재검사·오등록·기타) · 원인 · 재발방지 · 조치자·일시 · 고치면 덮어쓰지 않고 [이력]에 이어 붙음 · 상세표·엑셀에 조치/원인/조치자 칸 · 조치 등록은 관리자·현장 관리자·검수 담당"],
+  ["2026-10-29", "품질관리 › 반려 → 재작업 이력", "검수·출고 반려 건을 한 표로 — 반려 일시·단계·품목·일련번호·수량·반려 사유·반려자 → 조치(재포장·재실링·라벨 교체…·폐기·원두로 합침·삭제)·조치자·일시 → 결과(조치 필요·재검수 대기·검수 통과·출고 완료·폐기·삭제) · [이력]으로 반려→조치→재검수 순서"],
+  ["2026-10-29", "현장 작업 › 반려 칸 › [삭제] (047 SQL)", "현장으로 돌아온 반려 건을 관리자(관리자·현장 관리자)가 지울 수 있음 — 통째로 반려된 건은 생산실적 취소(원두·부자재·완제품 재고 되돌림, 취소분개로 기록 남음) 후 지시는 [삭제] 표시로 끝 · 부분 반려분(-R)은 그 수량만 완제품 재고에서 빼고 끝 · \"삭제\" 직접 입력 + 사유 → 변경이력에 품목·일련번호·수량·사유 · 현장 작업자에게는 버튼 안 보임"],
   ["2026-10-29", "현장 작업 › 생산 완료 — 한 화면", "일련번호 확인·정상품·부적합·유형·투입 kg·지난 잔량·남은 원두·처리 방법·로스 사유를 하나씩 묻던 것 → 한 화면에서 [정상품 수량] (기본 = 지시 수량) · [버린 수량] (있을 때만 유형) · [남은 원두] (없으면 그대로) 만 보고 [완료] · 일련번호·봉투 LOT·투입 원두(지시의 배치 kg)·지난 잔량 합산은 자동으로 보여 주기만 · 라벨 부족은 화면 안에 경고만"],
   ["2026-10-29", "로스 › 다음 생산에 합산", "\"다음 생산에 합산\" 한 남은 원두가 그 건의 로스로 잡히던 문제 — 넘긴 잔량은 로스에서 빼고, 받은 쪽에 합산(받아 온 kg 포함)해 계산 · 다음 같은 원두 생산 때 묻지 않고 가장 오래된 잔량을 자동으로 이어받고 그만큼 배치에서 덜 뺌 · 로스가 기준을 벗어나도 현장에선 묻지 않음 — 표시만 남고 관리자가 생산실적 [로스]에서 사유·처리 변경"],
   ["2026-10-29", "MMS 원두 배치 › 삭제 막기", "생산에 쓴 배치(사용분·생산실적의 배치번호)는 관리자만 삭제 가능 · 관리자도 어떤 생산(일련번호)에 쓰였는지 보여 주고 \"생산된 원두를 삭제하시겠습니까?\" → \"삭제\" 직접 입력 → 사유 · 지운 배치번호·원두·재고·쓰인 생산·사유를 변경이력에 남김 (한 줄 삭제·선택 삭제 모두)"],
@@ -12080,23 +12145,108 @@ function renderPqc(){
         <td>${fmt(byM[m].all)}</td><td>${ea?fmt(ea):"—"}</td>
         <td>${ea?fmt(byM[m].all/ea*100)+"%":"—"}</td></tr>`; }));
 
+  renderPqcWork();
   const rows = [...DB.pqc].sort((a,b)=>String(b.date+(b.created_at||"")).localeCompare(String(a.date+(a.created_at||"")))).slice(0,80);
   tbl("qTbl", ["일자","구분","품목","공정","수량","내용","조치","담당",""],
     rows.map(q=>{ const p=prodById(q.product_id); const X = !pqcLive(q);
       return `<tr${X?' style="opacity:.5"':""}><td class="c">${q.date}</td>
         <td class="c"><span class="tag ${q.type==="이물질"?"bad":"warn"}">${q.type}</span></td>
         <td class="l">${p?p.name:"—"}</td><td class="c">${q.machine||"—"}</td>
-        <td><b>${fmt(q.qty)}</b></td><td class="l">${q.note||"—"}</td><td class="l">${q.action||"—"}</td>
+        <td><b>${fmt(q.qty)}</b></td><td class="l">${q.note||"—"}</td><td class="l" style="font-size:12px">${q.action ? `<b>${pqcActText(q)}</b>${q.action_cause?`<br>원인: ${q.action_cause}`:""}${q.action_note?`<br>${q.action_note}`:""}${q.action_by?`<br><span class="hint" style="padding:0">${q.action_by} ${dtFull(q.action_at)}</span>`:""}` : `<span class="bad">조치 전</span>`}</td>
         <td class="c">${q.worker||"—"}</td>
-        <td class="c">${pqcLive(q)
+        <td class="c" style="white-space:nowrap">${pqcLive(q) && canPqcAct() ? `<button class="btn ${q.action?"":"primary"}" onclick="pqcAct('${q.id}')">${q.action?"조치 수정":"조치 등록"}</button> ` : ""}${(q.action_hist||[]).length?`<button class="btn" onclick="pqcHist('${q.id}')">이력</button> `:""}${pqcLive(q)
           ? `<button class="btn danger" onclick="delPqc('${q.id}')">취소</button>`
           : `<span class="tag">취소</span>`}</td></tr>`; }));
 }
+/* ══ 부적합 조치 · 반려 재작업 이력 — 품질관리 (048) — Lee 2026-10-29 ══
+   "부적합을 했으면 품질관리에서 부적합에 대한 작업을 해야 하는 거 아니야? 그래야 이력이 남지 — 부적합 조치 내용이 없잖아"
+   "재포장도 마찬가지야 — 검수에서 보냈으면 그게 이력이 남아야지"
+   · 현장 부적합은 "조치 대기" 로 올라오고, 관리자·검수 담당이 [조치 등록] — 조치 · 원인 · 재발방지 · 조치자 · 일시
+   · 고칠 때마다 덮어쓰지 않고 action_hist 에 이어 붙인다
+   · 반려 → 재포장/재실링… → 재검수 흐름은 qc_rejections · order_events 를 그대로 읽어 한 줄씩 보여 준다 */
+const PQC_ACTIONS = ["폐기","원두로 되돌림 (다른 배치와 합침)","재포장 → 정상품","재작업 후 재검사","이상 없음 (오등록)","기타 직접 입력"];
+const PQC_CAUSES  = ["작업자 실수","설비 이상","포장재(부자재) 불량","원두 문제","라벨·인쇄 문제","원인 모름 / 조사 중","기타"];
+const PQC_ACT_T = { scrap:"폐기", bean:"원두로 되돌림 (다른 배치와 합침)" };
+const pqcActText = q => PQC_ACT_T[q.action] || q.action || "";
+const canPqcAct = () => can("qc") || can("log") || isManager();
+async function mesSetPqcAction(a){
+  return rpc("set_pqc_action", { p_pqc_id:a.pqc_id, p_action:a.action, p_cause:a.cause||null, p_note:a.note||null, p_user_name:CURRENT_USER, p_idempotency:a.idem }, () => {
+    const hit = idemHit(a.idem); if (hit) return hit;
+    const q = DB.pqc.find(x=>x.id===a.pqc_id); if (!q) return MES_ERR("no_pqc","품질기록을 찾을 수 없습니다");
+    if (q.cancelled_at) return MES_ERR("cancelled","취소된 기록입니다");
+    const h = { at:nowISO(), by:CURRENT_USER, action:a.action, cause:a.cause||null, note:a.note||null, before:q.action||null };
+    return localTx(T => {
+      T.upd(q, { action:a.action, action_cause:a.cause||null, action_note:a.note||null, action_by:CURRENT_USER, action_at:nowISO(), action_hist:[ ...(q.action_hist||[]), h ] }); save("pqc", q);
+      const r = { ok:true }; idemPut(T, a.idem, "set_pqc_action", q.id, r); return r;
+    });
+  });
+}
+async function pqcAct(id){
+  if (!(await requireUser())) return;
+  if (!canPqcAct()) return ask("부적합 조치는 관리자 · 검수 담당이 등록합니다.", { title:"조치 등록", yes:"확인", only:true });
+  const q = DB.pqc.find(x=>x.id===id); if (!q) return;
+  const nm = prodById(q.product_id)?.name || q.product_name || "(품목 미지정)";
+  const head = `${q.date} · ${q.type} ${fmt(q.qty)}EA · ${nm}${q.machine?` · ${q.machine}`:""}\n${q.note||""}${q.action?`\n\n지금 조치: ${pqcActText(q)}${q.action_by?` (${q.action_by} ${dtFull(q.action_at)})`:""}`:""}`;
+  let act = await ask(`${head}\n\n어떻게 조치했습니까?`, { title:"부적합 조치", choices:[ ...PQC_ACTIONS.map(x=>({ v:x, label:x })), { v:null, label:"취소" } ] });
+  if (!act) return;
+  if (act === "기타 직접 입력") { const t = await askText("조치 내용을 적어 주세요", "", "조치 내용"); if (t === null) return; act = String(t).trim(); if (!act) return toast("조치 내용을 적어 주세요"); }
+  const cause = await ask(`${nm} · ${q.type}\n조치: ${act}\n\n원인은 무엇입니까?`, { title:"발생 원인", choices:[ ...PQC_CAUSES.map(x=>({ v:x, label:x })), { v:null, label:"취소" } ] });
+  if (!cause) return;
+  const memo = await askText("재발방지 · 덧붙일 말 (없으면 그대로 확인)", q.action_note||"", "재발방지");
+  if (memo === null) return;
+  const r = await mesSetPqcAction({ pqc_id:id, action:act, cause, note:String(memo).trim()||null, idem:`pqa-${id}-${uid()}` });
+  if (!r || r.ok === false) return ask(`${r?.message||"저장하지 못했습니다"}${/set_pqc_action|schema cache/i.test(r?.message||"") ? "\n\n서버에 048_pqc_action.sql 을 아직 실행하지 않았습니다." : ""}`, { title:"조치 등록 실패", yes:"확인", only:true });
+  logAudit(q.action ? "부적합 조치 수정" : "부적합 조치", `${q.type} ${fmt(q.qty)}EA`, `${nm} · 조치: ${act} · 원인: ${cause}${String(memo).trim()?` · ${String(memo).trim()}`:""}${q.action?` (이전: ${pqcActText(q)})`:""}`);
+  if (sb) await pullWhere("pqc", "id", id).catch(()=>{});
+  renderPqc(); toast("조치를 기록했습니다");
+}
+function pqcHist(id){
+  const q = DB.pqc.find(x=>x.id===id); if (!q) return;
+  const H = (q.action_hist||[]);
+  ask(`${q.date} · ${q.type} ${fmt(q.qty)}EA · ${prodById(q.product_id)?.name||q.product_name||""}\n발생: ${q.note||"—"} (${q.worker||"—"})\n\n` +
+    (H.length ? H.map((h,i)=>`${i+1}. ${dtFull(h.at)} ${h.by||""}\n   조치: ${h.action}${h.cause?` · 원인: ${h.cause}`:""}${h.note?`\n   ${h.note}`:""}`).join("\n")
+              : (q.action ? `조치: ${pqcActText(q)}` : "조치 기록 없음")), { title:"부적합 이력", yes:"확인", only:true });
+}
+const REJ_HANDLING = { current_flow:"조치 전", partial:"조치 전", ship_reject:"조치 전", resubmitted:"재작업 → 재검수", scrap:"폐기", bean:"원두로 합침", closed:"끝냄", deleted:"삭제" };
+function rejResult(r){
+  const o = ordById(r.order_id); if (!o) return "—";
+  if (o.status === "폐기") return String(o.note||"").startsWith("[삭제]") ? `<span class="tag bad">삭제</span>` : `<span class="tag bad">폐기</span>`;
+  const f = qcFlow(o);
+  if (f) return `<span class="tag ${f==="조치 필요"?"bad":"warn"}">${f}</span>`;
+  if (o.status === "출고완료") return `<span class="tag ok">출고 완료</span>`;
+  if (o.status === "검수완료") return `<span class="tag ok">검수 통과</span>${o.qc_by?`<br><span class="hint" style="padding:0;font-size:11px">${o.qc_by} ${dtFull(o.qc_at)}</span>`:""}`;
+  return `<span class="tag">${o.status}</span>`;
+}
+function renderPqcWork(){
+  const lim = dayAfter(-60);
+  const open = PQCL().filter(q=>!String(q.action||"").trim() && String(q.date||"") >= lim)
+    .sort((a,b)=>String(b.date+(b.created_at||"")).localeCompare(String(a.date+(a.created_at||""))));
+  if ($("qOpenWrap")) $("qOpenWrap").style.display = open.length ? "" : "none";
+  if ($("qOpenHead")) $("qOpenHead").textContent = `⚠ 부적합 — 조치 대기 ${open.length}건`;
+  if ($("qOpen")) tbl("qOpen", ["발생일","구분","품목","공정","수량","내용","등록",""],
+    open.map(q=>`<tr><td class="c">${q.date}</td><td class="c"><span class="tag ${q.type==="이물질"?"bad":"warn"}">${q.type}</span></td>
+      <td class="l">${prodById(q.product_id)?.name||q.product_name||"—"}</td><td class="c">${q.machine||"—"}</td><td><b>${fmt(q.qty)}</b></td>
+      <td class="l" style="font-size:12px">${q.note||"—"}</td><td class="c" style="font-size:12px">${q.worker||"—"}<br><span class="hint" style="padding:0">${dtFull(q.created_at)}</span></td>
+      <td class="c">${canPqcAct()?`<button class="btn primary" onclick="pqcAct('${q.id}')">조치 등록</button>`:`<span class="hint" style="padding:0">관리자 조치 대기</span>`}</td></tr>`));
+  const rj = [...DB.qc_rejections].sort((a,b)=>String(b.created_at||"").localeCompare(String(a.created_at||""))).slice(0,100);
+  if ($("qRej")) tbl("qRej", ["반려 일시","단계","품목","일련번호","수량","반려 사유 · 반려자","조치 (재포장 등)","조치자 · 일시","결과",""],
+    rj.map(r=>{ const o = ordById(r.order_id); const p = prodById(o?.product_id);
+      const rs = o ? DB.order_events.filter(e=>e.order_id===o.id && e.event==="qc_resubmit").sort((a,b)=>String(b.at).localeCompare(String(a.at)))[0] : null;
+      const act = r.handling_note || (r.resolved ? "" : "");
+      return `<tr><td class="c" style="font-size:12px;white-space:nowrap">${dtFull(r.created_at)}</td>
+        <td class="c"><span class="tag">${r.stage==="ship"?"출고 반려":"검수 반려"}</span></td>
+        <td class="l">${p?.name||o?.product_name||"—"}</td><td class="c">${o?.serial||"—"}</td><td><b>${fmt(r.qty_affected||0)}</b></td>
+        <td class="l" style="font-size:12px">⛔ ${r.reason_note||"(사유 없음)"}<br><span class="hint" style="padding:0">${r.created_by_name||"—"}</span></td>
+        <td class="l" style="font-size:12px">${r.resolved ? `<b>${REJ_HANDLING[r.handling]||r.handling||""}</b>${act?` — ${act}`:""}${r.merged_batch?` (→ ${r.merged_batch})`:""}` : `<span class="bad">조치 전</span>`}</td>
+        <td class="c" style="font-size:12px;white-space:nowrap">${r.resolved ? `${r.resolved_by||rs?.user_name||"—"}<br>${dtFull(r.resolved_at||rs?.at)}` : "—"}</td>
+        <td class="c">${rejResult(r)}</td>
+        <td class="c">${o?`<button class="btn" onclick="showQcHistory('${o.id}')">이력</button>`:""}</td></tr>`; }));
+}
 const csvPqc = () => csv("품질기록",
-  ["일자","구분","품목","공정","수량","내용","조치","담당","취소여부","취소사유","취소자","취소시각"],
+  ["일자","구분","품목","공정","수량","내용","조치","원인","재발방지","조치자","조치일시","담당","취소여부","취소사유","취소자","취소시각"],
   [...DB.pqc].sort((a,b)=>a.date.localeCompare(b.date))
     .map(q=>[q.date, q.type, prodById(q.product_id)?.name||"", q.machine||"", q.qty,
-             q.note||"", q.action||"", q.worker||"",
+             q.note||"", pqcActText(q), q.action_cause||"", q.action_note||"", q.action_by||"", q.action_at||"", q.worker||"",
              pqcLive(q)?"":"취소", q.cancel_reason||"", q.cancelled_by_name||"", q.cancelled_at||""]));
 
 /* ══════════════════════════════════════════════════════════════
@@ -15960,7 +16110,7 @@ function renderWork(){
             <td class="c"><b>${o.serial||"—"}</b></td><td class="l" style="font-size:12px">${o.batch_plan||"—"}</td><td class="c">${lotOf(o)||"—"}</td>
             <td class="l" style="font-size:12.5px;min-width:180px">⛔ ${rj?.note || q.reason || "(사유 없음)"}${f==="재검수 대기" ? `<br>🔁 ${rs?.note||"조치 내용 없음"} <span class="hint" style="padding:0">${dtFull(rs?.at)} ${rs?.user_name||""}</span>` : `<br><span class="bad">조치 후 다시 올려 주세요</span>`}</td>
             <td class="c" style="font-size:12px;white-space:nowrap">${dtFull(rj?.at || q.at)}<br>${rj?.user_name || q.by || "—"}</td>
-            <td class="c" style="white-space:nowrap">${f==="조치 필요" ? `<button class="btn primary" style="height:30px" onclick="resubmitQc('${o.id}')">조치 완료 → 다시 검수로</button> <button class="btn" style="height:30px" onclick="ngWork('${o.id}')">부적합</button>` : `<button class="btn" style="height:30px" onclick="go('qc')">검수 화면</button>`} <button class="btn" style="height:30px" onclick="showQcHistory('${o.id}')">이력</button></td></tr>`; }).join("")}</tbody></table></div></div>`; })();
+            <td class="c" style="white-space:nowrap">${f==="조치 필요" ? `<button class="btn primary" style="height:30px" onclick="resubmitQc('${o.id}')">조치 완료 → 다시 검수로</button> <button class="btn" style="height:30px" onclick="ngWork('${o.id}')">부적합</button>${can("log")||isManager() ? ` <button class="btn" style="height:30px;color:var(--bad)" onclick="deleteRejected('${o.id}')" title="관리자 — 반려 건을 지웁니다 (재고 되돌림 · 이력 남음)">삭제</button>` : ""}` : `<button class="btn" style="height:30px" onclick="go('qc')">검수 화면</button>`} <button class="btn" style="height:30px" onclick="showQcHistory('${o.id}')">이력</button></td></tr>`; }).join("")}</tbody></table></div></div>`; })();
   const card = o=>{
     const p = prodById(o.product_id);
     const pct = pctOf(o), run = o.status==="생산중";
@@ -15985,7 +16135,7 @@ function renderWork(){
           <div class="r2">${q.at ? String(q.at).slice(0,16).replace("T"," ") : ""}${
             q.by ? ` · ${q.by}` : ""}${q.count > 1 ? ` · 반려 ${q.count}회` : ""}</div>
           ${n ? `<div class="r3">${n.note}</div>` : ""}
-          ${q.hasLog ? `<div style="margin-top:8px"><button class="btn primary" style="height:34px" onclick="event.stopPropagation();resubmitQc('${o.id}')">조치 완료 → 다시 검수로</button></div>` : ""}
+          ${q.hasLog || o.log_id ? `<div style="margin-top:8px"><button class="btn primary" style="height:34px" onclick="event.stopPropagation();resubmitQc('${o.id}')">조치 완료 → 다시 검수로</button>${can("log")||isManager() ? ` <button class="btn" style="height:34px;color:var(--bad)" onclick="event.stopPropagation();deleteRejected('${o.id}')">삭제</button>` : ""}</div>` : ""}
         </div>`; })()}
       ${kInfoHTML(p?.bean, o)}
       <div class="big"><b>${fmt(o.qty_done)}</b> <span>/ ${fmt(o.qty_plan)} 개</span></div>
