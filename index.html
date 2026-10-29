@@ -1389,7 +1389,7 @@
       <div style="padding:14px 18px;display:grid;grid-template-columns:140px 220px 1fr;gap:10px;align-items:start" id="helpForm">
         <select id="hKind" style="font-weight:700"><option>오류</option><option>요청</option><option>질문</option><option>기타</option></select>
         <select id="hScreen" style="font-weight:700"></select>
-        <div></div>
+        <label style="display:flex;gap:6px;align-items:center;font-weight:700">생긴 날 <input type="date" id="hDate" style="height:34px" title="문제가 생긴 날 — 오늘이 아니면 바꾸세요"></label>
         <textarea id="hText" rows="3" placeholder="예) 검수에서 체크 누르면 옆 항목이 체크돼요 / 라벨작업 카드에 삭제 버튼이 있었으면 좋겠어요"
           style="grid-column:1/-1;width:100%;font:inherit;font-size:13.5px;border:1px solid var(--line-2);border-radius:8px;padding:10px 12px;resize:vertical"></textarea>
         <div style="grid-column:1/-1;display:flex;gap:8px;align-items:center">
@@ -2075,27 +2075,33 @@
   </div>
   <div class="body">
     <h2 class="page">로스관리<small id="asof-loss"></small></h2>
-    <div class="guide"><b>생산 완료 때 적은 투입 · 남은 원두로 건별 로스를 확정합니다.</b> 남은 원두를 <b>다음 생산에 합산</b>하면 그 건은 미확정으로 두고, 이어진 생산이 끝날 때 <b>전체 투입 − 전체 정상 생산 − 최종 보관 잔량</b>으로 한 번에 확정합니다 · 로스율이 <b>기준 ± 허용 오차</b>를 벗어나면 <span class="tag bad">이상</span>으로 표시되고 작업자가 적은 사유가 같이 남습니다 · 기준은 아래에서 품목·설비별로 바꿀 수 있고, 쌓인 평균·편차를 보고 조정하세요.</div>
-    <div class="cards" id="lossCards"></div>
-    <div class="panel"><div class="panel-h">기준 로스율 · 허용 오차 <span class="r hint">품목에 적은 값 › 설비 값 › 기본값 순서로 적용 · 비우면 다음 단계 값</span></div>
-      <div id="lossRule" style="padding:10px 18px"></div></div>
-    <div class="panel"><div class="panel-h">생산 건별 로스 <span class="r hint">이어진 생산(잔량 합산)은 한 묶음으로 · [로스] 로 다시 적을 수 있습니다</span></div>
-      <div class="panel-b"><table id="lossLogTbl"></table></div></div>
+    <div class="hint" style="padding:0 0 10px;font-size:13px">🟢 정상 · 🔴 기준 벗어남 · 🟡 다음 생산에 합산(아직 미확정) — 숫자 표는 맨 아래 <b>[표로 보기]</b></div>
+    <div id="lossHero"></div>
+    <div class="panel"><div class="panel-h">날마다 로스율 <span class="r hint" id="lossBand"></span></div>
+      <div style="padding:10px;height:240px"><canvas id="chLoss"></canvas></div></div>
     <div class="cols2">
-      <div class="panel"><div class="panel-h">품목별 평균 로스율 · 편차 <span class="r hint">확정된 건만</span></div><div class="panel-b"><table id="lossAvgP"></table></div></div>
-      <div class="panel"><div class="panel-h">설비별 평균 로스율 · 편차</div><div class="panel-b"><table id="lossAvgM"></table></div></div>
+      <div class="panel"><div class="panel-h">품목별 로스율</div><div style="padding:10px;height:280px"><canvas id="chLossP"></canvas></div></div>
+      <div class="panel"><div class="panel-h">기계별 로스율</div><div style="padding:10px;height:280px"><canvas id="chLossM"></canvas></div></div>
     </div>
-    <div class="panel"><div class="panel-h">일별 로스 추이</div>
-      <div style="padding:10px;height:220px"><canvas id="chLoss"></canvas></div></div>
-    <div class="panel"><div class="panel-h">일별 로스</div>
-      <div class="panel-b"><table id="lossDay"></table></div></div>
-    <div class="cols2">
-      <div class="panel"><div class="panel-h">원두별 로스</div><div id="lossBean" style="padding:8px 0"></div>
-        <div class="panel-h" style="border-top:1px solid var(--line)">생산 외 사용 (용도별)</div>
-        <div class="hint">수불 차이를 용도 지정한 내역 · 로스(손실)·폐기만 실제 손실입니다</div>
-        <div class="panel-b"><table id="useSum"></table></div></div>
-      <div class="panel"><div class="panel-h">월별 로스</div><div class="panel-b"><table id="lossMon"></table></div></div>
-    </div>
+    <div class="panel"><div class="panel-h">생산 건마다 <span class="r hint">눌러서 [로스] 고치기 · 최근 것이 앞</span></div>
+      <div id="lossDots" style="padding:12px 14px;display:flex;flex-wrap:wrap;gap:6px"></div></div>
+    <div class="panel"><div class="panel-h">원두별 로스 (kg)</div><div id="lossBean" style="padding:8px 0"></div></div>
+    <details class="panel" id="lossMore"><summary class="panel-h" style="cursor:pointer">▸ 표로 보기 (건별 · 품목/기계 평균 · 날짜별 · 월별 · 생산 외 사용)</summary>
+      <div class="cards" id="lossCards" style="padding:12px 14px 0"></div>
+      <div class="panel-h" style="border-top:1px solid var(--line)">생산 건별 로스 <span class="r hint">이어진 생산(잔량 합산)은 한 묶음 · [로스] 로 다시 적기</span></div>
+      <div class="panel-b"><table id="lossLogTbl"></table></div>
+      <div class="cols2">
+        <div><div class="panel-h">품목별 평균 · 편차</div><div class="panel-b"><table id="lossAvgP"></table></div></div>
+        <div><div class="panel-h">기계별 평균 · 편차</div><div class="panel-b"><table id="lossAvgM"></table></div></div>
+      </div>
+      <div class="cols2">
+        <div><div class="panel-h">날짜별 로스</div><div class="panel-b"><table id="lossDay"></table></div></div>
+        <div><div class="panel-h">월별 로스</div><div class="panel-b"><table id="lossMon"></table></div>
+          <div class="panel-h">생산 외 사용 (용도별)</div><div class="panel-b"><table id="useSum"></table></div></div>
+      </div>
+    </details>
+    <details class="panel" id="lossRuleWrap"><summary class="panel-h" style="cursor:pointer">▸ 기준 로스율 · 허용 오차 바꾸기 <span class="r hint">품목 › 기계 › 기본 순서로 적용</span></summary>
+      <div id="lossRule" style="padding:10px 18px"></div></details>
   </div>
 </section>
 
@@ -6595,6 +6601,9 @@ renderFavs();
 
 /* ══ 업데이트 내역 — 어디에 뭘 바꿨는지 (최근 것이 위) ══ */
 const CHANGELOG = [
+  ["2026-10-29", "초기화 › 남는 기록 (049 SQL)", "초기화해도 조회·이력추적·반려 이력에 예전 기록이 나오던 문제 — 서버 초기화(028)가 나중에 생긴 표(검수 반려·지시 이력·출고·수불·작업자 참여·재작업·집계·실측 등)를 몰라서 남겼음 → 049 로 이어서 지움 · 049 가 없으면 \"일부 남음\" 으로 알려 줌 · 서버 없이 쓸 때도 같은 표까지 비움 · 변경이력(누가 무엇을 했는지)은 일부러 남김"],
+  ["2026-10-29", "로스관리 — 글보다 그림", "긴 설명 글을 빼고 맨 위에 큰 로스율 + 정상 범위 막대(초록 띠 안에 점 = 정상) · 정상/벗어남/미확정 건수 색 점 · 날마다·품목별·기계별 로스율 막대(초록 정상 · 빨강 벗어남 · 점선 = 정상 범위) · 생산 건마다 색 칸(누르면 [로스]) · 숫자 표와 기준 바꾸기는 접어 두고 [표로 보기]·[기준 바꾸기]로 열기 · 카드·날짜별 표가 옛 계산식이라 건별 로스와 숫자가 달랐던 것도 맞춤"],
+  ["2026-10-29", "문의 › 날짜", "문의 목록에 시각만(20:11) 나오던 것 → 문의 일시·상태 바꾼 일시·답변 일시를 날짜까지(2026.10.29 20:11) · 새 문의에 [생긴 날] 칸(기본 오늘 — 지난 일이면 바꿔서) · 오늘이 아닌 날 생긴 일이면 목록에 \"생긴 날\" 표시 · 완료된 문의는 처리까지 며칠 걸렸는지"],
   ["2026-10-29", "품질관리 › 부적합 조치 (048 SQL)", "현장에서 등록한 부적합(생산 중·완료 때·반려 칸)이 맨 위 \"⚠ 부적합 — 조치 대기\" 로 올라옴 → [조치 등록]: 조치(폐기·원두로 되돌림·재포장→정상품·재작업 후 재검사·오등록·기타) · 원인 · 재발방지 · 조치자·일시 · 고치면 덮어쓰지 않고 [이력]에 이어 붙음 · 상세표·엑셀에 조치/원인/조치자 칸 · 조치 등록은 관리자·현장 관리자·검수 담당"],
   ["2026-10-29", "품질관리 › 반려 → 재작업 이력", "검수·출고 반려 건을 한 표로 — 반려 일시·단계·품목·일련번호·수량·반려 사유·반려자 → 조치(재포장·재실링·라벨 교체…·폐기·원두로 합침·삭제)·조치자·일시 → 결과(조치 필요·재검수 대기·검수 통과·출고 완료·폐기·삭제) · [이력]으로 반려→조치→재검수 순서"],
   ["2026-10-29", "현장 작업 › 반려 칸 › [삭제] (047 SQL)", "현장으로 돌아온 반려 건을 관리자(관리자·현장 관리자)가 지울 수 있음 — 통째로 반려된 건은 생산실적 취소(원두·부자재·완제품 재고 되돌림, 취소분개로 기록 남음) 후 지시는 [삭제] 표시로 끝 · 부분 반려분(-R)은 그 수량만 완제품 재고에서 빼고 끝 · \"삭제\" 직접 입력 + 사유 → 변경이력에 품목·일련번호·수량·사유 · 현장 작업자에게는 버튼 안 보임"],
@@ -12382,43 +12391,80 @@ function renderLossAvg(logs){
   tbl("lossAvgM", ["설비","건수","평균 로스율","편차(σ)","최소~최대","이상","지금 기준"],
     by(l=>l.machine||"미기록").map(([k,st])=>{ const r = lossRuleOf(null, k); return row(k, st, `${r.pct}% ± ${r.tol}`); }));
 }
+/* ══ 로스관리 — 글보다 그림 (Lee 2026-10-29) ══
+   "로스 보는 거 너무 어렵고 뭔 글이 많은지 모르겠다 — 글이 많은 것보다 그림이 많아야 보기 쉬운 게 아닌가"
+   · 맨 위 큰 숫자 + 정상 범위 막대(초록 띠 안에 점이 있으면 정상)
+   · 날마다 · 품목별 · 기계별 로스율 막대 — 초록 정상 / 빨강 벗어남, 정상 범위는 점선
+   · 생산 건마다 색 점 — 누르면 [로스]
+   · 숫자 표 · 기준 바꾸기는 접어 두고 필요할 때 연다
+   ★ 로스 kg 는 lossOf (다음 생산에 넘긴 잔량은 로스가 아님) — 전에는 카드·일별표가 옛 식(투입−표준−잔량)이라 숫자가 서로 달랐다 */
+const LC = { ok:"#2E7D32", bad:"#C62828", open:"#E0A100", none:"#9AA0A6" };
+const lossIn = l => Number(l.input_kg||0) + Number(l.carried_kg||0);
+const lossPctOfLog = l => { if (l.leftover_to === "next") return null; if (l.loss_pct_actual != null && l.loss_flag && l.loss_flag !== "open") return Number(l.loss_pct_actual);
+  const i = lossIn(l); return i > 0 ? Math.round(lossOf(l)/i*10000)/100 : null; };
+const lossColOf = l => { if (l.leftover_to === "next" || l.loss_flag === "open") return "open";
+  const f = l.loss_flag || (()=>{ const v = lossPctOfLog(l); if (v == null) return null; return lossFlagOf(v, lossRuleOf(prodById(l.product_id), l.machine)); })();
+  return f === "ok" ? "ok" : (f === "high" || f === "low") ? "bad" : "none"; };
+function lossGroupPct(ls){ const i = ls.reduce((s,l)=>s+Number(l.input_kg||0),0); const lo = ls.reduce((s,l)=>s+lossOf(l),0); return { i, lo, pct: i>0 ? Math.round(lo/i*10000)/100 : 0 }; }
 function renderLoss(){
-  const logs = lossLogs();
-  renderLossRule(); renderLossLogs(logs); renderLossAvg(logs);
+  const all = lossLogs(), logs = all.filter(logLive);
+  renderLossRule(); renderLossLogs(all); renderLossAvg(all);
+  const c = lossCfg(), lo = Math.max(0, c.def - c.tol), hi = c.def + c.tol;
   const tEA = logs.reduce((s,l)=>s+Number(l.qty_ea||0),0);
-  const tStd = logs.reduce((s,l)=>{ const p=prodById(l.product_id); return s+(p?stdKg(p,l.qty_ea):0); },0);
-  const tIn = logs.reduce((s,l)=>s+Number(l.input_kg||0),0);
-  const tLf = logs.reduce((s,l)=>s+Number(l.leftover_kg||0),0);
-  const tLo = tIn - tStd - tLf;
-  $("lossCards").innerHTML = `
-    <div class="card"><div class="lb">생산수량</div><div class="vl">${fmt(tEA)} <small>EA</small></div></div>
-    <div class="card"><div class="lb">표준 투입량</div><div class="vl">${fmt(tStd)} <small>kg</small></div></div>
-    <div class="card"><div class="lb">실제 투입량</div><div class="vl">${fmt(tIn)} <small>kg</small></div></div>
-    <div class="card"><div class="lb">잔량</div><div class="vl">${fmt(tLf)} <small>kg</small></div></div>
-    <div class="card ${tLo>.005?'red':'green'}"><div class="lb">로스 합계 (로스율)</div>
-      <div class="vl">${fmt(tLo)} <small>kg (${tIn?fmt(tLo/tIn*100):0}%)</small></div></div>
-    ${(()=>{ const bad = logs.filter(l=>logLive(l) && (l.loss_flag==="high"||l.loss_flag==="low")).length, op = logs.filter(l=>logLive(l) && l.loss_flag==="open").length;
-      return `<div class="card ${bad?'red':''}"><div class="lb">기준 벗어난 건 (이상)</div><div class="vl">${bad} <small>건${op?` · 미확정 ${op}`:""}</small></div></div>`; })()}`;
-
-  const byD = {};
-  logs.forEach(l=>{ const p=prodById(l.product_id), k=l.work_date;
-    byD[k]=byD[k]||{ea:0,std:0,ip:0,lf:0};
-    byD[k].ea+=Number(l.qty_ea||0); byD[k].std+=p?stdKg(p,l.qty_ea):0;
-    byD[k].ip+=Number(l.input_kg||0); byD[k].lf+=Number(l.leftover_kg||0); });
-  const asc = Object.keys(byD).sort();
-  tbl("lossDay", ["일자","생산(EA)","표준(kg)","투입(kg)","잔량(kg)","로스(kg)","로스율"],
-    [...asc].reverse().map(d=>{ const v=byD[d], ls=v.ip-v.std-v.lf;
-      return `<tr><td class="c">${d}</td><td>${fmt(v.ea)}</td><td>${fmt(v.std)}</td><td>${fmt(v.ip)}</td>
-        <td>${fmt(v.lf)}</td><td class="${ls>.005?'bad':'ok'}">${fmt(ls)}</td>
-        <td>${v.ip?fmt(ls/v.ip*100):0}%</td></tr>`; }));
-  draw([["chLoss",{ type:"line", data:{ labels:asc.map(d=>d.slice(5)), datasets:[{ label:"로스(kg)",
-    data: asc.map(d=>Math.round((byD[d].ip-byD[d].std-byD[d].lf)*100)/100),
-    borderColor:"#B3261E", backgroundColor:"rgba(179,38,30,.12)", fill:true, tension:.3 }]},
-    options:{ responsive:true, maintainAspectRatio:false, scales:{y:{title:{display:true,text:"kg"}}}}}]]);
-
+  const G = lossGroupPct(logs);
+  const nOk = logs.filter(l=>lossColOf(l)==="ok").length, nBad = logs.filter(l=>lossColOf(l)==="bad").length, nOpen = logs.filter(l=>lossColOf(l)==="open").length;
+  const overall = G.pct, st = G.i <= 0 ? "none" : (overall > hi || overall < lo) ? "bad" : "ok";
+  /* 정상 범위 막대 — 0 ~ max(hi×2, 실제) */
+  const max = Math.max(hi * 2, overall * 1.2, 1), X = v => Math.max(0, Math.min(100, v / max * 100));
+  const rangeBar = `<div style="position:relative;height:26px;background:var(--line);border-radius:13px;margin:14px 0 6px">
+      <div style="position:absolute;left:${X(lo)}%;width:${X(hi)-X(lo)}%;top:0;bottom:0;background:rgba(46,125,50,.28);border-radius:13px"></div>
+      <div title="지금 ${overall}%" style="position:absolute;left:calc(${X(overall)}% - 11px);top:2px;width:22px;height:22px;border-radius:50%;background:${LC[st]};border:3px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.35)"></div></div>
+    <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--soft)"><span>0%</span><span style="color:${LC.ok};font-weight:700">정상 ${lo}~${hi}%</span><span>${fmt(max)}%</span></div>`;
+  const dot = (col, n, t) => `<div style="display:flex;align-items:center;gap:8px;font-size:15px"><span style="width:16px;height:16px;border-radius:50%;background:${LC[col]}"></span><b style="font-size:22px">${n}</b><span class="hint" style="padding:0">${t}</span></div>`;
+  $("lossHero").innerHTML = `<div class="cols2" style="margin-bottom:16px">
+    <div class="card" style="border:2px solid ${LC[st]}"><div class="lb">로스율 (${{tm:"이번 달",lm:"지난 달",all:"전체"}[$("lossRange").value]||""})</div>
+      <div class="vl" style="color:${LC[st]};font-size:44px">${G.i>0?overall:"—"}<small>%</small> <small style="font-size:15px">${st==="ok"?"정상":st==="bad"?(overall>hi?"기준보다 많음":"기준보다 적음"):""}</small></div>${rangeBar}</div>
+    <div class="card"><div style="display:flex;gap:22px;flex-wrap:wrap;align-items:flex-end">
+      <div><div class="lb">로스</div><div class="vl">${fmt(Math.round(G.lo*10)/10)}<small>kg</small></div></div>
+      <div><div class="lb">생산</div><div class="vl">${fmt(tEA)}<small>EA</small></div></div>
+      <div><div class="lb">원두 투입</div><div class="vl">${fmt(Math.round(G.i*10)/10)}<small>kg</small></div></div></div>
+      <div style="display:flex;gap:20px;flex-wrap:wrap;margin-top:16px">${dot("ok", nOk, "정상")}${dot("bad", nBad, "벗어남")}${dot("open", nOpen, "미확정")}</div></div></div>`;
+  $("lossBand").textContent = `점선 사이 = 정상 ${lo}~${hi}%`;
+  /* 날마다 */
+  const byD = {}; logs.forEach(l=>{ (byD[l.work_date] = byD[l.work_date]||[]).push(l); });
+  const days = Object.keys(byD).sort().slice(-31);
+  const dv = days.map(d=>lossGroupPct(byD[d]).pct);
+  const colOf = v => (v > hi || v < lo) ? LC.bad : LC.ok;
+  const band = n => [ { type:"line", label:"정상 위", data:Array(n).fill(hi), borderColor:LC.ok, borderDash:[6,4], pointRadius:0, borderWidth:1.5 },
+                      { type:"line", label:"정상 아래", data:Array(n).fill(lo), borderColor:LC.ok, borderDash:[6,4], pointRadius:0, borderWidth:1.5 } ];
+  const barOpt = (horiz) => ({ responsive:true, maintainAspectRatio:false, indexAxis: horiz ? "y" : "x", plugins:{ legend:{display:false}, tooltip:{ callbacks:{ label:x=>`${x.dataset.label}: ${x.raw}%` } } },
+    scales: horiz ? { x:{ beginAtZero:true, title:{display:true,text:"%"} } } : { y:{ beginAtZero:true, title:{display:true,text:"%"} } } });
+  const byKey = key => { const g = {}; logs.forEach(l=>{ const k = key(l); (g[k] = g[k]||[]).push(l); });
+    return Object.entries(g).map(([k,ls])=>[k, lossGroupPct(ls)]).filter(([,v])=>v.i>0).sort((a,b)=>b[1].pct-a[1].pct).slice(0,12); };
+  const P = byKey(l=>prodById(l.product_id)?.name || l.product_name || "?"), M = byKey(l=>l.machine || "미기록");
+  const hBar = (rows) => ({ type:"bar", data:{ labels:rows.map(r=>r[0].length>16?r[0].slice(0,15)+"…":r[0]),
+    datasets:[{ label:"로스율", data:rows.map(r=>r[1].pct), backgroundColor:rows.map(r=>colOf(r[1].pct)), borderRadius:4 }] }, options:barOpt(true) });
+  draw([
+    ["chLoss", { type:"bar", data:{ labels:days.map(d=>d.slice(5)), datasets:[ { label:"로스율", data:dv, backgroundColor:dv.map(colOf), borderRadius:4 }, ...band(days.length) ] }, options:barOpt(false) }],
+    ["chLossP", hBar(P)], ["chLossM", hBar(M)],
+  ]);
+  /* 생산 건마다 색 점 */
+  const recent = [...logs].sort((a,b)=>String(b.created_at).localeCompare(String(a.created_at))).slice(0,80);
+  $("lossDots").innerHTML = recent.length ? recent.map(l=>{ const col = lossColOf(l), v = lossPctOfLog(l), p = prodById(l.product_id);
+    return `<button onclick="editLoss('${l.id}')" title="${l.work_date} · ${p?.name||l.product_name||""} · ${fmt(l.qty_ea)}EA${v!=null?` · ${v}%`:" · 다음 생산에 합산"}${l.loss_reason?` · ${l.loss_reason}`:""}"
+      style="border:none;border-radius:8px;padding:6px 9px;background:${LC[col]};color:#fff;font-weight:700;font-size:12px;cursor:pointer;line-height:1.2">${l.serial||"—"}<br><span style="font-size:13px">${v!=null?v+"%":"→ 다음"}</span></button>`; }).join("")
+    : `<div class="hint">이 기간 생산 기록이 없습니다</div>`;
   beanBars("lossBean", logs);
 
-  // 생산 외 사용 (같은 기간) — 용도별
+  /* ── 접어 둔 표 ── */
+  $("lossCards").innerHTML = `
+    <div class="card"><div class="lb">생산수량</div><div class="vl">${fmt(tEA)} <small>EA</small></div></div>
+    <div class="card"><div class="lb">정상 생산 (표준)</div><div class="vl">${fmt(logs.reduce((s,l)=>{ const p=prodById(l.product_id); return s+(p?stdKg(p,l.qty_ea):0); },0))} <small>kg</small></div></div>
+    <div class="card"><div class="lb">배치에서 뺀 원두</div><div class="vl">${fmt(G.i)} <small>kg</small></div></div>
+    <div class="card"><div class="lb">로스</div><div class="vl">${fmt(G.lo)} <small>kg (${G.pct}%)</small></div></div>`;
+  tbl("lossDay", ["일자","생산(EA)","투입(kg)","로스(kg)","로스율"],
+    [...Object.keys(byD).sort()].reverse().map(d=>{ const v = lossGroupPct(byD[d]), ea = byD[d].reduce((s,l)=>s+Number(l.qty_ea||0),0);
+      return `<tr><td class="c">${d}</td><td>${fmt(ea)}</td><td>${fmt(v.i)}</td><td class="${(v.pct>hi||v.pct<lo)?'bad':'ok'}">${fmt(v.lo)}</td><td>${v.pct}%</td></tr>`; }));
   const r = $("lossRange").value, tm = monthKey(today());
   const dd = new Date(); dd.setMonth(dd.getMonth()-1);
   const lm = dd.toISOString().slice(0,7);
@@ -12434,9 +12480,9 @@ function renderLoss(){
       <td>${us.filter(u=>u.reason===x.k).length}</td></tr>`),
     `<td class="c">합 계</td><td>${fmt(totU)}</td><td>${totU?"100%":"—"}</td><td>${us.length}</td>`);
   const byMo = {};
-  DB.logs.forEach(l=>{ const k=monthKey(l.work_date); byMo[k]=(byMo[k]||0)+lossOf(l); });
-  tbl("lossMon", ["월","로스(kg)"],
-    Object.keys(byMo).sort().reverse().map(m=>`<tr><td class="c">${m}</td><td class="${byMo[m]>.005?'bad':''}">${fmt(byMo[m])}</td></tr>`));
+  DB.logs.filter(logLive).forEach(l=>{ const k=monthKey(l.work_date); byMo[k]=byMo[k]||[]; byMo[k].push(l); });
+  tbl("lossMon", ["월","로스(kg)","로스율"],
+    Object.keys(byMo).sort().reverse().map(m=>{ const v = lossGroupPct(byMo[m]); return `<tr><td class="c">${m}</td><td class="${(v.pct>hi||v.pct<lo)?'bad':''}">${fmt(v.lo)}</td><td>${v.pct}%</td></tr>`; }));
 }
 function csvLoss(){
   csv("로스관리", ["완료일시","일자","일련번호","CFE코드","품목명","원두","기계","생산자","생산EA","정상생산kg","배치에서뺀kg","이전잔량kg","남은원두kg","처리","건별로스kg","확정로스kg","로스율%","기준%","오차","판정","사유","메모","기록자"],
@@ -13461,11 +13507,16 @@ function backupAll(){
   a.download = `모모스생산관리_백업_${today()}.json`; a.click();
   toast("백업 파일을 저장했습니다");
 }
+/* ★ 2026-10-29 — 실적·이력에 나중에 생긴 표(반려 · 지시 이력 · 출고 · 수불 · 참여 · 재작업 …)까지.
+     전에는 5개 표만 지워서 초기화해도 조회·이력추적·반려 이력에 예전 기록이 나왔다 */
+const WIPE_TX = ["orders","order_events","order_workers","qc_rejections","shipments","stock_moves","ng_adjustments",
+  "rework","rework_in","material_task_reverts","material_tasks","material_moves","label_moves","tallies","counts","usages","adjust",
+  "log_amendments","roast_lines","idempotency_keys","logs","consumptions","roasting","pqc","events"];
 const WIPE_SETS = {
-  tx:     { keys:["logs","consumptions","roasting","pqc","events"], label:"실적·이력" },
+  tx:     { keys:WIPE_TX, label:"실적·이력" },
   stock:  { keys:[], label:"재고 0" },
-  master: { keys:["products","beans","bom","mms","bean_roasters"], label:"품목·원두" },
-  all:    { keys:["products","beans","bom","mms","bean_roasters","logs","consumptions","roasting","pqc","events"], label:"전체" },
+  master: { keys:["products","beans","bom","mms","bean_roasters","holds"], label:"품목·원두" },
+  all:    { keys:["products","beans","bom","mms","bean_roasters","holds", ...WIPE_TX], label:"전체" },
 };
 async function wipe(kind){
   const set = WIPE_SETS[kind]; if(!set) return;
@@ -13494,11 +13545,20 @@ async function wipe(kind){
           : `초기화하지 못했습니다 — ${m || "알 수 없는 오류"}\n\n아무것도 지워지지 않았습니다.`,
         { title:"초기화 실패", yes:"확인" });
     }
+    /* 028 이 모르는 나중 표까지 — 049 */
+    let r2 = null;
+    if (kind !== "stock") r2 = await rpc("admin_wipe_rest", { p_kind:kind, p_confirm:"초기화", p_user_name:CURRENT_USER || LOGIN_USER?.name || "" }, ()=>null, { quiet:true });
     if (kind!=="master") { planEA = {}; reqRows = []; actual = { cfe:{}, mms:{} }; }
     if (typeof SEL !== "undefined") { SEL.products.clear(); SEL.beans.clear(); }
     await reloadDB({ silent:true });
     renderAll();
-    return toast(`${set.label} 초기화 완료 — ${fmt(r.deleted||0)}줄 삭제${kind==="stock"||kind==="all"?" · 재고 0":""}`);
+    if (kind !== "stock" && (!r2 || !r2.ok)) {
+      const m2 = r2?.message || "";
+      return ask(`${set.label} 초기화는 됐지만, 나중에 생긴 기록(검수 반려 · 지시 이력 · 출고 · 수불 · 작업자 참여 · 재작업)은 남아 있습니다 — 조회·이력추적에 예전 기록이 보일 수 있습니다.\n\n` +
+        (/admin_wipe_rest|function|schema cache/i.test(m2) ? "Supabase SQL Editor 에서 049_admin_wipe_rest.sql 을 한 번 실행한 뒤 초기화를 한 번 더 누르세요." : `이유: ${m2 || "알 수 없는 오류"}`),
+        { title:"초기화 — 일부 남음", yes:"확인", only:true });
+    }
+    return toast(`${set.label} 초기화 완료 — ${fmt((r.deleted||0) + (r2?.deleted||0))}줄 삭제${kind==="stock"||kind==="all"?" · 재고 0":""} · 변경이력은 남김`);
   }
   const msg = kind==="stock"
     ? "CFE 현재고와 MMS 배치 재고를 모두 0으로 만듭니다.\n되돌릴 수 없습니다. 계속할까요?"
@@ -16801,9 +16861,9 @@ async function sendHelp(){
   const who = CURRENT_USER || LOGIN_USER?.name || "";
   if (!who) return toast("상단에서 본인 이름을 먼저 고르세요");
   const text = ($("hText").value||"").trim(); if (!text) return toast("내용을 적어 주세요");
-  const t = { id:uid(), kind:$("hKind").value, screen:$("hScreen").value, text, by:who, at:nowISO(), st:"접수", reply:"", reply_by:"", reply_at:"" };
+  const t = { id:uid(), kind:$("hKind").value, screen:$("hScreen").value, text, by:who, at:nowISO(), on:$("hDate")?.value || today(), st:"접수", reply:"", reply_by:"", reply_at:"" };
   await saveHelp([...helpTickets(), t]);
-  $("hText").value = ""; toast("보냈습니다 — 관리자가 확인합니다");
+  $("hText").value = ""; if ($("hDate")) $("hDate").value = today(); toast("보냈습니다 — 관리자가 확인합니다");
 }
 async function setHelpSt(id, st){
   if (!helpIsAdmin()) return toast("관리자만 바꿀 수 있습니다");
@@ -16840,6 +16900,7 @@ function renderHelp(){
     const cur = document.querySelector(".screen.on")?.id?.replace(/^s-/,"") || "";
     sel.innerHTML = `<option value="(전체)">화면 — 전체·모름</option>` + helpScreens().filter(x=>x.s!=="help").map(x=>`<option value="${x.n}">${x.n}</option>`).join("");
   }
+  if ($("hDate") && !$("hDate").value) $("hDate").value = today();
   $("hWho").textContent = (CURRENT_USER || LOGIN_USER?.name) ? `보내는 사람: ${CURRENT_USER || LOGIN_USER?.name}` : "상단에서 본인 이름을 고르세요";
   const all = [...helpTickets()].sort((a,b)=>String(b.at).localeCompare(String(a.at)));
   const f = helpFilter;
@@ -16854,8 +16915,8 @@ function renderHelp(){
       <div class="st"><span class="tag ${HELP_ST_CLS[t.st]||""}">${t.st}</span></div>
       <div class="bd">
         <div class="tx"><span class="tag" style="margin-right:6px">${t.kind}</span><span class="tag" style="margin-right:6px">${t.screen||"전체"}</span>${t.text}</div>
-        <div class="mt">${t.by} · ${fmtTime(t.at)}${t.st_at?` · ${t.st} ${fmtTime(t.st_at)}`:""}</div>
-        ${t.reply ? `<div class="re"><b>답변</b> ${t.reply}<div class="hint" style="padding:4px 0 0;font-size:11.5px">${t.reply_by||"—"} · ${fmtTime(t.reply_at)}</div></div>` : ""}
+        <div class="mt">${t.by} · 문의 ${dtFull(t.at)}${t.on && t.on !== String(t.at||"").slice(0,10) ? ` · <b>생긴 날 ${t.on}</b>` : ""}${t.st_at?` · ${t.st} ${dtFull(t.st_at)}${t.st_by?` ${t.st_by}`:""}`:""}${t.st==="완료" && t.st_at ? ` · 처리 ${Math.max(0, Math.round((new Date(t.st_at)-new Date(t.at))/86400000))}일 걸림` : ""}</div>
+        ${t.reply ? `<div class="re"><b>답변</b> ${t.reply}<div class="hint" style="padding:4px 0 0;font-size:11.5px">${t.reply_by||"—"} · ${dtFull(t.reply_at)}</div></div>` : ""}
       </div>
       <div class="ops">
         ${helpIsAdmin() ? `<select onchange="setHelpSt('${t.id}',this.value)" style="height:30px;font-weight:700">${HELP_ST.map(k=>`<option ${k===t.st?"selected":""}>${k}</option>`).join("")}</select>
