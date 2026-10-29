@@ -2334,6 +2334,9 @@
           <div style="border-top:1px solid var(--line);padding-top:10px">
             <button class="btn danger" style="border:1px solid var(--bad);font-weight:800" onclick="wipe('all')">전체 초기화 (빈 상태로)</button>
             <span class="hint">실적·이력 + 품목·원두 + 재고 0. 기계·생산자·로스터기·라벨/부자재 목록·계정·변경이력은 유지. <b>관리자 계정만</b> · 서버에 028_admin_wipe.sql 이 실행돼 있어야 합니다.</span></div>
+          <div style="border-top:1px solid var(--line);padding-top:10px">
+            <button class="btn danger" style="border:1px solid var(--bad);font-weight:800" onclick="wipe('test')">테스트 기록 전부 지우기 (추적 포함)</button>
+            <span class="hint"><b>테스트 단계용</b> — 작업지시 · 생산실적 · 검수/반려 · 출고 · 수불 · 품질 · 재작업 + <b>MMS 원두 배치 · 봉투/부자재 LOT 입고 기록</b>까지 지워 이력추적·조회에 아무것도 안 걸리게. 품목 · 원두 · BOM · 기계 · 생산자 · 계정 · 변경이력은 유지 · 재고 숫자는 [② 재고 0으로] 로 따로 · 서버에 049 SQL 필요</span></div>
           <div><button class="btn primary" onclick="seedBeanMaster()">④ 원두 마스터 넣기 (16종)</button>
             <span class="hint">받은 원두 마스터를 그대로 넣습니다 — 컬러·품목보고번호·원산지·적요·출시일까지.
               초기화한 뒤에 이걸 먼저 누르고, 품목(CFE)을 등록하세요.</span></div>
@@ -6601,6 +6604,7 @@ renderFavs();
 
 /* ══ 업데이트 내역 — 어디에 뭘 바꿨는지 (최근 것이 위) ══ */
 const CHANGELOG = [
+  ["2026-10-29", "초기화 › 테스트 기록 전부 지우기 (049 SQL)", "새 버튼 — 실적·이력 + MMS 원두 배치 + 봉투/부자재 LOT 입고 기록까지 지워 이력추적·조회에 테스트 기록이 안 남게 (품목·원두·BOM 은 유지) · [① 실적·이력만 삭제] · [전체 초기화] 도 LOT 입고 기록까지 비움 (전에는 남아서 이력추적에 LOT 가 계속 걸렸음)"],
   ["2026-10-29", "초기화 › 남는 기록 (049 SQL)", "초기화해도 조회·이력추적·반려 이력에 예전 기록이 나오던 문제 — 서버 초기화(028)가 나중에 생긴 표(검수 반려·지시 이력·출고·수불·작업자 참여·재작업·집계·실측 등)를 몰라서 남겼음 → 049 로 이어서 지움 · 049 가 없으면 \"일부 남음\" 으로 알려 줌 · 서버 없이 쓸 때도 같은 표까지 비움 · 변경이력(누가 무엇을 했는지)은 일부러 남김"],
   ["2026-10-29", "로스관리 — 글보다 그림", "긴 설명 글을 빼고 맨 위에 큰 로스율 + 정상 범위 막대(초록 띠 안에 점 = 정상) · 정상/벗어남/미확정 건수 색 점 · 날마다·품목별·기계별 로스율 막대(초록 정상 · 빨강 벗어남 · 점선 = 정상 범위) · 생산 건마다 색 칸(누르면 [로스]) · 숫자 표와 기준 바꾸기는 접어 두고 [표로 보기]·[기준 바꾸기]로 열기 · 카드·날짜별 표가 옛 계산식이라 건별 로스와 숫자가 달랐던 것도 맞춤"],
   ["2026-10-29", "문의 › 날짜", "문의 목록에 시각만(20:11) 나오던 것 → 문의 일시·상태 바꾼 일시·답변 일시를 날짜까지(2026.10.29 20:11) · 새 문의에 [생긴 날] 칸(기본 오늘 — 지난 일이면 바꿔서) · 오늘이 아닌 날 생긴 일이면 목록에 \"생긴 날\" 표시 · 완료된 문의는 처리까지 며칠 걸렸는지"],
@@ -13517,6 +13521,7 @@ const WIPE_SETS = {
   stock:  { keys:[], label:"재고 0" },
   master: { keys:["products","beans","bom","mms","bean_roasters","holds"], label:"품목·원두" },
   all:    { keys:["products","beans","bom","mms","bean_roasters","holds", ...WIPE_TX], label:"전체" },
+  test:   { keys:["mms","holds", ...WIPE_TX], label:"테스트 기록" },
 };
 async function wipe(kind){
   const set = WIPE_SETS[kind]; if(!set) return;
@@ -13525,7 +13530,8 @@ async function wipe(kind){
     tx:"작업지시 · 생산실적 · 원두사용 · 로스팅 · 품질 · 검수 · 출고 · 집계 · 실측 · 수불 · 라벨작업 · 재작업 · 일정 · 생산계획",
     stock:"CFE 현재고 · MMS 배치 kg · 부자재 현재고를 0 으로 (수불 원장도 비움)",
     master:"품목 · 원두 · BOM · MMS 배치 · 원두별 로스터기 기준",
-    all:"위 전부 — 실적·이력 + 품목·원두 + 재고 0" };
+    all:"위 전부 — 실적·이력 + 품목·원두 + 재고 0",
+    test:"테스트로 만든 기록 전부 — 작업지시 · 생산실적 · 검수/반려 · 출고 · 수불 · 품질 · 집계 · 재작업 + MMS 원두 배치 · 봉투/부자재 LOT 입고 기록 (이력추적·조회에 걸리는 것 전부)\n남김: 품목 · 원두 · BOM" };
   /* ── 서버에 연결돼 있으면 서버 함수(admin_wipe)가 한 번에 처리합니다 ──
      화면에서 줄마다 지우면 권한(RLS)에 막혀 일부만 지워지고 남습니다.
      관리자만 · 확인 문구 · 한 트랜잭션 · 변경이력에 남김 (028_admin_wipe.sql) */
@@ -13537,7 +13543,7 @@ async function wipe(kind){
         { title:"초기화", yes:"계속", danger:true }))) return;
     const typed = await askText('확인을 위해 아래 문구를 그대로 입력하세요:\n초기화', "", "초기화 확인");
     if (String(typed||"").trim() !== "초기화") return toast("입력이 달라 취소되었습니다");
-    const r = await rpc("admin_wipe", { p_kind:kind, p_confirm:"초기화", p_user_name:CURRENT_USER || LOGIN_USER?.name || "" }, ()=>null);
+    const r = await rpc("admin_wipe", { p_kind: kind === "test" ? "tx" : kind, p_confirm:"초기화", p_user_name:CURRENT_USER || LOGIN_USER?.name || "" }, ()=>null);
     if (!r || !r.ok) {
       const m = r?.message || "";
       return ask(/admin_wipe|function|schema cache/i.test(m)
@@ -13549,6 +13555,8 @@ async function wipe(kind){
     let r2 = null;
     if (kind !== "stock") r2 = await rpc("admin_wipe_rest", { p_kind:kind, p_confirm:"초기화", p_user_name:CURRENT_USER || LOGIN_USER?.name || "" }, ()=>null, { quiet:true });
     if (kind!=="master") { planEA = {}; reqRows = []; actual = { cfe:{}, mms:{} }; }
+    /* 봉투·부자재 LOT 입고 기록 (공용 설정) — 이력추적에서 LOT 로 찾으면 나오던 것 */
+    if (["tx","all","test"].includes(kind)) { SETTINGS[MAT_LOT_KEY] = {}; await saveSetting(MAT_LOT_KEY, {}); }
     if (typeof SEL !== "undefined") { SEL.products.clear(); SEL.beans.clear(); }
     await reloadDB({ silent:true });
     renderAll();
@@ -13578,6 +13586,7 @@ async function wipe(kind){
       DB[k] = [];
     });
     if (kind!=="master") { planEA = {}; reqRows = []; actual = { cfe:{}, mms:{} }; }
+    if (["tx","all","test"].includes(kind)) { SETTINGS[MAT_LOT_KEY] = {}; saveSetting(MAT_LOT_KEY, {}); }
     logAudit("초기화", set.label, set.keys.join(", "));
   }
   renderAll(); toast(`${set.label} 초기화 완료`);
