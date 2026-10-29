@@ -2337,6 +2337,8 @@
           <div style="border-top:1px solid var(--line);padding-top:10px">
             <button class="btn danger" style="border:1px solid var(--bad);font-weight:800" onclick="wipe('test')">테스트 기록 전부 지우기 (추적 포함)</button>
             <span class="hint"><b>테스트 단계용</b> — 작업지시 · 생산실적 · 검수/반려 · 출고 · 수불 · 품질 · 재작업 + <b>MMS 원두 배치 · 봉투/부자재 LOT 입고 기록</b>까지 지워 이력추적·조회에 아무것도 안 걸리게. 품목 · 원두 · BOM · 기계 · 생산자 · 계정 · 변경이력은 유지 · 재고 숫자는 [② 재고 0으로] 로 따로 · 서버에 049 SQL 필요</span></div>
+          <div><button class="btn primary" onclick="wipePick()">골라서 지우기</button>
+            <span class="hint"><b>지울 것만 체크</b> — 작업지시·생산실적 / 검수·반려 / 출고 / 수불 / 품질 / 재작업 / 집계·실측 / 라벨작업 / 로스팅 계획 / 일정 / MMS 배치 / LOT 입고 기록 중에서 · 한 건씩은 <b>이력추적</b>에서 찾아서 [이 기록 지우기]</span></div>
           <div><button class="btn primary" onclick="seedBeanMaster()">④ 원두 마스터 넣기 (16종)</button>
             <span class="hint">받은 원두 마스터를 그대로 넣습니다 — 컬러·품목보고번호·원산지·적요·출시일까지.
               초기화한 뒤에 이걸 먼저 누르고, 품목(CFE)을 등록하세요.</span></div>
@@ -6604,6 +6606,7 @@ renderFavs();
 
 /* ══ 업데이트 내역 — 어디에 뭘 바꿨는지 (최근 것이 위) ══ */
 const CHANGELOG = [
+  ["2026-10-29", "골라서 지우기 (049 SQL)", "초기화 › [골라서 지우기] — 작업지시·생산실적 / 검수·반려 / 출고 / 수불 / 품질 / 재작업 / 집계·실측 / 라벨작업 / 로스팅 계획 / 일정 / MMS 배치 / LOT 입고 기록 중 체크한 것만 (작업지시를 고르면 검수·출고도 같이) · 이력추적 › 찾은 생산·배치마다 [이 기록 지우기] — 그 건에 딸린 지시·사용분·검수/반려·출고·수불·부적합까지, 살아 있는 실적은 먼저 취소해 재고를 되돌린 뒤 · 배치는 그 배치로 만든 생산이 남아 있으면 막음 · 관리자만 · \"초기화\" 입력 · 변경이력에 남김"],
   ["2026-10-29", "초기화 › 테스트 기록 전부 지우기 (049 SQL)", "새 버튼 — 실적·이력 + MMS 원두 배치 + 봉투/부자재 LOT 입고 기록까지 지워 이력추적·조회에 테스트 기록이 안 남게 (품목·원두·BOM 은 유지) · [① 실적·이력만 삭제] · [전체 초기화] 도 LOT 입고 기록까지 비움 (전에는 남아서 이력추적에 LOT 가 계속 걸렸음)"],
   ["2026-10-29", "초기화 › 남는 기록 (049 SQL)", "초기화해도 조회·이력추적·반려 이력에 예전 기록이 나오던 문제 — 서버 초기화(028)가 나중에 생긴 표(검수 반려·지시 이력·출고·수불·작업자 참여·재작업·집계·실측 등)를 몰라서 남겼음 → 049 로 이어서 지움 · 049 가 없으면 \"일부 남음\" 으로 알려 줌 · 서버 없이 쓸 때도 같은 표까지 비움 · 변경이력(누가 무엇을 했는지)은 일부러 남김"],
   ["2026-10-29", "로스관리 — 글보다 그림", "긴 설명 글을 빼고 맨 위에 큰 로스율 + 정상 범위 막대(초록 띠 안에 점 = 정상) · 정상/벗어남/미확정 건수 색 점 · 날마다·품목별·기계별 로스율 막대(초록 정상 · 빨강 벗어남 · 점선 = 정상 범위) · 생산 건마다 색 칸(누르면 [로스]) · 숫자 표와 기준 바꾸기는 접어 두고 [표로 보기]·[기준 바꾸기]로 열기 · 카드·날짜별 표가 옛 계산식이라 건별 로스와 숫자가 달랐던 것도 맞춤"],
@@ -13591,6 +13594,125 @@ async function wipe(kind){
   }
   renderAll(); toast(`${set.label} 초기화 완료`);
 }
+/* ══ 골라서 지우기 — Lee 2026-10-29 "내가 삭제하고 싶은 것만 삭제하게 해줘" ══
+   ① 초기화 › [골라서 지우기] — 종류를 체크해서 그것만 (049 admin_wipe_tables)
+   ② 이력추적 — 찾은 생산 한 건 · MMS 배치 한 개만 기록째 (049 admin_purge)
+   관리자만 · "초기화" 직접 입력 · 변경이력에 남김 */
+const WIPE_CATS = [
+  { k:"orders",  t:"작업지시 · 생산실적 · 원두 사용분", tb:["orders","order_events","order_workers","logs","consumptions","log_amendments","ng_adjustments","idempotency_keys"], dep:["qc","ship"] },
+  { k:"qc",      t:"검수 · 반려 기록",                 tb:["qc_rejections"] },
+  { k:"ship",    t:"출고 기록",                         tb:["shipments"] },
+  { k:"moves",   t:"수불 원장 (재고 들고 난 기록)",     tb:["stock_moves","material_moves","label_moves","adjust"] },
+  { k:"pqc",     t:"품질 · 부적합",                     tb:["pqc"] },
+  { k:"rework",  t:"재작업",                            tb:["rework","rework_in"] },
+  { k:"count",   t:"집계 · 실측 · 생산 외 사용",         tb:["tallies","counts","usages"] },
+  { k:"mt",      t:"라벨작업",                          tb:["material_tasks","material_task_reverts"] },
+  { k:"roast",   t:"로스팅 계획",                       tb:["roasting","roast_lines"] },
+  { k:"events",  t:"캘린더 일정",                       tb:["events"] },
+  { k:"mms",     t:"MMS 원두 배치 (+ 보류)",            tb:["mms","holds"] },
+  { k:"lots",    t:"봉투 · 부자재 LOT 입고 기록",        tb:[], setting:true },
+];
+function wipePickDialog(){
+  return new Promise(res=>{
+    const ov = document.createElement("div");
+    ov.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:90;display:flex;align-items:center;justify-content:center;padding:12px";
+    ov.innerHTML = `<div style="background:var(--paper);width:460px;max-width:96vw;max-height:calc(100vh - 24px);border-radius:12px;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 20px 50px rgba(0,0,0,.3)">
+      <div class="panel-h">골라서 지우기</div>
+      <div style="padding:12px 16px;overflow-y:auto;line-height:1.5">
+        <div class="hint" style="padding:0 0 8px">지울 것만 체크하세요 · 품목 · 원두 · BOM · 기계 · 생산자 · 계정 · 변경이력은 여기서 안 지웁니다 · 재고 숫자는 [② 재고 0으로] 로 따로</div>
+        ${WIPE_CATS.map(c=>`<label style="display:flex;gap:10px;align-items:center;padding:8px 4px;border-bottom:1px solid var(--line);font-size:14.5px;cursor:pointer">
+          <input type="checkbox" data-wk="${c.k}" style="width:20px;height:20px"> ${c.t}</label>`).join("")}
+        <div id="wpNote" class="hint" style="padding:8px 0 0;color:var(--bad)"></div>
+      </div>
+      <div style="padding:12px 16px;display:flex;gap:8px;border-top:1px solid var(--line)">
+        <button class="btn" id="wpNo" style="flex:1;height:42px">취소</button>
+        <button class="btn primary" id="wpOk" style="flex:2;height:42px">고른 것 지우기</button></div></div>`;
+    document.body.appendChild(ov);
+    const boxes = [...ov.querySelectorAll("[data-wk]")];
+    const sync = () => { const on = new Set(boxes.filter(b=>b.checked).map(b=>b.dataset.wk));
+      /* 작업지시를 지우면 거기 달린 검수·출고 기록도 같이 (남으면 주인 없는 기록이 됨) */
+      if (on.has("orders")) WIPE_CATS.find(c=>c.k==="orders").dep.forEach(d=>{ const b = boxes.find(x=>x.dataset.wk===d); b.checked = true; b.disabled = true; });
+      else boxes.forEach(b=>b.disabled = false);
+      ov.querySelector("#wpNote").textContent = on.has("orders") ? "작업지시를 지우면 검수·반려 · 출고 기록도 같이 지웁니다" : ""; };
+    boxes.forEach(b=>b.addEventListener("change", sync));
+    const done = v => { ov.remove(); res(v); };
+    ov.querySelector("#wpNo").onclick = () => done(null);
+    ov.querySelector("#wpOk").onclick = () => { const ks = boxes.filter(b=>b.checked).map(b=>b.dataset.wk); if (!ks.length) return toast("지울 것을 고르세요"); done(ks); };
+  });
+}
+async function wipePick(){
+  if (!(await requireUser())) return;
+  if (!isManager()) return ask("관리자 계정만 할 수 있습니다.", { title:"골라서 지우기", yes:"확인", only:true });
+  const ks = await wipePickDialog(); if (!ks) return;
+  const cats = WIPE_CATS.filter(c=>ks.includes(c.k));
+  const tables = [...new Set(cats.flatMap(c=>c.tb))];
+  if (!(await ask(`아래를 지웁니다. 되돌릴 수 없습니다 — 먼저 [백업]을 받으세요.\n\n${cats.map(c=>`· ${c.t}`).join("\n")}`, { title:"골라서 지우기", yes:"계속", danger:true }))) return;
+  const typed = await askText('확인을 위해 아래 문구를 그대로 입력하세요:\n초기화', "", "초기화 확인");
+  if (String(typed||"").trim() !== "초기화") return toast("입력이 달라 취소되었습니다");
+  let deleted = 0;
+  if (tables.length) {
+    if (sb) {
+      const r = await rpc("admin_wipe_tables", { p_tables:tables, p_confirm:"초기화", p_user_name:CURRENT_USER || LOGIN_USER?.name || "" }, ()=>null);
+      if (!r || !r.ok) { const m = r?.message || "";
+        return ask(/admin_wipe_tables|function|schema cache/i.test(m) ? "서버에 이 기능이 아직 없습니다.\n\nSupabase SQL Editor 에서 049_admin_wipe_rest.sql 을 실행한 뒤 다시 누르세요." : `지우지 못했습니다 — ${m || "알 수 없는 오류"}\n\n아무것도 지워지지 않았습니다.`, { title:"골라서 지우기 실패", yes:"확인", only:true }); }
+      deleted = r.deleted || 0;
+    } else {
+      tables.forEach(k=>{ (DB[k]||[]).forEach(r=>del(k, r.id)); deleted += (DB[k]||[]).length; DB[k] = []; });
+    }
+  }
+  if (ks.includes("lots")) { SETTINGS[MAT_LOT_KEY] = {}; await saveSetting(MAT_LOT_KEY, {}); }
+  if (ks.includes("orders") || ks.includes("count")) { planEA = {}; reqRows = []; }
+  logAudit("골라서 지우기", `${cats.length}종`, cats.map(c=>c.t).join(", "));
+  if (sb) await reloadDB({ silent:true });
+  renderAll(); toast(`지웠습니다 — ${cats.map(c=>c.t.split(" ")[0]).join(" · ")}${deleted?` (${fmt(deleted)}줄)`:""}`);
+}
+/* 이력추적 — 한 건만 기록째 */
+async function purgeOne(kind, id){
+  if (!(await requireUser())) return;
+  if (!isManager()) return ask("관리자 계정만 지울 수 있습니다.", { title:"기록 지우기", yes:"확인", only:true });
+  let head = "", ordsL = [], logIds = [];
+  if (kind === "log") {
+    const l = DB.logs.find(x=>x.id===id); if (!l) return;
+    logIds = DB.logs.filter(x=>x.id===id || x.void_of===id || x.corrects===id).map(x=>x.id);
+    const base = DB.orders.filter(o=>logIds.includes(o.log_id));
+    ordsL = [...base, ...DB.orders.filter(o=>o.split_from && base.some(b=>b.id===o.split_from) && !base.includes(o))];
+    head = `생산 ${l.serial||"—"} · ${l.product_name||prodById(l.product_id)?.name||""} ${fmt(l.qty_ea)}EA · ${l.work_date}\n\n같이 지워지는 것: 작업지시 ${ordsL.length}건(${ordsL.map(o=>o.order_no).join(", ")||"—"}) · 원두 사용분 · 검수/반려 · 출고 · 수불 · 이 지시의 부적합\n` +
+      (logLive(l) ? `\n살아 있는 실적이라 먼저 취소해서 원두·부자재·완제품 재고를 되돌린 뒤 지웁니다.` : `\n이미 취소된 실적입니다 (재고는 이미 되돌아가 있음).`);
+  } else {
+    const m = DB.mms.find(x=>x.id===id); if (!m) return;
+    const used = CONSL().filter(c=>c.mms_id===id);
+    if (used.length) return ask(`배치 ${batchFull(m)} 로 만든 생산 기록이 ${new Set(used.map(c=>c.log_id)).size}건 남아 있습니다.\n그 생산을 먼저 지우세요 (이력추적에서 각 생산의 [이 기록 지우기]).`, { title:"배치 지우기", yes:"확인", only:true });
+    head = `MMS 배치 ${batchFull(m)} · ${m.bean} · ${fmt(m.stock_kg)}kg\n\n같이 지워지는 것: 보류 · 실측 · 수불 · 생산 외 사용`;
+  }
+  if (!(await ask(`${head}\n\n기록째 지웁니다 — 이력추적·조회에 다시 안 나옵니다. 되돌릴 수 없습니다.`, { title:"이 기록 지우기 — 관리자", yes:"계속", danger:true }))) return;
+  const typed = await askText('확인을 위해 아래 문구를 그대로 입력하세요:\n초기화', "", "지우기 확인");
+  if (String(typed||"").trim() !== "초기화") return toast("입력이 달라 취소되었습니다");
+  const r = await rpc("admin_purge", { p_kind:kind, p_id:id, p_confirm:"초기화", p_user_name:CURRENT_USER || LOGIN_USER?.name || "" }, async () => {
+    if (kind === "log") {
+      const l = DB.logs.find(x=>x.id===id);
+      if (l && logLive(l)) { const v = await mesVoidLog({ log_id:id, reason:"테스트 기록 삭제", idem:`purge-${id}` }); if (!v || v.ok === false) return v;
+        DB.logs.filter(x=>x.void_of===id).forEach(x=>logIds.push(x.id)); }
+      const ids = new Set([...logIds, ...ordsL.map(o=>o.id)]);
+      const hit = r => ids.has(r.log_id) || ids.has(r.order_id) || ids.has(r.ref_id);
+      ["order_events","order_workers","qc_rejections","shipments","stock_moves","ng_adjustments","consumptions","log_amendments","material_moves","label_moves","usages","adjust"]
+        .forEach(k=>{ const gone = (DB[k]||[]).filter(hit); gone.forEach(x=>del(k, x.id)); DB[k] = (DB[k]||[]).filter(x=>!hit(x)); });
+      const nos = ordsL.map(o=>o.order_no).filter(Boolean);
+      const pq = DB.pqc.filter(q=>nos.some(n=>String(q.note||"").startsWith(`작업지시 ${n}`))); pq.forEach(x=>del("pqc", x.id)); DB.pqc = DB.pqc.filter(q=>!pq.includes(q));
+      ordsL.forEach(o=>del("orders", o.id)); DB.orders = DB.orders.filter(o=>!ids.has(o.id));
+      DB.logs.filter(x=>ids.has(x.id)).forEach(x=>del("logs", x.id)); DB.logs = DB.logs.filter(x=>!ids.has(x.id));
+    } else {
+      const hit = r => r.mms_id === id || r.ref_id === id;
+      ["holds","stock_moves","counts","usages","adjust","consumptions"].forEach(k=>{ (DB[k]||[]).filter(hit).forEach(x=>del(k, x.id)); DB[k] = (DB[k]||[]).filter(x=>!hit(x)); });
+      del("mms", id); DB.mms = DB.mms.filter(m=>m.id!==id);
+    }
+    return { ok:true };
+  });
+  if (!r || r.ok === false) { const m = r?.message || "";
+    return ask(/admin_purge|function|schema cache/i.test(m) ? "서버에 이 기능이 아직 없습니다.\n\nSupabase SQL Editor 에서 049_admin_wipe_rest.sql 을 실행한 뒤 다시 누르세요." : `지우지 못했습니다 — ${m || "알 수 없는 오류"}`, { title:"기록 지우기 실패", yes:"확인", only:true }); }
+  logAudit("기록 지우기", head.split("\n")[0], kind === "log" ? "생산 한 건 기록째 (테스트 정리)" : "MMS 배치 기록째 (테스트 정리)");
+  if (sb) await reloadDB({ silent:true });
+  renderAll(); toast("지웠습니다");
+}
 /* 샘플 데이터가 남아 있는지 표시 */
 /* ── 테스트용 샘플 데이터 ── 화면 어디에서도 안 부른다. 콘솔에서 seedDemo() 로만 쓴다. */
 function seedDemo(){
@@ -16394,7 +16516,7 @@ function batchCard(m){
   });
   rows.sort((x,y)=>String(x[0]).localeCompare(String(y[0])));
   return `<div class="panel" style="margin-bottom:14px">
-    <div class="panel-h">배치 ${batchFull(m)} <span class="r hint">현장번호 ${batchShort(m)} · 라벨 ${batchLabel(m)}</span></div>
+    <div class="panel-h">배치 ${batchFull(m)} <span class="r hint">현장번호 ${batchShort(m)} · 라벨 ${batchLabel(m)}${isManager() ? ` <button class="btn" style="height:26px;color:var(--bad);margin-left:8px" onclick="purgeOne('mms','${m.id}')" title="관리자 — 이 배치를 기록째 지웁니다 (테스트 정리)">이 기록 지우기</button>` : ""}</span></div>
     <div class="hint"><b>${m.bean}</b> · 로스팅 ${m.roast_date} ${Math.round(Number(m.batch)||0)}번 ·
       ${shelfLabel(m.roast_date)} · 현재 남은 재고 <b>${fmt(m.stock_kg)}kg</b></div>
     <div class="panel-b"><table><thead><tr><th>일자</th><th>구분</th><th>수량</th><th class="l">내용</th><th>일련번호·기록자</th></tr></thead>
@@ -16438,7 +16560,7 @@ function renderTrace(){
     const step = (on,t,sub) => `<div class="tstep ${on?"on":""}"><div class="dot"></div>
       <div><b>${t}</b>${sub?`<br><span>${sub}</span>`:""}</div></div>`;
     return `<div class="panel" style="margin-bottom:14px">
-      <div class="panel-h">${pName(l)} <span class="r hint">${l.serial}</span></div>
+      <div class="panel-h">${pName(l)} <span class="r hint">${l.serial}${isManager() && !l.void_of ? ` <button class="btn" style="height:26px;color:var(--bad);margin-left:8px" onclick="purgeOne('log','${l.id}')" title="관리자 — 이 생산 한 건을 기록째 지웁니다 (테스트 정리)">이 기록 지우기</button>` : ""}</span></div>
       <div class="trace">
         ${(l.rework && !cs.length)
           ? step(!!l.batch_codes, "원두 로스팅 (재작업으로 물려받음)",
