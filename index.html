@@ -3110,12 +3110,17 @@ const halfTyped = v => { const t = String(v??"").trim();
   return t==="" || t==="-" || t==="." || /[.,]$/.test(t) || /^-?[.,]/.test(t); };
 const numOf = v => { const n = parseFloat(String(v??"").replace(/,/g,"")); return isFinite(n) ? n : 0; };
 
-function keepFocus(fn){
+function keepFocus(fn, tries){
   let el = document.activeElement;
-  /* Tab 으로 넘어가는 순간(blur→change→focus 사이)엔 아직 다음 칸에 커서가 없다 — 한 박자 뒤에 그리면 다음 칸이 잡힌다 */
+  /* Tab 으로 넘어가는 순간(blur→change→focus 사이)엔 아직 다음 칸에 커서가 없다 — 한 박자 뒤에 그리면 다음 칸이 잡힌다
+     ★ 2026-10-29 — 커서가 data-f 없는 칸(차수·품목 선택, 비고)에 있으면 전에는 영원히 기다리며 0ms 타이머를 돌렸다
+       (생산계획에서 줄을 추가하고 숫자를 넣으면 끊기던 원인 중 하나). 두 번만 기다리고 그냥 그린다 */
   if (!el || el === document.body || !(el.dataset && el.dataset.f)) {
     if (PENDING_FOCUS_TARGET) el = PENDING_FOCUS_TARGET;
-    else { setTimeout(()=>keepFocus(fn), 0); return; }
+    else if ((tries||0) < 2) { setTimeout(()=>keepFocus(fn, (tries||0)+1), 0); return; }
+    else { const keepId = el && el !== document.body ? el.id : ""; fn();
+      if (keepId) { const b = document.getElementById(keepId); if (b && b !== document.activeElement) { try { b.focus({ preventScroll:true }); } catch(_){} } }
+      return; }
   }
   const key = (el && el.dataset) ? el.dataset.f : null;
   let sel = null;
@@ -3820,6 +3825,8 @@ async function initDB(){
   if ($("stShelf")) $("stShelf").textContent = `상미기한 ${SHELF_LIFE_DAYS}일 · 잔여 ${SHELF_WARN_LEFT}일 이하 임박`;
   $("shelfRule").textContent = `상미기한 ${SHELF_LIFE_DAYS}일 · 잔여 ${SHELF_WARN_LEFT}일 이하 임박 · 선입선출로 오래된 배치부터 차감`;
   renderAll();
+  /* 같은 라벨·봉투가 여러 줄이면 (관리자 계정일 때) 조용히 하나로 */
+  setTimeout(()=>{ try { autoMergeMaterials().catch(e=>console.warn(e)); } catch(e){} }, 1200);
 }
 
 
@@ -6643,6 +6650,8 @@ renderFavs();
 
 /* ══ 업데이트 내역 — 어디에 뭘 바꿨는지 (최근 것이 위) ══ */
 const CHANGELOG = [
+  ["2026-10-29", "생산계획 › 끊김", "줄 추가·숫자 입력 때 멈추던 원인 둘 — ① 글자 하나마다 서버 저장 + 화면 20개 전부 다시 그림 → 손 뗀 뒤 한 번 저장(0.7초), 지금 화면만 0.2초 뒤 한 번, 나머지는 쉬는 틈에 ② 차수·품목 선택칸이나 비고에 커서가 있으면 화면 그리기가 영원히 기다리며 0ms 타이머를 돌리던 버그(keepFocus) — 두 번만 기다리고 그림 · 기계 배분 숫자칸도 같이"],
+  ["2026-10-29", "부자재 › 같은 라벨·봉투는 한 줄로 (자동)", "같은 이름·구분이면 1묶음이 달라도 같은 자재로 봄 — 관리자 계정이 열 때 자동으로 하나로 합침(재고·입고/사용 이력·BOM·라벨 연결·LOT 전부 대표로 · 이력 없는 빈 줄은 지움 · 이력 있던 줄은 숨김) → 기준정보·재고 세기·라벨작업·입고 어디서든 한 줄만 · 권한 없는 계정은 화면에서라도 한 줄로(재고 합산) · 표에서 같은 이름·구분을 또 만들면 \"이미 등록된 자재입니다\" · [중복 자재 정리]는 자동/직접 고르기 선택"],
   ["2026-10-29", "현장 작업자 모드 (신입 기준 58점 → 80점대)", "현장 계정으로 들어오면: 메뉴는 현장 작업·재고 세기·마감·라벨작업·품질관리·문의 6개만 · 카드에서 관리자용 글(한글표시사항 경고·라벨 미지정·완료 때 매겨짐·LOT 없음) 숨김, 배치→\"원두 봉지(배치)\" · 일련번호→\"상자 번호\" · LOT→\"봉투 번호\" · 설명 글은 기본 접힘(처음 한 번만 펴 보임) + 화면마다 [ⓘ 어떻게 하나요?] · 오류 창의 SQL·서버 문구는 \"지금 처리되지 않았습니다 — 관리자에게 알려 주세요\" 한 줄로 · 품질관리는 조치 대기·반려 이력·상세만 · 마감에서 못 들어가는 화면 링크는 \"관리자가 확인\" · 라벨작업 지시 단위 설정은 관리자만 · 재작업은 현장 메뉴에서 뺌 · 로그인 화면 안내 두 줄로"],
   ["2026-10-29", "현장 작업 › 버튼 이름 · 부적합 · 반려", "[참여]→[같이 하는 사람 추가] (시작한 사람은 저절로 들어감) · [작업 중단]→[대기로 되돌리기] (이유 선택) · [일시정지]→[잠깐 멈춤]/[다시 시작] · \"생산중 — 대기\"→\"앞 작업 끝나면 시작\" · 부적합 유형을 숫자 입력 대신 버튼으로(\"이물 검출 (X-ray)\" 처럼 풀어서) · 반려 칸은 현장에선 제품·몇 개·상자 번호·왜 돌아왔나 + [처리하기] → [다시 포장했음 → 검수로] / [못 고쳤음 — 관리자 확인](문의로 관리자 알림, 칸에 \"관리자 확인 요청함\") · 폐기·수량 나누기는 관리자만 · 완료 창 문구도 쉬운 말로 · 기계 머리글 \"인원 undefined명\" 고침"],
   ["2026-10-29", "골라서 지우기 (049 SQL)", "초기화 › [골라서 지우기] — 작업지시·생산실적 / 검수·반려 / 출고 / 수불 / 품질 / 재작업 / 집계·실측 / 라벨작업 / 로스팅 계획 / 일정 / MMS 배치 / LOT 입고 기록 중 체크한 것만 (작업지시를 고르면 검수·출고도 같이) · 이력추적 › 찾은 생산·배치마다 [이 기록 지우기] — 그 건에 딸린 지시·사용분·검수/반려·출고·수불·부적합까지, 살아 있는 실적은 먼저 취소해 재고를 되돌린 뒤 · 배치는 그 배치로 만든 생산이 남아 있으면 막음 · 관리자만 · \"초기화\" 입력 · 변경이력에 남김"],
@@ -6945,6 +6954,7 @@ function sortMasters(){
 function renderAll(){
   sortMasters();                        // 코드 번호 순서로
   migrateMaterials();                   // 옛 라벨 표 → 부자재
+  try { matDedupeView(); } catch(e){ console.warn(e); }   // 권한 없는 계정은 겹친 자재를 화면에서 한 줄로
   fillBeanList();                       // 원두 이름 자동완성 목록
   ["dash","plan","roast","req","log","stock","pqc","cal","loss","base",
    "work","qc","ship","order","trace","rw","mt","close","count","help"].forEach(renderOne);
@@ -7370,7 +7380,7 @@ function setAlloc(pid, mid, v){
   }
   planAlloc[pid][mid] = numOf(v);
   if (halfTyped(v)) return;
-  keepFocus(()=>{ renderPlan(); renderRoast(); });
+  planRenderSoon();
 }
 /* 그 품목만 자동배분으로 되돌리기 */
 function autoAlloc(pid){ delete planAlloc[pid]; renderPlan(); renderRoast(); toast("자동배분으로 되돌렸습니다"); }
@@ -8876,10 +8886,35 @@ function csvLabelNeed(){
       return [x.L.name, pack, x.ea, b, st, Math.floor(st/pack), sh, Math.ceil(sh/pack),
         sh?0:(b*pack-x.ea), sh?"발주 필요":"충분"]; }));
 }
+/* ══ 생산계획 입력 끊김 (Lee 2026-10-29 "행 추가하고 숫자 넣으면 끊김") ══
+   전: 글자 하나 칠 때마다 ① 서버에 저장 ② 화면 20개를 전부 다시 그림 ③ 서버 echo 로 또 그림
+   후: 저장은 손을 뗀 뒤(0.7초) 한 번 · 지금 화면만 0.2초 뒤 한 번 · 나머지 화면은 쉬는 틈에 */
+const SAVE_SOON = {};
+function saveSoon(t, row, ms){
+  const k = `${t}|${row.id}`; if (SAVE_SOON[k]) clearTimeout(SAVE_SOON[k].tm);
+  SAVE_SOON[k] = { t, row, tm:setTimeout(()=>{ delete SAVE_SOON[k]; save(t, row); }, ms || 700) };
+}
+function flushSoonSaves(){ Object.keys(SAVE_SOON).forEach(k=>{ const x = SAVE_SOON[k]; clearTimeout(x.tm); delete SAVE_SOON[k]; save(x.t, x.row); }); }
+window.addEventListener("beforeunload", flushSoonSaves);
+window.addEventListener("pagehide", flushSoonSaves);
+document.addEventListener("focusout", ()=>{ if (Object.keys(SAVE_SOON).length) setTimeout(flushSoonSaves, 40); });
+let PLAN_TM = null, PLAN_REST = null;
+function renderRestIdle(cur){
+  if (PLAN_REST) PLAN_REST.cancel = true;
+  const job = { cancel:false }, rest = SCREENS.filter(x=>x !== cur); PLAN_REST = job;
+  const step = () => { if (job.cancel) return; if (!rest.length) return; try { renderOne(rest.shift()); } catch(e){ console.warn(e); } idle(step); };
+  idle(step);
+}
+function planRenderSoon(ms){
+  clearTimeout(PLAN_TM);
+  PLAN_TM = setTimeout(()=>{ PLAN_TM = null; const cur = curScreen();
+    keepFocus(()=>{ try { render(cur); } catch(e){ console.warn(e); } });
+    renderRestIdle(cur); }, ms || 200);
+}
 function setPlan(id,v){
   planEA[id] = numOf(v);
   if (halfTyped(v)) return;                 // 아직 치는 중 — 화면 그대로 두기
-  keepFocus(()=>{ renderPlan(); renderRoast(); });
+  planRenderSoon();
 }
 /* 집계 한 줄 넣기 — 같은 차수·같은 품목이면 더한다 (덮어쓰지 않는다) */
 function putTally(p, qty, round, d, note){
@@ -8908,7 +8943,7 @@ async function addTallyRow(){
   const row = { id:uid(), date:tallyDay(), round:tallyRound, product_id:p.id, ...pSnap(p),
     qty:0, note:"", user:CURRENT_USER||"", at:nowISO() };
   DB.tallies.push(row); save("tallies", row);
-  renderAll(); focusNewRow("tallyLog", 'input[data-k="qty"]');
+  renderPlan(); renderRestIdle("plan"); focusNewRow("tallyLog", 'input.cntin');
   toast(`${tallyRound} 줄을 하나 만들었습니다 — 품목과 수량을 넣으세요`);
 }
 function setTally(id, k, v){
@@ -8917,9 +8952,9 @@ function setTally(id, k, v){
   else if (k==="product_id") { const p = prodById(v); if(!p) return;
     t.product_id = p.id; Object.assign(t, pSnap(p)); }
   else t[k] = v;
-  t.at = nowISO(); save("tallies", t);
+  t.at = nowISO(); saveSoon("tallies", t);
   if (t.product_id in planEA) delete planEA[t.product_id];
-  keepFocus(renderAll);
+  planRenderSoon();
 }
 async function delTally(id){
   const t = DB.tallies.find(x=>x.id===id); if(!t) return;
@@ -9548,7 +9583,8 @@ function backLabels(p, qty, ref, lid){
 }
 /* ══ 부자재 기준정보는 하나 — 같은 자재 열쇠 = 자재명(공백·대소문자 무시) + 구분 + 1묶음 (041) ══ */
 const matNorm = v => String(v||"").toLowerCase().replace(/\s+/g,"");
-const matKeyOf = M => `${matNorm(M.name)}|${M.kind||""}|${Number(M.pack_qty)||1}`;
+/* ★ 2026-10-29 — 같은 이름·구분이면 같은 자재다 (1묶음이 달라도) · Lee "묶음을 하는 게 아니라 중복은 사라지게" */
+const matKeyOf = M => `${matNorm(M.name)}|${M.kind||""}`;
 const matActive = M => M && M.active !== false;
 function matDupOf(M, excludeId){ const key = matKeyOf(M); return DB.materials.find(x=>matActive(x) && x.id !== (excludeId||M.id) && matKeyOf(x) === key) || null; }
 /* 이름·구분만 같은 것 (묶음이 달라도) — 정리 후보 */
@@ -9575,17 +9611,60 @@ async function mesMergeMaterial(a){
     return { ok:true, moved:{ moves:n }, stock:k.stock };
   });
 }
-/* 중복 자재 정리 — 묶음마다 대표를 고르고 나머지를 통합 */
+/* ══ 중복 자재 자동 정리 (Lee 2026-10-29) ══
+   같은 이름·구분의 라벨·봉투가 여러 줄이면 묻지 않고 하나로 합친다 — 재고·입고/사용 이력·BOM·라벨 연결·LOT 전부 대표로.
+   대표 = 이력이 많은 줄 › 코드 있는 줄. 이력이 하나도 없던 줄은 아예 지우고, 이력이 있던 줄은 비활성(안 보임).
+   관리자(기준정보 권한) 계정이 열 때 서버에서 합쳐지므로, 그 뒤엔 모든 기기에서 한 줄만 보인다.
+   권한 없는 계정은 화면에서만 겹침을 숨긴다 (matDedupeView) */
+let MAT_AUTO_BUSY = false;
+async function autoMergeMaterials(){
+  if (MAT_AUTO_BUSY || !can("base")) return;
+  const groups = matDupGroups(); if (!groups.length) return;
+  MAT_AUTO_BUSY = true;
+  try {
+  let done = 0, removed = 0;
+  for (const g of groups) {
+    const list = [...g].sort((a,b)=>matHistN(b)-matHistN(a) || (b.code?1:0)-(a.code?1:0) || Number(b.stock||0)-Number(a.stock||0));
+    const keep = list[0];
+    for (const d of list.slice(1)) {
+      const junk = matHistN(d) === 0 && !(matLots()[d.id]||[]).length;
+      const r = await mesMergeMaterial({ keep:keep.id, drop:d.id });
+      if (!r || r.ok === false) { console.warn("자재 자동 통합 실패", d.name, r?.message); continue; }
+      const all = matLots(); if (all[d.id] && all[d.id].length) { all[keep.id] = [ ...(all[keep.id]||[]), ...all[d.id] ].sort((a,b)=>String(a.at||a.date).localeCompare(String(b.at||b.date))); delete all[d.id]; await saveLots(all); }
+      if (junk) { DB.materials = DB.materials.filter(x=>x.id!==d.id); delMany("materials", [d.id]); removed++; }
+      logAudit("부자재 중복 자동 통합", keep.name, `${d.name} (${d.code||"-"} · 1묶음 ${fmt(d.pack_qty||1)} · 재고 ${fmt(d.stock)}) → 대표 ${keep.code||"-"} (1묶음 ${fmt(keep.pack_qty||1)})${junk?" · 빈 줄이라 삭제":""}`);
+      done++;
+    }
+  }
+  DB.materials = DB.materials.filter(matActive);
+  if (done) { renderAll(); toast(`같은 라벨·봉투 ${done}줄을 하나로 합쳤습니다${removed?` (빈 줄 ${removed}개는 지움)`:""} — 변경이력에 남김`); }
+  } finally { MAT_AUTO_BUSY = false; }
+}
+/* 권한 없는 계정 — 서버가 아직 안 합쳐졌으면 화면에서라도 한 줄만 (재고는 더해서 보여 준다) */
+function matDedupeView(){
+  if (can("base")) return;
+  const seen = {}; const out = [];
+  [...DB.materials].sort((a,b)=>matHistN(b)-matHistN(a) || (b.code?1:0)-(a.code?1:0)).forEach(M=>{
+    if (!matActive(M)) return;
+    const k = `${matNorm(M.name)}|${M.kind||""}`;
+    if (!String(M.name||"").trim()) { out.push(M); return; }
+    if (seen[k]) { seen[k].stock = Number(seen[k].stock||0) + Number(M.stock||0); return; }
+    seen[k] = M; out.push(M);
+  });
+  if (out.length !== DB.materials.length) DB.materials = out;
+}
+/* 중복 자재 정리 (수동) — 자동으로 안 합쳐진 것이 있을 때 */
 async function mergeDupMaterials(){
   if (!(await requireUser())) return;
   if (!can("base")) return deny("base");
   const groups = matDupGroups();
   if (!groups.length) return ask("같은 이름·구분의 자재가 둘 이상인 경우가 없습니다 — 중복이 없습니다.", { title:"중복 자재 정리", yes:"확인" });
+  if (await ask(`같은 이름·구분의 자재 ${groups.length}건을 자동으로 하나로 합칩니다 (이력 많은 줄이 대표 · 빈 줄은 지움).\n\n하나씩 직접 고르려면 [직접 고르기]`, { title:"중복 자재 정리", choices:[ { v:"auto", label:"자동으로 합치기", cls:"primary" }, { v:"pick", label:"직접 고르기" }, { v:null, label:"취소" } ] }) === "auto") { await autoMergeMaterials(); return; }
   let done = 0;
   for (const g of groups) {
     const list = [...g].sort((a,b)=>matHistN(b)-matHistN(a) || (b.code?1:0)-(a.code?1:0));
     const pick = await ask(`[${g[0].kind}] ${g[0].name} — 같은 자재가 ${g.length}줄 있습니다.\n\n대표로 남길 줄 번호를 적으세요 (나머지의 재고·입고/사용 이력·BOM·라벨 연결은 전부 대표로 옮기고, 그 줄은 비활성화됩니다 — 지우지 않습니다):\n\n` +
-      list.map((M,i)=>`${i+1}. ${M.code||"(코드 없음)"} · 1묶음 ${fmt(M.pack_qty||1)} · 재고 ${fmt(M.stock)} · 이력 ${matHistN(M)}건${M.spec?` · 규격 ${M.spec}`:""}`).join("\n") + `\n\n0 = 이 묶음은 건너뜀`, { prompt:true, value:"1", title:"중복 자재 정리" });
+      list.map((M,i)=>`${i+1}. ${M.code||"(코드 없음)"} · 1묶음 ${fmt(M.pack_qty||1)} · 재고 ${fmt(M.stock)} · 이력 ${matHistN(M)}건${M.spec?` · 규격 ${M.spec}`:""}`).join("\n") + `\n\n0 = 이 건은 건너뜀`, { prompt:true, value:"1", title:"중복 자재 정리" });
     if (pick === null) break;
     const i = Math.round(numOf(pick)) - 1; if (!(i >= 0 && list[i])) continue;
     const keep = list[i];
@@ -13139,7 +13218,7 @@ function renderBaseInner(){
   /* 추가 버튼도 구분 목록에서 만든다 — 구분이 늘어도 빠지는 일이 없다 */
   if ($("matAddBtn")) $("matAddBtn").innerHTML =
     MAT_KINDS.map(k=>`<button class="btn ${matKindFilter===k?"primary":""}" onclick="addMaterial('${k}')">${k} 추가</button>`).join(" ") +
-    (()=>{ const g = matDupGroups(); return g.length ? ` <button class="btn" style="color:var(--bad);font-weight:800" onclick="mergeDupMaterials()" title="같은 이름·구분의 자재가 여러 줄 — 대표 하나로 통합(이력 전부 옮김)">중복 자재 정리 ${g.length}묶음</button>` : ""; })();
+    (()=>{ const g = matDupGroups(); return g.length ? ` <button class="btn" style="color:var(--bad);font-weight:800" onclick="mergeDupMaterials()" title="같은 이름·구분의 자재가 여러 줄 — 대표 하나로 통합(이력 전부 옮김)">중복 자재 정리 ${g.length}건</button>` : ""; })();
 
   SHOWN.materials = mats.map(M=>M.id);
   tbl("tMat", [selAllBox("materials"),"구분","품목명","코드","규격","단위","1묶음","현재고","보유 묶음","안전재고","상태","최근 입고","최근 사용","연결 품목",'<span class="fix">처리</span>',""],
@@ -13855,6 +13934,7 @@ async function reloadDB(opt = {}){
     });
     DB.materials = DB.materials.filter(matActive);
     if (opt.silent) liveRender(); else { renderAll(); toast("모든 화면을 최신 데이터로 갱신했습니다"); }
+    setTimeout(()=>{ autoMergeMaterials().catch(e=>console.warn(e)); }, 800);
   } catch(e){ console.warn(e); if (!opt.silent) toast("불러오기 실패 — 연결을 확인하세요"); }
 }
 
@@ -13887,7 +13967,7 @@ let RT_REST = null;
 function liveRender(){
   clearTimeout(RT_TIMER);
   RT_TIMER = setTimeout(()=>{
-    sortMasters();
+    sortMasters(); try { matDedupeView(); } catch(_){}
     const cur = curScreen(), a = document.activeElement;
     const typing = a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && a.type !== "checkbox" && a.type !== "button"
                    && !!a.closest("#s-" + cur);
