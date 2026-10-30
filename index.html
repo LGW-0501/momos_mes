@@ -2084,6 +2084,8 @@
       <div class="panel"><div class="panel-h">품목별 로스율</div><div style="padding:10px;height:280px"><canvas id="chLossP"></canvas></div></div>
       <div class="panel"><div class="panel-h">기계별 로스율</div><div style="padding:10px;height:280px"><canvas id="chLossM"></canvas></div></div>
     </div>
+    <div class="panel"><div class="panel-h">원두 봉지(배치)마다 — 입고 기준 <span class="r hint">입고 kg − 정상 생산 kg − 봉지에 남은 kg = 로스 · 비운 봉지만 확정</span></div>
+      <div class="panel-b"><table id="lossBatch"></table></div></div>
     <div class="panel"><div class="panel-h">생산 건마다 <span class="r hint">눌러서 [로스] 고치기 · 최근 것이 앞</span></div>
       <div id="lossDots" style="padding:12px 14px;display:flex;flex-wrap:wrap;gap:6px"></div></div>
     <div class="panel"><div class="panel-h">원두별 로스 (kg)</div><div id="lossBean" style="padding:8px 0"></div></div>
@@ -6650,6 +6652,9 @@ renderFavs();
 
 /* ══ 업데이트 내역 — 어디에 뭘 바꿨는지 (최근 것이 위) ══ */
 const CHANGELOG = [
+  ["2026-10-30", "로스관리 › 배치 표 › [봉지 비움] (055 SQL)", "옛 방식으로 완료돼 봉지에 kg 가 남아 있는 생산 — 관리자가 [봉지 비움]을 누르면 남은 kg 를 그 생산(마지막으로 쓴 것)의 사용분으로 넣고 배치 재고 0 · 투입 kg 올리고 로스 다시 계산 · 실적·상자 번호·검수는 그대로 · 변경이력에 남김"],
+  ["2026-10-30", "생산 ↔ 로스팅 입고 연동", "원두가 입고(로스팅 › 배치 재고)돼 있어야 [생산 시작]·[생산 완료]가 됨 (전에는 입고 없이도 완료되고 로스가 지시 kg 기준이었음) · 완료 창에서 \"원두 봉지 3003 · 지금 58.8kg — [다 썼음] / [남았음 → 남은 kg]\" 만 물음 → 배치에서 뺀 kg = 봉지에 있던 kg − 남은 kg · 로스 = 뺀 kg − 정상 생산 kg (봉지를 비우면 입고 58.8 − 생산 58 = 0.8kg 처럼 입고 기준으로 잡힘) · 남은 원두는 봉지(배치 재고)에 그대로 (\"다음 생산에 합산\" 단계 없앰) · 로스관리에 \"원두 봉지(배치)마다 — 입고 기준\" 표: 입고 · 생산에 씀 · 정상 생산 · 생산 외 · 남음 · 로스 · 로스율 · 상태"],
+  ["2026-10-30", "그래프 — 계속 움직이던 것", "로스관리·대시보드·품질관리 등의 그래프가 화면이 새로 그려질 때마다(실시간 반영 · 뒤에서 그리기) 처음부터 다시 자라던 문제 — 같은 그래프면 숫자만 바꿔 끼우고 애니메이션을 껐습니다"],
   ["2026-10-29", "생산계획 › 끊김", "줄 추가·숫자 입력 때 멈추던 원인 둘 — ① 글자 하나마다 서버 저장 + 화면 20개 전부 다시 그림 → 손 뗀 뒤 한 번 저장(0.7초), 지금 화면만 0.2초 뒤 한 번, 나머지는 쉬는 틈에 ② 차수·품목 선택칸이나 비고에 커서가 있으면 화면 그리기가 영원히 기다리며 0ms 타이머를 돌리던 버그(keepFocus) — 두 번만 기다리고 그림 · 기계 배분 숫자칸도 같이"],
   ["2026-10-29", "부자재 › 같은 라벨·봉투는 한 줄로 (자동)", "같은 이름·구분이면 1묶음이 달라도 같은 자재로 봄 — 관리자 계정이 열 때 자동으로 하나로 합침(재고·입고/사용 이력·BOM·라벨 연결·LOT 전부 대표로 · 이력 없는 빈 줄은 지움 · 이력 있던 줄은 숨김) → 기준정보·재고 세기·라벨작업·입고 어디서든 한 줄만 · 권한 없는 계정은 화면에서라도 한 줄로(재고 합산) · 표에서 같은 이름·구분을 또 만들면 \"이미 등록된 자재입니다\" · [중복 자재 정리]는 자동/직접 고르기 선택"],
   ["2026-10-29", "현장 작업자 모드 (신입 기준 58점 → 80점대)", "현장 계정으로 들어오면: 메뉴는 현장 작업·재고 세기·마감·라벨작업·품질관리·문의 6개만 · 카드에서 관리자용 글(한글표시사항 경고·라벨 미지정·완료 때 매겨짐·LOT 없음) 숨김, 배치→\"원두 봉지(배치)\" · 일련번호→\"상자 번호\" · LOT→\"봉투 번호\" · 설명 글은 기본 접힘(처음 한 번만 펴 보임) + 화면마다 [ⓘ 어떻게 하나요?] · 오류 창의 SQL·서버 문구는 \"지금 처리되지 않았습니다 — 관리자에게 알려 주세요\" 한 줄로 · 품질관리는 조치 대기·반려 이력·상세만 · 마감에서 못 들어가는 화면 링크는 \"관리자가 확인\" · 라벨작업 지시 단위 설정은 관리자만 · 재작업은 현장 메뉴에서 뺌 · 로그인 화면 안내 두 줄로"],
@@ -7039,8 +7044,19 @@ async function draw(list){
       s.src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"; s.onload=res; s.onerror=rej;
       document.head.appendChild(s); }); } catch(e){ return; }
   }
+  /* ★ 2026-10-30 — 그래프가 계속 움직이던 문제 (Lee "로스율 보고 있는데 그래프 바가 계속 움직여")
+       화면이 다시 그려질 때마다(실시간 반영·뒤에서 그리는 화면) 그래프를 부수고 새로 만들어 매번 처음부터 자라는 애니메이션이 돌았다.
+       → 같은 그래프면 숫자만 바꿔 끼우고, 애니메이션은 끈다 */
+  Chart.defaults.animation = false;
   list.forEach(([id,cfg])=>{ const el=$(id); if(!el) return;
-    if (charts[id]) charts[id].destroy();
+    cfg.options = cfg.options || {}; cfg.options.animation = false;
+    const old = charts[id];
+    if (old && old.canvas === el && old.config.type === cfg.type && (old.data.datasets||[]).length === (cfg.data.datasets||[]).length) {
+      old.data.labels = cfg.data.labels;
+      cfg.data.datasets.forEach((d,i)=>{ Object.assign(old.data.datasets[i], d); });
+      old.options = cfg.options; old.update("none"); return;
+    }
+    if (old) old.destroy();
     charts[id] = new Chart(el, cfg); });
 }
 /* 속도계 게이지 — 0~100 눈금 + 바늘 */
@@ -12551,6 +12567,59 @@ const lossColOf = l => { if (l.leftover_to === "next" || l.loss_flag === "open")
   const f = l.loss_flag || (()=>{ const v = lossPctOfLog(l); if (v == null) return null; return lossFlagOf(v, lossRuleOf(prodById(l.product_id), l.machine)); })();
   return f === "ok" ? "ok" : (f === "high" || f === "low") ? "bad" : "none"; };
 function lossGroupPct(ls){ const i = ls.reduce((s,l)=>s+Number(l.input_kg||0),0); const lo = ls.reduce((s,l)=>s+lossOf(l),0); return { i, lo, pct: i>0 ? Math.round(lo/i*10000)/100 : 0 }; }
+/* 배치(봉지) 기준 로스 — 입고 = 지금 남은 kg + 생산에 쓴 kg + 생산 외 사용 kg · 정상 생산 = 그 배치에서 뺀 kg 비율로 나눈 표준 kg */
+function renderLossBatch(lo, hi){
+  const r = $("lossRange")?.value || "tm", tm = monthKey(today()); const dd = new Date(); dd.setMonth(dd.getMonth()-1); const lm = dd.toISOString().slice(0,7);
+  const inR = d => r==="all" || (r==="tm" && monthKey(d)===tm) || (r==="lm" && monthKey(d)===lm);
+  const rows = DB.mms.filter(m=>inR(m.roast_date)).map(m=>{
+    const cs = CONSL().filter(c=>c.mms_id===m.id), used = cs.reduce((s,c)=>s+Number(c.used_kg||0),0);
+    const other = DB.usages.filter(u=>useLive(u) && u.mms_id===m.id).reduce((s,u)=>s+Number(u.kg||0),0);
+    const left = Number(m.stock_kg||0), inKg = Math.round((left + used + other)*1000)/1000;
+    let out = 0; cs.forEach(c=>{ const l = DB.logs.find(x=>x.id===c.log_id); if (!l || !logLive(l)) return; const p = prodById(l.product_id); if (!p) return;
+      const tot = CONSL().filter(x=>x.log_id===l.id).reduce((s,x)=>s+Number(x.used_kg||0),0) || Number(c.used_kg||0);
+      out += stdKg(p, l.qty_ea) * Number(c.used_kg||0) / tot; });
+    out = Math.round(out*1000)/1000;
+    const loss = Math.round((inKg - out - other - left)*1000)/1000, pct = inKg > 0 ? Math.round(loss/inKg*10000)/100 : 0;
+    const done = left <= 0.0005 && used > 0;
+    return { m, inKg, used, other, left, out, loss, pct, done, n:new Set(cs.map(c=>c.log_id)).size };
+  }).filter(x=>x.inKg > 0).sort((a,b)=>String(b.m.roast_date).localeCompare(String(a.m.roast_date)) || (Number(b.m.batch)||0)-(Number(a.m.batch)||0));
+  const col = x => !x.done ? "" : (x.pct > hi || x.pct < lo) ? "bad" : "ok";
+  tbl("lossBatch", ["로스팅","봉지(배치)","원두","입고(kg)","생산에 씀(kg)","정상 생산(kg)","생산 외(kg)","봉지에 남음(kg)","로스(kg)","로스율","상태"],
+    rows.map(x=>`<tr><td class="c">${x.m.roast_date||"—"}</td><td class="l"><b>${batchLabel(x.m)}</b></td><td class="l">${x.m.bean||""}</td>
+      <td>${fmt(x.inKg)}</td><td>${fmt(x.used)}${x.n?`<br><span class="hint" style="padding:0;font-size:11px">${x.n}건</span>`:""}</td><td>${fmt(x.out)}</td><td>${x.other?fmt(x.other):"—"}</td><td>${fmt(x.left)}</td>
+      <td class="${col(x)}"><b>${x.done ? fmt(x.loss) : "—"}</b></td><td class="${col(x)}"><b>${x.done ? x.pct+"%" : "—"}</b></td>
+      <td class="c" style="white-space:nowrap">${x.done ? `<span class="tag ${col(x)==="bad"?"bad":"ok"}">${col(x)==="bad"?"기준 벗어남":"정상"}</span>` : x.used>0 ? `<span class="tag warn">쓰는 중 (${fmt(x.left)}kg 남음)</span>${isManager()?` <button class="btn" style="height:26px;padding:0 8px" onclick="emptyBagToLog('${x.m.id}')" title="옛 방식으로 완료된 생산 — 남은 kg 를 마지막 생산에서 다 쓴 것으로 넣어 입고 기준 로스로 맞춤">봉지 비움</button>`:""}` : `<span class="tag">아직 안 씀</span>`}</td></tr>`),
+    rows.length ? `<td colspan="3" class="c">합계 ${rows.length}봉지 · 남은 kg 가 있는 옛 생산은 [봉지 비움]으로 정정</td><td>${fmt(rows.reduce((s,x)=>s+x.inKg,0))}</td><td>${fmt(rows.reduce((s,x)=>s+x.used,0))}</td><td>${fmt(rows.reduce((s,x)=>s+x.out,0))}</td><td>${fmt(rows.reduce((s,x)=>s+x.other,0))}</td><td>${fmt(rows.reduce((s,x)=>s+x.left,0))}</td><td colspan="3">비운 봉지 로스 ${fmt(rows.filter(x=>x.done).reduce((s,x)=>s+x.loss,0))}kg</td>` : undefined);
+}
+/* ── 봉지 비움 정정 — 옛 방식으로 완료된 생산에 봉지에 남은 kg 를 넣어 입고 기준 로스로 (055) ── */
+async function emptyBagToLog(mmsId){
+  if (!(await requireUser())) return;
+  if (!isManager()) return ask("관리자만 할 수 있습니다.", { title:"봉지 비움 정정", yes:"확인", only:true });
+  const m = DB.mms.find(x=>x.id===mmsId); if (!m) return;
+  const left = Number(m.stock_kg||0); if (left <= 0) return toast("이 봉지는 이미 비어 있습니다");
+  /* 이 봉지를 쓴 살아 있는 생산 — 최근 것부터 */
+  const used = [...new Set(CONSL().filter(c=>c.mms_id===mmsId).map(c=>c.log_id))].map(id=>DB.logs.find(l=>l.id===id)).filter(l=>l && logLive(l))
+    .sort((a,b)=>String(b.created_at).localeCompare(String(a.created_at)));
+  if (!used.length) return ask(`배치 ${batchLabel(m)} 을 쓴 생산이 없습니다.\n남은 ${fmt(left)}kg 이 생산 외 손실이면 로스팅 › 배치 재고의 [생산 외 사용]으로 적으세요.`, { title:"봉지 비움 정정", yes:"확인", only:true });
+  const pick = await ask(`배치 ${batchLabel(m)} 에 ${fmt(left)}kg 이 남아 있습니다.\n어느 생산에서 다 쓴 것으로 넣을까요?\n\n` + used.slice(0,8).map((l,i)=>`${i+1}. ${l.serial||"—"} · ${l.product_name||prodById(l.product_id)?.name||""} ${fmt(l.qty_ea)}EA · ${l.work_date}`).join("\n") + `\n\n번호를 적으세요 (보통 1 = 마지막으로 쓴 생산)`, { prompt:true, value:"1", title:"봉지 비움 정정" });
+  if (pick === null) return; const l = used[Math.round(numOf(pick))-1]; if (!l) return;
+  const p = prodById(l.product_id); if (!p) return toast("품목을 찾을 수 없습니다");
+  const newIn = Math.round((Number(l.input_kg||0) + left)*1000)/1000, outKg = stdKg(p, l.qty_ea), rule = lossRuleOf(p, l.machine);
+  const lossKg = Math.round((newIn - outKg)*1000)/1000, pct = newIn > 0 ? Math.round(lossKg/newIn*10000)/100 : 0, flag = lossFlagOf(pct, rule);
+  if (!(await ask(`${l.serial||"—"} · ${p.name} ${fmt(l.qty_ea)}EA\n\n배치 재고 ${fmt(left)}kg → 0 · 이 생산의 투입 ${fmt(l.input_kg)} → ${fmt(newIn)}kg\n로스 ${fmt(lossKg)}kg (${pct}%) ${LOSS_FLAG_T[flag]}\n\n실적·상자 번호·검수는 그대로입니다. 되돌릴 수 없습니다.`, { title:"봉지 비움 정정", yes:"넣기", danger:true }))) return;
+  const r = await rpc("empty_bag_to_log", { p_log_id:l.id, p_mms_id:m.id, p_reason:"입고 기준 로스로 정정", p_idempotency:`eb-${l.id}-${m.id}` }, () => {
+    m.stock_kg = 0; save("mms", m);
+    const c = { id:uid(), log_id:l.id, work_date:l.work_date, product_id:l.product_id, product_name:l.product_name, bean:m.bean, mms_id:m.id, roast_date:m.roast_date, batch:m.batch, batch_full:batchFull(m), used_kg:left };
+    DB.consumptions.push(c); save("consumptions", c);
+    l.input_kg = newIn; save("logs", l);
+    logAudit("봉지 비움 정정", l.serial||"", `${p.name} · 배치 ${batchFull(m)} 남은 ${fmt(left)}kg → 이 생산 사용분 (투입 ${fmt(newIn)})`);
+    return { ok:true, added_kg:left, input_kg:newIn };
+  });
+  if (!r || r.ok === false) { const mm = r?.message||""; return ask(/empty_bag_to_log|schema cache|function/i.test(mm) ? "서버에 이 기능이 아직 없습니다.\n\nSupabase SQL Editor 에서 055_empty_bag.sql 을 실행한 뒤 다시 누르세요." : `정정하지 못했습니다 — ${mm}`, { title:"봉지 비움 정정", yes:"확인", only:true }); }
+  await mesSetLogLoss({ log_id:l.id, leftover_kg:0, leftover_to:"loss", carried_from:null, carried_kg:0, loss_kg:lossKg, loss_pct:pct, loss_flag:flag, loss_std:rule.pct, loss_tol:rule.tol, reason:l.loss_reason||null, note:l.loss_note||null, idem:`loss-${l.id}-${uid()}` });
+  if (sb) { await Promise.all([ pullWhere("mms","id",m.id), pullWhere("logs","id",l.id), pullWhere("consumptions","log_id",l.id) ]).catch(()=>{}); }
+  renderAll(); toast(`정정했습니다 — ${l.serial||""} 로스 ${fmt(lossKg)}kg (${pct}%)`);
+}
 function renderLoss(){
   const all = lossLogs(), logs = all.filter(logLive);
   renderLossRule(); renderLossLogs(all); renderLossAvg(all);
@@ -12600,6 +12669,7 @@ function renderLoss(){
       style="border:none;border-radius:8px;padding:6px 9px;background:${LC[col]};color:#fff;font-weight:700;font-size:12px;cursor:pointer;line-height:1.2">${l.serial||"—"}<br><span style="font-size:13px">${v!=null?v+"%":"→ 다음"}</span></button>`; }).join("")
     : `<div class="hint">이 기간 생산 기록이 없습니다</div>`;
   beanBars("lossBean", logs);
+  renderLossBatch(lo, hi);
 
   /* ── 접어 둔 표 ── */
   $("lossCards").innerHTML = `
@@ -15360,6 +15430,8 @@ async function startWork(id){
   const o = ordById(id); if(!o || o.status !== "대기") return;
   const busy = machineBusy(o);
   if (busy) return toast(`${o.machine} 에서 ${busy.map(x=>x.product_name||prodById(x.product_id)?.name).join(", ")} 생산중입니다 — 완료하거나 [작업 중단] 한 뒤 시작하세요`);
+  /* ★ 원두가 입고돼 있어야 시작할 수 있다 (Lee 2026-10-30) */
+  { const p = prodById(o.product_id); if (p && !beanReceived(p)) return ask(`${p.bean||"원두"} 가 아직 입고되지 않았습니다.\n\n로스팅 › 배치 재고에 입고가 들어와야 생산을 시작할 수 있습니다 — 관리자에게 알려 주세요.`, { title:"원두 입고 전", yes:"확인", only:true }); }
   /* 누르는 즉시 카드를 바꾼다 — 서버가 거절하면 되돌린다 (같은 지시를 둘이 동시에 시작하는 것은 서버가 막는다) */
   const before = { status:o.status, started_by:o.started_by, started_at:o.started_at };
   INFLIGHT.add(id);
@@ -15822,9 +15894,13 @@ function finishDialog(o, p, ctx){
           <button class="btn" data-n="1" style="${btnS}">+1</button>
           <select id="finNgType" style="height:44px;display:none;flex:1;min-width:140px">${NG_TYPES.map(x=>`<option value="${esc(x)}"${x==="기타"?" selected":""}>${esc(ngLabel(x))}</option>`).join("")}</select>
         </div>
-        <div style="font-weight:600;margin:14px 0 4px">남은 원두 <span class="hint" style="padding:0">있으면 kg 를 적으세요 · 없으면 그대로 [완료]</span></div>
-        <div style="display:flex;gap:6px;align-items:center">
-          <input id="finLeft" type="number" inputmode="decimal" min="0" step="0.1" value="0" style="width:96px;height:44px;font-size:18px;text-align:center"> <span>kg</span>
+        <div style="font-weight:600;margin:14px 0 4px">원두 봉지 <span class="hint" style="padding:0">${esc(ctx.bags.map(batchShort).join(" + "))} · 지금 ${fmt(ctx.bagKg)}kg</span></div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <button class="btn primary" id="finBagAll" style="height:44px;flex:1">다 썼음 (봉지 비움)</button>
+          <button class="btn" id="finBagLeft" style="height:44px;flex:1">남았음</button>
+        </div>
+        <div id="finLeftRow" style="display:none;gap:6px;align-items:center;margin-top:8px">
+          <span>봉지에 남은</span><input id="finLeft" type="number" inputmode="decimal" min="0" step="0.1" value="0" style="width:96px;height:44px;font-size:18px;text-align:center"> <span>kg</span>
         </div>
         <div id="finWarn" style="margin-top:12px;color:var(--bad,#c0392b);font-size:13px;white-space:pre-line"></div>
       </div>
@@ -15835,17 +15911,24 @@ function finishDialog(o, p, ctx){
     </div>`;
     document.body.appendChild(ov);
     const G = ov.querySelector("#finGood"), N = ov.querySelector("#finNg"), T = ov.querySelector("#finNgType"), L = ov.querySelector("#finLeft"), W = ov.querySelector("#finWarn");
+    const BA = ov.querySelector("#finBagAll"), BL = ov.querySelector("#finBagLeft"), LR = ov.querySelector("#finLeftRow");
+    let bagMode = "all";
+    const setBag = m => { bagMode = m; BA.className = "btn" + (m==="all"?" primary":""); BL.className = "btn" + (m==="left"?" primary":""); LR.style.display = m==="left" ? "flex" : "none"; if (m==="left") setTimeout(()=>{ L.focus(); L.select(); }, 30); sync(); };
+    BA.onclick = () => setBag("all"); BL.onclick = () => setBag("left");
     const num = el => Math.max(0, Math.round(Number(el.value)||0));
     const sync = () => {
       T.style.display = num(N) > 0 ? "" : "none";
       const g = num(G), w = [];
+      const left = bagMode === "left" ? Math.max(0, kgOf(L.value)) : 0, used = Math.round((ctx.bagKg - left)*1000)/1000, need = stdKg(p, g);
+      if (left > ctx.bagKg) w.push(`※ 남은 kg 가 봉지에 있던 ${fmt(ctx.bagKg)}kg 보다 많습니다`);
+      else if (used + 0.0005 < need) w.push(`※ 봉지에서 쓴 ${fmt(used)}kg 로는 ${fmt(g)}개(${fmt(need)}kg)를 만들 수 없습니다 — 수량이나 남은 kg 를 확인하세요`);
       if (ctx.label && Number(ctx.label.stock||0) < g) w.push(`※ ${ctx.label.name} 라벨 보유 ${fmt(ctx.label.stock)}장 — ${fmt(g-Number(ctx.label.stock||0))}장 모자랍니다 (완료는 됩니다 · 관리자에게 알려 주세요)`);
       if (plan > 0 && g > plan) w.push(`※ 지시(${fmt(plan)}개)보다 많습니다`);
       W.textContent = w.join("\n");
     };
     ov.querySelectorAll("[data-g]").forEach(b=>b.onclick=()=>{ G.value = Math.max(0, num(G) + Number(b.dataset.g)); sync(); });
     ov.querySelectorAll("[data-n]").forEach(b=>b.onclick=()=>{ N.value = Math.max(0, num(N) + Number(b.dataset.n)); sync(); });
-    [G,N].forEach(el=>el.addEventListener("input", sync));
+    [G,N,L].forEach(el=>el.addEventListener("input", sync));
     sync();
     const done = v => { document.removeEventListener("keydown", onKey); ov.remove(); res(v); };
     const onKey = e => { if (e.key === "Escape") done(null); };
@@ -15854,19 +15937,37 @@ function finishDialog(o, p, ctx){
     ov.querySelector("#finOk").onclick = () => {
       const good = num(G), ng = num(N);
       if (good <= 0) { W.textContent = "정상품 수량을 넣어 주세요"; G.focus(); return; }
-      done({ good, ng, ngType: ng > 0 ? T.value : null, leftover: Math.max(0, kgOf(L.value)) });
+      const left = bagMode === "left" ? Math.max(0, kgOf(L.value)) : 0;
+      if (left > ctx.bagKg) { W.textContent = `남은 kg 가 봉지에 있던 ${fmt(ctx.bagKg)}kg 보다 많습니다`; L.focus(); return; }
+      if (ctx.bagKg - left + 0.0005 < stdKg(p, good)) { W.textContent = `봉지에서 쓴 ${fmt(ctx.bagKg - left)}kg 로는 ${fmt(good)}개를 만들 수 없습니다 — 수량이나 남은 kg 를 확인하세요`; return; }
+      done({ good, ng, ngType: ng > 0 ? T.value : null, leftover: left });
     };
   });
 }
-/* 투입 · 잔량 · 판정 — 묻지 않고 계산만 한다 (투입 = 지시의 배치 kg, 지난 잔량은 저절로 합산) */
+/* ══ 생산 ↔ 로스팅 입고 연동 (Lee 2026-10-30) ══
+   "원두를 입고 받아야 생산이 가능하고, 그 입고된 수량만큼 로스가 판단돼야 한다"
+   · 지시에 적힌 배치(봉지)를 MMS 입고 배치에서 찾는다 — 없으면 같은 원두의 가장 오래된 배치
+   · 완료 때 "봉지 다 썼음 / 남았음(남은 kg)" 만 묻는다 → 배치에서 뺀 kg = 봉지에 있던 kg − 남은 kg
+   · 로스 = 배치에서 뺀 kg − 정상 생산 kg  (봉지를 비웠으면 입고 58.8 − 생산 58 = 0.8 처럼 입고 기준으로 잡힌다)
+   · 남은 원두는 봉지(배치 재고)에 그대로 남는다 — 따로 "다음 생산에 합산" 할 필요가 없다 */
+function orderMms(o, p){
+  const fulls = batchParts(o?.batch_plan).map(x=>x.full).filter(Boolean);
+  const hit = DB.mms.filter(m=>m.bean===p?.bean && canUse(m) && fulls.includes(batchFull(m)));
+  if (hit.length) return sortBatches(hit);
+  const fb = freeBatches(p?.bean); return fb.length ? [fb[0]] : [];
+}
+const beanReceived = p => !!p && mmsByBean(p.bean) > 0;
+/* 투입 · 잔량 · 판정 — 묻지 않고 계산만 한다
+   opt.input 이 있으면(봉지 기준) 그것을 배치에서 뺀 kg 로 쓴다 · 없으면 지시의 배치 kg (옛 방식) */
 function autoLoss(o, p, good, leftover, opt={}){
   const outKg = stdKg(p, good);
-  const carried = openLeftovers(p?.bean).filter(l=>l.id !== opt.selfId)[0] || null;   // 가장 오래된 것부터
+  const bagMode = opt.input != null;
+  const carried = bagMode ? null : (openLeftovers(p?.bean).filter(l=>l.id !== opt.selfId)[0] || null);
   const ck = carried ? Number(carried.leftover_kg||0) : 0;
-  const plan = orderBatchKg(o, p, good);
+  const plan = bagMode ? Number(opt.input) : orderBatchKg(o, p, good);
   /* 배치에서 뺄 kg — 지난 잔량을 먼저 쓰고 모자란 만큼만 배치에서 */
   const batchKg = Math.max(0, Math.round((plan - ck) * 1000) / 1000);
-  const to = leftover > 0 ? "next" : "loss";
+  const to = bagMode ? (leftover > 0 ? "keep" : "loss") : (leftover > 0 ? "next" : "loss");
   const rule = lossRuleOf(p, o.machine);
   const chain = carried ? lossChainOf(carried) : [];
   const sumIn = chain.reduce((s,x)=>s+Number(x.input_kg||0),0) + batchKg;
@@ -15887,13 +15988,17 @@ async function finishWork(id){
   const p = prodById(o.product_id); if(!p) return toast("품목을 찾을 수 없습니다");
   const plan = Math.round(Number(o.qty_plan)||0);
   /* 미리 계산해서 보여 주기만 한다 — 지시 수량 기준 (완료 때 실제 수량으로 다시 계산) */
-  const pre = autoLoss(o, p, plan || 1, 0);
-  const codes = batchParts(o.batch_plan).map(x=>x.short).filter(Boolean).join(" + ");
-  const beanText = `${codes ? `봉지(배치) ${codes} · ` : ""}약 ${fmt(pre.batchKg)}kg`;
-  const carriedText = pre.carried ? `지난번 남은 원두 ${fmt(pre.carried_kg)}kg 도 같이 쓴 것으로 기록` : "";
+  /* ★ 입고된 원두 봉지(배치) — 없으면 완료할 수 없다 (서버도 원두가 없으면 거절한다) */
+  const bags = orderMms(o, p);
+  if (!bags.length) return ask(`${p.bean||"원두"} 가 아직 입고되지 않았습니다.\n\n로스팅 › 배치 재고에 입고가 들어와야 생산을 완료할 수 있습니다 — 관리자에게 알려 주세요.`, { title:"원두 입고 전", yes:"확인", only:true });
+  const bagKg = Math.round(bags.reduce((s,m)=>s+Number(m.stock_kg||0),0)*1000)/1000;
+  const pre = autoLoss(o, p, plan || 1, 0, { input: bagKg });
+  const codes = bags.map(batchShort).join(" + ");
+  const beanText = `봉지(배치) ${codes} · 지금 ${fmt(bagKg)}kg`;
+  const carriedText = "";
   const serial0 = o.serial || makeSerial(o.work_date);
   const lot0 = o.lot || autoLotOf(o) || "";
-  const F = await finishDialog(o, p, { plan, serial:serial0, lot:lot0, beanText, carriedText, label: labelOf(p, ordLabel(o)) });
+  const F = await finishDialog(o, p, { plan, serial:serial0, lot:lot0, beanText, carriedText, label: labelOf(p, ordLabel(o)), bags, bagKg });
   if (!F) return;
   const { good, ng, ngType } = F;
 
@@ -15905,8 +16010,9 @@ async function finishWork(id){
   }
   if (!o.lot && lot0) { const lr = await mesEditOrder({ order_id:o.id, patch:{ lot:lot0 }, idem:`lot-${o.id}-${uid()}` }); if (lr && lr.ok) o.lot = lot0; }
 
-  const LZ = autoLoss(o, p, good, F.leftover);
-  const actualKg = LZ.batchKg;                 // 배치에서 뺄 kg (= 지시 배치 kg − 지난 잔량)
+  /* 배치에서 뺄 kg = 봉지에 있던 kg − 봉지에 남긴 kg (다 썼으면 전부) */
+  const LZ = autoLoss(o, p, good, F.leftover, { input: Math.max(0, Math.round((bagKg - F.leftover)*1000)/1000) });
+  const actualKg = LZ.batchKg;
 
   if (o.paused_at) { const rr = await resumeWork(o.id, true); if (!rr || rr.ok === false) return toast("정지를 풀지 못했습니다 — " + (rr?.message||"")); }
   const key = `fw-${o.id}-${uid()}`;
@@ -15935,7 +16041,7 @@ async function finishWork(id){
   quickRender();
   toast(r.replayed
     ? `이미 처리된 건입니다 (일련번호 ${r.serial}) — 중복 처리하지 않았습니다`
-    : `생산 완료 — 검수로 넘어갑니다 (일련번호 ${r.serial})${LZ.flag==="open" ? ` · 남은 원두 ${fmt(LZ.leftover)}kg 다음 생산에 합산` : LZ.flag!=="ok" ? ` · 로스 ${LZ.loss_pct}% — 관리자 확인 필요` : ""}`);
+    : `생산 완료 — 검수로 넘어갑니다 (일련번호 ${r.serial})${LZ.leftover>0 ? ` · 봉지에 ${fmt(LZ.leftover)}kg 남음` : ""}${LZ.flag!=="ok" && LZ.flag!=="open" ? ` · 로스 ${LZ.loss_pct}% — 관리자 확인 필요` : ` · 로스 ${LZ.loss_pct}%`}`);
 }
 
 /* 실측 투입량을 물을지 — 기본은 안 묻는다 (Q-8).
