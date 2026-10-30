@@ -1303,7 +1303,8 @@
 <!-- ══════ 이력추적 ══════ -->
 <section class="screen" id="s-trace">
   <div class="cond">
-    <label>검색</label><input id="trQ" placeholder="일련번호 · 봉투/부자재 LOT · 지시번호 · 배치번호(2801 / 26102801 / 2026-10-28)" style="width:420px" oninput="renderTrace()">
+    <label>품목</label><select id="trProd" onchange="renderTrace()" style="min-width:220px"><option value="">(전체)</option></select>
+    <label>검색</label><input id="trQ" placeholder="일련번호 · 봉투/부자재 LOT · 지시번호 · 배치번호(2801 / 26102801 / 2026-10-28)" style="width:360px" oninput="renderTrace()">
     <button class="btn primary" onclick="renderTrace()">찾기</button>
   </div>
   <div class="body">
@@ -6653,6 +6654,7 @@ renderFavs();
 
 /* ══ 업데이트 내역 — 어디에 뭘 바꿨는지 (최근 것이 위) ══ */
 const CHANGELOG = [
+  ["2026-10-30", "이력추적 › 품목 고르기 · 전체 선택", "위에 [품목] 선택 — 고르면 검색어 없이도 그 품목의 생산 전부(최근 것부터)와 그 생산이 쓴 배치가 나옴 · 검색어와 같이 쓰면 그 품목 안에서만 찾음 · 시스템 관리자에게는 \"찾은 N건 전체 선택\" 체크가 생겨 한 번에 고른 뒤 [선택한 기록 지우기]"],
   ["2026-10-30", "이력추적 › 골라서 지우기 (시스템 관리자만)", "찾은 생산·배치마다 체크 → [선택한 기록 지우기] 한 번에 · 생산을 먼저 지우고 배치는 뒤에(같이 고른 생산이 쓴 배치는 함께 지워짐) · 살아 있는 실적은 먼저 취소해 재고 되돌린 뒤 · \"초기화\" 입력 · 변경이력에 남김 · [이 기록 지우기]·체크박스는 시스템 관리자 계정에만 보임 (현장 관리자·일반 관리자에게는 안 보임)"],
   ["2026-10-30", "로스관리 › 배치 표 › [봉지 비움] (055 SQL)", "옛 방식으로 완료돼 봉지에 kg 가 남아 있는 생산 — 관리자가 [봉지 비움]을 누르면 남은 kg 를 그 생산(마지막으로 쓴 것)의 사용분으로 넣고 배치 재고 0 · 투입 kg 올리고 로스 다시 계산 · 실적·상자 번호·검수는 그대로 · 변경이력에 남김"],
   ["2026-10-30", "생산 ↔ 로스팅 입고 연동", "원두가 입고(로스팅 › 배치 재고)돼 있어야 [생산 시작]·[생산 완료]가 됨 (전에는 입고 없이도 완료되고 로스가 지시 kg 기준이었음) · 완료 창에서 \"원두 봉지 3003 · 지금 58.8kg — [다 썼음] / [남았음 → 남은 kg]\" 만 물음 → 배치에서 뺀 kg = 봉지에 있던 kg − 남은 kg · 로스 = 뺀 kg − 정상 생산 kg (봉지를 비우면 입고 58.8 − 생산 58 = 0.8kg 처럼 입고 기준으로 잡힘) · 남은 원두는 봉지(배치 재고)에 그대로 (\"다음 생산에 합산\" 단계 없앰) · 로스관리에 \"원두 봉지(배치)마다 — 입고 기준\" 표: 입고 · 생산에 씀 · 정상 생산 · 생산 외 · 남음 · 로스 · 로스율 · 상태"],
@@ -13918,8 +13920,13 @@ async function purgeCore(info){
 /* 이력추적 — 체크한 것 한 번에 (생산을 먼저, 배치는 뒤에) */
 const TR_SEL = new Set();
 function trToggle(key, on){ if (on) TR_SEL.add(key); else TR_SEL.delete(key); trSelBar(); }
+let TR_SHOWN = [];
+function trSelAll(on){ TR_SHOWN.forEach(k=> on ? TR_SEL.add(k) : TR_SEL.delete(k)); renderTrace(); }
 function trSelBar(){ const el = $("trSelBar"); if (!el) return; const n = TR_SEL.size;
-  el.innerHTML = canPurge() && n ? `<span class="n">선택 ${n}건</span> <button class="btn danger" onclick="purgeSelected()">선택한 기록 지우기</button> <button class="btn" onclick="TR_SEL.clear();renderTrace()">선택 해제</button>` : ""; }
+  if (!canPurge() || !TR_SHOWN.length) { el.innerHTML = ""; return; }
+  const all = TR_SHOWN.every(k=>TR_SEL.has(k));
+  el.innerHTML = `<label style="display:inline-flex;align-items:center;gap:6px;font-weight:700"><input type="checkbox" class="selbox" ${all?"checked":""} onclick="trSelAll(this.checked)"> 찾은 ${TR_SHOWN.length}건 전체 선택</label>` +
+    (n ? ` <span class="n" style="margin-left:10px">선택 ${n}건</span> <button class="btn danger" onclick="purgeSelected()">선택한 기록 지우기</button> <button class="btn" onclick="TR_SEL.clear();renderTrace()">선택 해제</button>` : ""); }
 async function purgeSelected(){
   if (!(await requireUser())) return;
   if (!canPurge()) return ask("기록 지우기는 시스템 관리자 계정만 할 수 있습니다.", { title:"기록 지우기", yes:"확인", only:true });
@@ -16852,20 +16859,26 @@ function batchCard(m){
 }
 function renderTrace(){
   const q = ($("trQ").value||"").trim().toLowerCase();
+  /* 품목 고르기 — 고르면 그 품목의 생산(과 그 생산이 쓴 배치)만 (Lee 2026-10-30) */
+  const ps = $("trProd"); if (ps) { const cur = ps.value; const opts = `<option value="">(전체 품목)</option>` + PRODS().map(p=>`<option value="${p.id}" ${p.id===cur?"selected":""}>${p.name}</option>`).join("");
+    if (ps.innerHTML !== opts) { ps.innerHTML = opts; ps.value = cur; } }
+  const pid = ps ? ps.value : "";
   setTimeout(trSelBar, 0);
-  if (!q) { $("trOut").innerHTML = `<div class="wempty">일련번호 · LOT · 지시번호 · 배치번호 중 아무거나 넣으세요<br>
+  if (!q && !pid) { $("trOut").innerHTML = `<div class="wempty">일련번호 · LOT · 지시번호 · 배치번호 중 아무거나 넣거나, 위에서 품목을 고르세요<br>
     <span>예) 20261005-001 · 2801 · 26102801 · 2026-10-28 — 언제 로스팅한 원두로, 어느 설비에서, 누가 만들어, 어디로 나갔는지 한 번에 나옵니다</span></div>`; return; }
-  const has = x => String(x||"").toLowerCase().includes(q);
+  const has = x => !!q && String(x||"").toLowerCase().includes(q);
   /* 현장에서 부르는 네 자리(2801)로 찾아도, 날짜를 다 적은 전체번호로 찾아도 걸리게 */
   const mHit = m => [batchFull(m), batchNo(m), batchShort(m), batchLabel(m), m.roast_date, m.bean].some(has);
-  const mms  = DB.mms.filter(mHit);
+  let mms  = DB.mms.filter(mHit);
   const mSet = new Set(mms.map(m=>m.id));
   const hit = l => [l.serial,l.lot,l.batch_codes,l.from_serials].some(has)
     || CONSL().some(c=>c.log_id===l.id && (mSet.has(c.mms_id) || [c.batch_code,c.batch_full,c.roast_date].some(has)));
-  const logs = DB.logs.filter(hit);
-  const ords = DB.orders.filter(o=>[o.order_no,o.serial,o.lot].some(x=>String(x||"").toLowerCase().includes(q))
-    || logs.some(l=>l.id===o.log_id));
-  logs.push(...DB.logs.filter(l=>ords.some(o=>o.log_id===l.id) && !logs.includes(l)));
+  let logs = DB.logs.filter(l=>pid ? (l.product_id===pid && (!q || hit(l))) : hit(l));
+  const ords = DB.orders.filter(o=>(!pid || o.product_id===pid) && ((!!q && [o.order_no,o.serial,o.lot].some(x=>String(x||"").toLowerCase().includes(q))) || logs.some(l=>l.id===o.log_id)));
+  logs.push(...DB.logs.filter(l=>(!pid || l.product_id===pid) && ords.some(o=>o.log_id===l.id) && !logs.includes(l)));
+  logs.sort((a,b)=>String(b.created_at||b.work_date).localeCompare(String(a.created_at||a.work_date)));
+  /* 품목만 골랐을 때 — 그 생산들이 쓴 배치도 같이 */
+  if (pid && !q) { const used = new Set(CONSL().filter(c=>logs.some(l=>l.id===c.log_id)).map(c=>c.mms_id)); DB.mms.filter(m=>used.has(m.id) && !mms.includes(m)).forEach(m=>mms.push(m)); }
   /* 부자재 LOT 로 찾기 — 그 LOT 가 어느 생산에 쓰였는지 */
   const lotHits = [];
   DB.materials.forEach(M=>lotLedger(M).forEach(l=>{ if (has(l.lot)) lotHits.push({ M, l }); }));
@@ -16874,7 +16887,8 @@ function renderTrace(){
         ${l.moves.length ? `<div style="margin-top:8px">이 LOT 가 쓰인 생산:<br>${l.moves.map(m=>{ const lg = lotRefLog(m);
           return `· ${m.date} ${lg?`<b>${lg.serial||"—"}</b> ${lg.product_name||prodById(lg.product_id)?.name||""} ${fmt(lg.qty_ea)}EA`:(m.note||m.kind)} — ${fmt(m.take)}${unitOf(M)}`; }).join("<br>")}</div>` : `<div class="hint" style="padding:6px 0 0">아직 쓰인 기록 없음</div>`}
       </div></div>`).join("");
-  if (!logs.length && !ords.length && !mms.length && !lotHits.length) { $("trOut").innerHTML = `<div class="wempty">찾은 기록이 없습니다</div>`; return; }
+  TR_SHOWN = [...logs.filter(l=>!l.void_of).map(l=>"log:"+l.id), ...mms.slice(0,6).map(m=>"mms:"+m.id)];
+  if (!logs.length && !ords.length && !mms.length && !lotHits.length) { TR_SHOWN = []; $("trOut").innerHTML = `<div class="wempty">찾은 기록이 없습니다</div>`; return; }
 
   $("trOut").innerHTML = lotHtml + mms.slice(0,6).map(batchCard).join("") + logs.map(l=>{
     const p = prodById(l.product_id);
