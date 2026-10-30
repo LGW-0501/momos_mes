@@ -1313,6 +1313,7 @@
       <div style="margin-top:7px">현장에서 부르는 <b>네 자리(2801)</b>로 찾아도 되고, 장부에 남은
         <b>전체번호(2026-10-28-01)</b>나 <b>로스팅 날짜</b>로 찾아도 됩니다 —
         배치를 찾으면 <b>입고 → 생산사용 → 기타사용 → 실측 → 조정</b>이 날짜와 함께 한 줄씩 나옵니다.</div></div>
+    <div class="selbar" id="trSelBar"></div>
     <div id="trOut"></div>
   </div>
 </section>
@@ -6652,6 +6653,7 @@ renderFavs();
 
 /* ══ 업데이트 내역 — 어디에 뭘 바꿨는지 (최근 것이 위) ══ */
 const CHANGELOG = [
+  ["2026-10-30", "이력추적 › 골라서 지우기 (시스템 관리자만)", "찾은 생산·배치마다 체크 → [선택한 기록 지우기] 한 번에 · 생산을 먼저 지우고 배치는 뒤에(같이 고른 생산이 쓴 배치는 함께 지워짐) · 살아 있는 실적은 먼저 취소해 재고 되돌린 뒤 · \"초기화\" 입력 · 변경이력에 남김 · [이 기록 지우기]·체크박스는 시스템 관리자 계정에만 보임 (현장 관리자·일반 관리자에게는 안 보임)"],
   ["2026-10-30", "로스관리 › 배치 표 › [봉지 비움] (055 SQL)", "옛 방식으로 완료돼 봉지에 kg 가 남아 있는 생산 — 관리자가 [봉지 비움]을 누르면 남은 kg 를 그 생산(마지막으로 쓴 것)의 사용분으로 넣고 배치 재고 0 · 투입 kg 올리고 로스 다시 계산 · 실적·상자 번호·검수는 그대로 · 변경이력에 남김"],
   ["2026-10-30", "생산 ↔ 로스팅 입고 연동", "원두가 입고(로스팅 › 배치 재고)돼 있어야 [생산 시작]·[생산 완료]가 됨 (전에는 입고 없이도 완료되고 로스가 지시 kg 기준이었음) · 완료 창에서 \"원두 봉지 3003 · 지금 58.8kg — [다 썼음] / [남았음 → 남은 kg]\" 만 물음 → 배치에서 뺀 kg = 봉지에 있던 kg − 남은 kg · 로스 = 뺀 kg − 정상 생산 kg (봉지를 비우면 입고 58.8 − 생산 58 = 0.8kg 처럼 입고 기준으로 잡힘) · 남은 원두는 봉지(배치 재고)에 그대로 (\"다음 생산에 합산\" 단계 없앰) · 로스관리에 \"원두 봉지(배치)마다 — 입고 기준\" 표: 입고 · 생산에 씀 · 정상 생산 · 생산 외 · 남음 · 로스 · 로스율 · 상태"],
   ["2026-10-30", "그래프 — 계속 움직이던 것", "로스관리·대시보드·품질관리 등의 그래프가 화면이 새로 그려질 때마다(실시간 반영 · 뒤에서 그리기) 처음부터 다시 자라던 문제 — 같은 그래프면 숫자만 바꿔 끼우고 애니메이션을 껐습니다"],
@@ -13875,27 +13877,24 @@ async function wipePick(){
   renderAll(); toast(`지웠습니다 — ${cats.map(c=>c.t.split(" ")[0]).join(" · ")}${deleted?` (${fmt(deleted)}줄)`:""}`);
 }
 /* 이력추적 — 한 건만 기록째 */
-async function purgeOne(kind, id){
-  if (!(await requireUser())) return;
-  if (!isManager()) return ask("관리자 계정만 지울 수 있습니다.", { title:"기록 지우기", yes:"확인", only:true });
-  let head = "", ordsL = [], logIds = [];
+/* 기록 지우기 권한 — 시스템 관리자 계정만 (Lee 2026-10-30 "관리자만 기록 지울 수 있게, 나만") */
+const canPurge = () => isSystemAdmin();
+/* 한 건 묘사 + 지우기 (묻지 않음) — purgeOne / purgeSelected 가 같이 쓴다 */
+function purgeInfo(kind, id){
   if (kind === "log") {
-    const l = DB.logs.find(x=>x.id===id); if (!l) return;
-    logIds = DB.logs.filter(x=>x.id===id || x.void_of===id || x.corrects===id).map(x=>x.id);
+    const l = DB.logs.find(x=>x.id===id); if (!l) return null;
+    const logIds = DB.logs.filter(x=>x.id===id || x.void_of===id || x.corrects===id).map(x=>x.id);
     const base = DB.orders.filter(o=>logIds.includes(o.log_id));
-    ordsL = [...base, ...DB.orders.filter(o=>o.split_from && base.some(b=>b.id===o.split_from) && !base.includes(o))];
-    head = `생산 ${l.serial||"—"} · ${l.product_name||prodById(l.product_id)?.name||""} ${fmt(l.qty_ea)}EA · ${l.work_date}\n\n같이 지워지는 것: 작업지시 ${ordsL.length}건(${ordsL.map(o=>o.order_no).join(", ")||"—"}) · 원두 사용분 · 검수/반려 · 출고 · 수불 · 이 지시의 부적합\n` +
-      (logLive(l) ? `\n살아 있는 실적이라 먼저 취소해서 원두·부자재·완제품 재고를 되돌린 뒤 지웁니다.` : `\n이미 취소된 실적입니다 (재고는 이미 되돌아가 있음).`);
-  } else {
-    const m = DB.mms.find(x=>x.id===id); if (!m) return;
-    const used = CONSL().filter(c=>c.mms_id===id);
-    if (used.length) return ask(`배치 ${batchFull(m)} 로 만든 생산 기록이 ${new Set(used.map(c=>c.log_id)).size}건 남아 있습니다.\n그 생산을 먼저 지우세요 (이력추적에서 각 생산의 [이 기록 지우기]).`, { title:"배치 지우기", yes:"확인", only:true });
-    head = `MMS 배치 ${batchFull(m)} · ${m.bean} · ${fmt(m.stock_kg)}kg\n\n같이 지워지는 것: 보류 · 실측 · 수불 · 생산 외 사용`;
+    const ordsL = [...base, ...DB.orders.filter(o=>o.split_from && base.some(b=>b.id===o.split_from) && !base.includes(o))];
+    return { kind, id, logIds, ordsL, title:`생산 ${l.serial||"—"} · ${l.product_name||prodById(l.product_id)?.name||""} ${fmt(l.qty_ea)}EA · ${l.work_date}`, live:logLive(l) };
   }
-  if (!(await ask(`${head}\n\n기록째 지웁니다 — 이력추적·조회에 다시 안 나옵니다. 되돌릴 수 없습니다.`, { title:"이 기록 지우기 — 관리자", yes:"계속", danger:true }))) return;
-  const typed = await askText('확인을 위해 아래 문구를 그대로 입력하세요:\n초기화', "", "지우기 확인");
-  if (String(typed||"").trim() !== "초기화") return toast("입력이 달라 취소되었습니다");
-  const r = await rpc("admin_purge", { p_kind:kind, p_id:id, p_confirm:"초기화", p_user_name:CURRENT_USER || LOGIN_USER?.name || "" }, async () => {
+  const m = DB.mms.find(x=>x.id===id); if (!m) return null;
+  const used = new Set(CONSL().filter(c=>c.mms_id===id).map(c=>c.log_id)).size;
+  return { kind, id, title:`MMS 배치 ${batchFull(m)} · ${m.bean} · ${fmt(m.stock_kg)}kg`, blocked: used ? `이 배치로 만든 생산 ${used}건이 남아 있음 — 그 생산을 먼저(또는 같이) 지우세요` : "" };
+}
+async function purgeCore(info){
+  const { kind, id } = info; const ordsL = info.ordsL || []; const logIds = info.logIds || [];
+  return rpc("admin_purge", { p_kind:kind, p_id:id, p_confirm:"초기화", p_user_name:CURRENT_USER || LOGIN_USER?.name || "" }, async () => {
     if (kind === "log") {
       const l = DB.logs.find(x=>x.id===id);
       if (l && logLive(l)) { const v = await mesVoidLog({ log_id:id, reason:"테스트 기록 삭제", idem:`purge-${id}` }); if (!v || v.ok === false) return v;
@@ -13915,6 +13914,62 @@ async function purgeOne(kind, id){
     }
     return { ok:true };
   });
+}
+/* 이력추적 — 체크한 것 한 번에 (생산을 먼저, 배치는 뒤에) */
+const TR_SEL = new Set();
+function trToggle(key, on){ if (on) TR_SEL.add(key); else TR_SEL.delete(key); trSelBar(); }
+function trSelBar(){ const el = $("trSelBar"); if (!el) return; const n = TR_SEL.size;
+  el.innerHTML = canPurge() && n ? `<span class="n">선택 ${n}건</span> <button class="btn danger" onclick="purgeSelected()">선택한 기록 지우기</button> <button class="btn" onclick="TR_SEL.clear();renderTrace()">선택 해제</button>` : ""; }
+async function purgeSelected(){
+  if (!(await requireUser())) return;
+  if (!canPurge()) return ask("기록 지우기는 시스템 관리자 계정만 할 수 있습니다.", { title:"기록 지우기", yes:"확인", only:true });
+  const items = [...TR_SEL].map(k=>{ const [kind,id] = k.split(":"); return purgeInfo(kind, id); }).filter(Boolean);
+  if (!items.length) return toast("고른 기록이 없습니다");
+  const logs = items.filter(x=>x.kind==="log"), mms = items.filter(x=>x.kind==="mms");
+  const logIds = new Set(logs.map(x=>x.id));
+  /* 배치는 같이 고른 생산이 지워진 뒤면 쓸 수 있다 */
+  mms.forEach(x=>{ const users = new Set(CONSL().filter(c=>c.mms_id===x.id).map(c=>c.log_id)); if ([...users].every(u=>logIds.has(u))) x.blocked = ""; });
+  const blocked = mms.filter(x=>x.blocked);
+  const msg = `${items.length}건을 기록째 지웁니다 — 이력추적·조회에 다시 안 나옵니다. 되돌릴 수 없습니다.\n\n` +
+    items.slice(0,12).map(x=>`· ${x.title}${x.blocked?` ⛔ ${x.blocked}`:""}`).join("\n") + (items.length>12?`\n… 외 ${items.length-12}건`:"") +
+    `\n\n살아 있는 실적은 먼저 취소해서 원두·부자재·완제품 재고를 되돌린 뒤 지웁니다.${blocked.length?`\n⛔ 표시 ${blocked.length}건은 건너뜁니다.`:""}`;
+  if (!(await ask(msg, { title:"선택한 기록 지우기 — 시스템 관리자", yes:`${items.length - blocked.length}건 지우기`, danger:true }))) return;
+  const typed = await askText('확인을 위해 아래 문구를 그대로 입력하세요:\n초기화', "", "지우기 확인");
+  if (String(typed||"").trim() !== "초기화") return toast("입력이 달라 취소되었습니다");
+  const ok = [], fail = [];
+  for (const it of [...logs, ...mms.filter(x=>!x.blocked)]) {
+    const r = await purgeCore(it);
+    (r && r.ok !== false ? ok : fail).push({ it, m:r?.message||"" });
+    if ((ok.length+fail.length) % 3 === 0) toast(`지우는 중… ${ok.length+fail.length} / ${logs.length + mms.length - blocked.length}`);
+  }
+  if (ok.length) logAudit("기록 선택 지우기", `${ok.length}건`, ok.slice(0,8).map(x=>x.it.title).join(" | ") + (ok.length>8?" 외":""));
+  TR_SEL.clear();
+  if (sb) await reloadDB({ silent:true });
+  renderAll();
+  if (fail.length) return ask(`${ok.length}건 지움 · ${fail.length}건 못 지움\n\n` + fail.slice(0,8).map(x=>`· ${x.it.title} — ${x.m||"오류"}`).join("\n") + (/admin_purge|schema cache|function/i.test(fail[0].m) ? "\n\n서버에 049_admin_wipe_rest.sql 이 아직 없습니다." : ""), { title:"기록 지우기 결과", yes:"확인", only:true });
+  toast(`${ok.length}건 지웠습니다`);
+}
+async function purgeOne(kind, id){
+  if (!(await requireUser())) return;
+  if (!canPurge()) return ask("기록 지우기는 시스템 관리자 계정만 할 수 있습니다.", { title:"기록 지우기", yes:"확인", only:true });
+  let head = "", ordsL = [], logIds = [];
+  if (kind === "log") {
+    const l = DB.logs.find(x=>x.id===id); if (!l) return;
+    logIds = DB.logs.filter(x=>x.id===id || x.void_of===id || x.corrects===id).map(x=>x.id);
+    const base = DB.orders.filter(o=>logIds.includes(o.log_id));
+    ordsL = [...base, ...DB.orders.filter(o=>o.split_from && base.some(b=>b.id===o.split_from) && !base.includes(o))];
+    head = `생산 ${l.serial||"—"} · ${l.product_name||prodById(l.product_id)?.name||""} ${fmt(l.qty_ea)}EA · ${l.work_date}\n\n같이 지워지는 것: 작업지시 ${ordsL.length}건(${ordsL.map(o=>o.order_no).join(", ")||"—"}) · 원두 사용분 · 검수/반려 · 출고 · 수불 · 이 지시의 부적합\n` +
+      (logLive(l) ? `\n살아 있는 실적이라 먼저 취소해서 원두·부자재·완제품 재고를 되돌린 뒤 지웁니다.` : `\n이미 취소된 실적입니다 (재고는 이미 되돌아가 있음).`);
+  } else {
+    const m = DB.mms.find(x=>x.id===id); if (!m) return;
+    const used = CONSL().filter(c=>c.mms_id===id);
+    if (used.length) return ask(`배치 ${batchFull(m)} 로 만든 생산 기록이 ${new Set(used.map(c=>c.log_id)).size}건 남아 있습니다.\n그 생산을 먼저 지우세요 (이력추적에서 각 생산의 [이 기록 지우기]).`, { title:"배치 지우기", yes:"확인", only:true });
+    head = `MMS 배치 ${batchFull(m)} · ${m.bean} · ${fmt(m.stock_kg)}kg\n\n같이 지워지는 것: 보류 · 실측 · 수불 · 생산 외 사용`;
+  }
+  if (!(await ask(`${head}\n\n기록째 지웁니다 — 이력추적·조회에 다시 안 나옵니다. 되돌릴 수 없습니다.`, { title:"이 기록 지우기 — 관리자", yes:"계속", danger:true }))) return;
+  const typed = await askText('확인을 위해 아래 문구를 그대로 입력하세요:\n초기화', "", "지우기 확인");
+  if (String(typed||"").trim() !== "초기화") return toast("입력이 달라 취소되었습니다");
+  const r = await purgeCore({ kind, id, ordsL, logIds });
   if (!r || r.ok === false) { const m = r?.message || "";
     return ask(/admin_purge|function|schema cache/i.test(m) ? "서버에 이 기능이 아직 없습니다.\n\nSupabase SQL Editor 에서 049_admin_wipe_rest.sql 을 실행한 뒤 다시 누르세요." : `지우지 못했습니다 — ${m || "알 수 없는 오류"}`, { title:"기록 지우기 실패", yes:"확인", only:true }); }
   logAudit("기록 지우기", head.split("\n")[0], kind === "log" ? "생산 한 건 기록째 (테스트 정리)" : "MMS 배치 기록째 (테스트 정리)");
@@ -16785,7 +16840,7 @@ function batchCard(m){
   });
   rows.sort((x,y)=>String(x[0]).localeCompare(String(y[0])));
   return `<div class="panel" style="margin-bottom:14px">
-    <div class="panel-h">배치 ${batchFull(m)} <span class="r hint">현장번호 ${batchShort(m)} · 라벨 ${batchLabel(m)}${isManager() ? ` <button class="btn" style="height:26px;color:var(--bad);margin-left:8px" onclick="purgeOne('mms','${m.id}')" title="관리자 — 이 배치를 기록째 지웁니다 (테스트 정리)">이 기록 지우기</button>` : ""}</span></div>
+    <div class="panel-h">${canPurge() ? `<input type="checkbox" class="selbox" ${TR_SEL.has("mms:"+m.id)?"checked":""} onclick="trToggle('mms:${m.id}',this.checked)" title="골라서 한 번에 지우기" style="margin-right:8px">` : ""}배치 ${batchFull(m)} <span class="r hint">현장번호 ${batchShort(m)} · 라벨 ${batchLabel(m)}${canPurge() ? ` <button class="btn" style="height:26px;color:var(--bad);margin-left:8px" onclick="purgeOne('mms','${m.id}')" title="시스템 관리자 — 이 배치를 기록째 지웁니다">이 기록 지우기</button>` : ""}</span></div>
     <div class="hint"><b>${m.bean}</b> · 로스팅 ${m.roast_date} ${Math.round(Number(m.batch)||0)}번 ·
       ${shelfLabel(m.roast_date)} · 현재 남은 재고 <b>${fmt(m.stock_kg)}kg</b></div>
     <div class="panel-b"><table><thead><tr><th>일자</th><th>구분</th><th>수량</th><th class="l">내용</th><th>일련번호·기록자</th></tr></thead>
@@ -16797,6 +16852,7 @@ function batchCard(m){
 }
 function renderTrace(){
   const q = ($("trQ").value||"").trim().toLowerCase();
+  setTimeout(trSelBar, 0);
   if (!q) { $("trOut").innerHTML = `<div class="wempty">일련번호 · LOT · 지시번호 · 배치번호 중 아무거나 넣으세요<br>
     <span>예) 20261005-001 · 2801 · 26102801 · 2026-10-28 — 언제 로스팅한 원두로, 어느 설비에서, 누가 만들어, 어디로 나갔는지 한 번에 나옵니다</span></div>`; return; }
   const has = x => String(x||"").toLowerCase().includes(q);
@@ -16829,7 +16885,7 @@ function renderTrace(){
     const step = (on,t,sub) => `<div class="tstep ${on?"on":""}"><div class="dot"></div>
       <div><b>${t}</b>${sub?`<br><span>${sub}</span>`:""}</div></div>`;
     return `<div class="panel" style="margin-bottom:14px">
-      <div class="panel-h">${pName(l)} <span class="r hint">${l.serial}${isManager() && !l.void_of ? ` <button class="btn" style="height:26px;color:var(--bad);margin-left:8px" onclick="purgeOne('log','${l.id}')" title="관리자 — 이 생산 한 건을 기록째 지웁니다 (테스트 정리)">이 기록 지우기</button>` : ""}</span></div>
+      <div class="panel-h">${canPurge() && !l.void_of ? `<input type="checkbox" class="selbox" ${TR_SEL.has("log:"+l.id)?"checked":""} onclick="trToggle('log:${l.id}',this.checked)" title="골라서 한 번에 지우기" style="margin-right:8px">` : ""}${pName(l)} <span class="r hint">${l.serial}${canPurge() && !l.void_of ? ` <button class="btn" style="height:26px;color:var(--bad);margin-left:8px" onclick="purgeOne('log','${l.id}')" title="시스템 관리자 — 이 생산 한 건을 기록째 지웁니다">이 기록 지우기</button>` : ""}</span></div>
       <div class="trace">
         ${(l.rework && !cs.length)
           ? step(!!l.batch_codes, "원두 로스팅 (재작업으로 물려받음)",
