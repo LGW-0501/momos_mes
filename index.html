@@ -6654,6 +6654,7 @@ renderFavs();
 
 /* ══ 업데이트 내역 — 어디에 뭘 바꿨는지 (최근 것이 위) ══ */
 const CHANGELOG = [
+  ["2026-10-30", "재고 세기 · 배치별 실측 · 재고확인 — 차이 이유", "차이를 반영할 때 줄마다 이유를 고름 (한 창에서) — 완제품: 오출고·파손·폐기·샘플·생산/입고 누락·세다 틀림·원인 모름 / 부자재: 폐기·사용 누락·입고 누락·세다 틀림 / 원두 배치: 로스(손실)·폐기·샘플·음료용·입고 누락·세다 틀림·원인불명 · 이유는 수불 비고 [이유] 와 변경이력에 남음 · 완제품 오출고는 변경이력에 \"완제품 오출고\" 로 따로 · 원두 로스(손실)·폐기·원인불명은 로스관리 배치 표의 로스에 더해지고, 세다 틀림·입고 누락은 로스가 아니라 장부 정정으로"],
   ["2026-10-30", "작업지시 › 선택 삭제 › 기록째 (시스템 관리자, 056 SQL)", "실적·수불이 붙어 \"지울 수 없습니다\" 로 남던 지시 — 시스템 관리자는 이어서 \"기록째 지울까요?\" → \"초기화\" 입력 → 실적·사용분·검수/반려·출고·수불·부적합까지 같이 지움 (살아 있는 실적은 먼저 취소해 재고 되돌림) · 다른 계정은 전과 같음"],
   ["2026-10-30", "생산계획 ↔ 현장 작업지시 맞추기", "계획(집계+여유분·손으로 고친 값)과 그날 작업지시 수량이 다르면 생산계획·현장 작업 위에 \"계획과 다른 대기 지시 N건\" 띠 + [현장 지시 계획에 맞추기] — 계획에서 빠진 품목의 대기 지시는 빼고, 수량이 달라진 대기 지시는 계획 수량으로(대기 지시가 한 장일 때 · 여럿이면 알려만 줌) · 시작한 지시는 안 건드림 · 집계 줄·차수를 지우면 바로 \"현장 지시도 맞출까요?\" · 변경이력에 남김"],
   ["2026-10-30", "이력추적 › 품목 고르기 · 전체 선택", "위에 [품목] 선택 — 고르면 검색어 없이도 그 품목의 생산 전부(최근 것부터)와 그 생산이 쓴 배치가 나옴 · 검색어와 같이 쓰면 그 품목 안에서만 찾음 · 시스템 관리자에게는 \"찾은 N건 전체 선택\" 체크가 생겨 한 번에 고른 뒤 [선택한 기록 지우기]"],
@@ -10538,13 +10539,51 @@ async function cntClear(){
   if (!r || !r.ok) return toast(r?.message || "지우지 못했습니다");
   renderRoast(); toast(`${r.removed}건 지웠습니다`);
 }
+/* ══ 재고 세기 차이 — 이유를 적는다 (Lee 2026-10-30) ══
+   "차이 나면 이유 — 로스면 로스로 빠지고, CFE 오출고면 이력이 있어야"
+   · 차이 나는 줄마다 이유를 고른다 (한 창에서) · 수불 비고에 [이유] 로 남고, 변경이력에도 남는다
+   · 원두: [로스(손실)]·[폐기]·[원인불명] 은 로스관리의 배치 로스에 더해진다 · 샘플·음료용은 생산 외 사용
+   · 완제품: [오출고] 는 조회 › 재고조정에 "오출고" 로 남고 변경이력에 따로 적힌다 */
+const CNT_REASONS = {
+  cfe:  { minus:["오출고 (출고 안 적음)","파손·폐기","샘플·증정","세다 틀림 (집계 실수)","원인 모름"], plus:["생산·입고 누락 (안 적힌 것)","반품 들어옴","세다 틀림 (집계 실수)","원인 모름"] },
+  mat:  { minus:["폐기·파손","사용 누락 (쓴 것 안 적음)","세다 틀림","원인 모름"], plus:["입고 누락 (받은 것 안 적음)","세다 틀림","원인 모름"] },
+  mms:  { minus:["로스(손실)","폐기","샘플·테스트","음료용","세다 틀림","원인불명"], plus:["입고 누락 (안 적힌 것)","세다 틀림","원인불명"] },
+};
+const CNT_LOSS_REASONS = ["로스(손실)","폐기","원인불명"];      // 원두 — 로스로 치는 이유
+function cntReasonDialog(kind, rows){
+  /* rows: [{ key, name, app, act, unit }] → { key: { reason, note } } · 취소면 null */
+  return new Promise(res=>{
+    const R = CNT_REASONS[kind] || CNT_REASONS.cfe;
+    const ov = document.createElement("div");
+    ov.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:90;display:flex;align-items:center;justify-content:center;padding:12px";
+    ov.innerHTML = `<div style="background:var(--paper);width:620px;max-width:96vw;max-height:calc(100vh - 24px);border-radius:12px;overflow:hidden;box-shadow:0 20px 50px rgba(0,0,0,.3);display:flex;flex-direction:column">
+      <div class="panel-h" style="flex:0 0 auto">차이 ${rows.length}건 — 왜 다른가요?</div>
+      <div style="padding:10px 14px;overflow-y:auto;flex:1 1 auto;min-height:0">
+        <div class="hint" style="padding:0 0 8px">줄마다 이유를 고르세요 · 이유는 수불 이력과 변경이력에 남습니다${kind==="mms"?" · 로스(손실)·폐기·원인불명은 로스관리에 로스로 잡힙니다":kind==="cfe"?" · 오출고는 조회 › 재고조정에 따로 남습니다":""}</div>
+        <table><thead><tr><th class="l">품목</th><th>장부</th><th>실제</th><th>차이</th><th class="l">이유</th><th class="l">메모</th></tr></thead><tbody>${
+          rows.map((r,i)=>{ const d = Math.round((r.act - r.app)*1000)/1000; const list = d < 0 ? R.minus : R.plus;
+            return `<tr><td class="l"><b>${r.name}</b></td><td>${fmt(r.app)}</td><td>${fmt(r.act)}</td><td class="${d<0?"bad":"ok"}">${d>0?"+":""}${fmt(d)}${r.unit||""}</td>
+              <td class="l"><select data-i="${i}" style="height:34px;font-weight:700">${list.map(x=>`<option>${x}</option>`).join("")}</select></td>
+              <td class="l"><input data-n="${i}" type="text" placeholder="예: 10/29 컬리 출고분" style="width:150px;height:34px"></td></tr>`; }).join("")}</tbody></table>
+      </div>
+      <div style="padding:12px 16px;display:flex;gap:8px;justify-content:flex-end;flex:0 0 auto;border-top:1px solid var(--line);background:var(--paper)">
+        <button class="btn" id="crNo" style="height:42px">취소</button><button class="btn primary" id="crOk" style="height:42px;min-width:140px">이유 적고 반영</button></div></div>`;
+    document.body.appendChild(ov);
+    ov.querySelector("#crNo").onclick = () => { ov.remove(); res(null); };
+    ov.querySelector("#crOk").onclick = () => { const out = {};
+      rows.forEach((r,i)=>{ out[r.key] = { reason: ov.querySelector(`[data-i="${i}"]`).value, note: ov.querySelector(`[data-n="${i}"]`).value.trim() }; });
+      ov.remove(); res(out); };
+  });
+}
+const cntNoteOf = (why, base) => why ? `[${why.reason}]${why.note?` ${why.note}`:""} · ${base}` : base;
 /* 장부를 실측에 맞춘다 — 조정 이력에 남는다 */
 /* ★ 장부 숫자를 실측값으로 덮어쓰지 않습니다 — 차이만큼 조정 수불을 더합니다.
      그래야 "언제 누가 얼마를 맞췄는지" 가 수불에 남습니다. */
-async function cntApply(D, m, kg, note){
+async function cntApply(D, m, kg, note, why){
   const r = await mesCountStock({ mms_id:m.id, counted:Number(kg), date:D,
-    note: note || `배치 ${batchFull(m)} 실측 ${fmt(kg)}kg`,
+    note: cntNoteOf(why, note || `배치 ${batchFull(m)} 실측 ${fmt(kg)}kg`),
     idem:`cnt-${m.id}-${D}-${uid()}` });
+  if (r && r.ok && why) logAudit(`원두 실측 차이 — ${why.reason}`, `${m.bean} ${batchFull(m)}`, `${fmt(r.diff)}kg (실측 ${fmt(kg)}kg)${why.note?` · ${why.note}`:""}`);
   if (!r || !r.ok) { toast(r?.message || "맞추지 못했습니다"); return 0; }
   return Number(r.diff) || 0;
 }
@@ -10602,8 +10641,9 @@ async function cntFix(mmsId){
     `장부 ${fmt(book)}kg  →  실측 ${fmt(c.kg)}kg   (${d>0?"+":""}${fmt(d)}kg)\n\n` +
     `장부 재고를 실측값으로 고치고 조정 이력에 남깁니다.`,
     {title:"장부 맞추기", yes:"맞추기"}))) return;
-  if (!(await cntApply(D, m, Number(c.kg)))) return renderAll();
-  renderAll(); toast(`배치 ${batchShort(m)} 장부를 실측에 맞췄습니다`);
+  const why = await cntReasonDialog("mms", [{ key:m.id, name:`${m.bean} ${batchShort(m)}`, app:book, act:Number(c.kg), unit:"kg" }]); if (!why) return;
+  if (!(await cntApply(D, m, Number(c.kg), null, why[m.id]))) return renderAll();
+  renderAll(); toast(`배치 ${batchShort(m)} 장부를 실측에 맞췄습니다 — ${why[m.id].reason}`);
 }
 async function cntFixAll(){
   if (!(await requireUser())) return;
@@ -10616,8 +10656,9 @@ async function cntFixAll(){
     return `· ${batchShort(x.m)}  ${fmt(x.book)} → ${fmt(x.c.kg)}kg  (${d>0?"+":""}${fmt(d)})`; });
   if (!(await ask(`${cntBean} · 차이 나는 배치 ${list.length}개를 실측값으로 고칩니다.\n\n${lines.join("\n")}\n\n` +
     `조정 이력에 전부 남습니다.`, {title:"장부를 실측에 맞추기", yes:"전부 맞추기"}))) return;
+  const why = await cntReasonDialog("mms", list.map(x=>({ key:x.m.id, name:`${x.m.bean} ${batchShort(x.m)}`, app:x.book, act:Number(x.c.kg), unit:"kg" }))); if (!why) return;
   let done = 0;
-  for (const x of list) { if (await cntApply(D, x.m, Number(x.c.kg))) done++; }
+  for (const x of list) { if (await cntApply(D, x.m, Number(x.c.kg), null, why[x.m.id])) done++; }
   renderAll(); toast(`${cntBean} 배치 ${done}개를 실측에 맞췄습니다`);
 }
 
@@ -12156,13 +12197,14 @@ function renderStock(){
          오늘 날짜로 배치를 새로 만들었습니다 — 로스팅하지도 않은 배치가 생겼습니다.
      후: 원두는 [배치별 실측] 에서만 맞춥니다. 여기서는 총량과 배치별 합계를
          견줘 보고, 안 맞으면 "확인 필요" 로만 알려 줍니다. */
-async function applyOne(key){
+async function applyOne(key, why){
   if ($("stType").value === "cfe") {
     const a = actual.cfe[key];
     if (a == null) return null;
+    const p = prodById(key), d = Math.round((Number(a) - Number(p?.cfe||0))*1000)/1000;
     const r = await mesCountProductStock({ product_id:key, counted:Number(a),
-      date:today(), note:"재고조사 반영", idem:`cp-${key}-${uid()}` });
-    if (r && r.ok) delete actual.cfe[key];
+      date:today(), note:cntNoteOf(why, "재고조사 반영"), idem:`cp-${key}-${uid()}` });
+    if (r && r.ok) { delete actual.cfe[key]; if (why && d) logAudit(/오출고/.test(why.reason) ? "완제품 오출고 (재고확인)" : `완제품 실측 차이 — ${why.reason}`, p?.name||key, `${d>0?"+":""}${fmt(d)}EA → ${fmt(a)}EA${why.note?` · ${why.note}`:""}`); }
     return r;
   }
   return MES_ERR("bean_total_not_allowed",
@@ -12203,9 +12245,10 @@ async function applyAllStock(){
       (diffs.length>8?`\n… 외 ${diffs.length-8}건`:"") +
       `\n\n숫자를 덮어쓰지 않고 차이만큼 조정 수불이 남습니다.`,
       {title:"재고 실측 반영", yes:"모두 반영"}))) return;
+  const why = await cntReasonDialog("cfe", diffs.map(r=>({ key:r.key, name:r.name, app:r.app, act:r.act, unit:"EA" }))); if (!why) return;
   let done = 0, fail = [];
   for (const r of diffs) {
-    const res = await applyOne(r.key);
+    const res = await applyOne(r.key, why[r.key]);
     if (res && res.ok) done++; else fail.push(`${r.name} — ${res?.message||"실패"}`);
   }
   renderAll();
@@ -12581,13 +12624,19 @@ function renderLossBatch(lo, hi){
   const inR = d => r==="all" || (r==="tm" && monthKey(d)===tm) || (r==="lm" && monthKey(d)===lm);
   const rows = DB.mms.filter(m=>inR(m.roast_date)).map(m=>{
     const cs = CONSL().filter(c=>c.mms_id===m.id), used = cs.reduce((s,c)=>s+Number(c.used_kg||0),0);
-    const other = DB.usages.filter(u=>useLive(u) && u.mms_id===m.id).reduce((s,u)=>s+Number(u.kg||0),0);
-    const left = Number(m.stock_kg||0), inKg = Math.round((left + used + other)*1000)/1000;
+    const us = DB.usages.filter(u=>useLive(u) && u.mms_id===m.id);
+    const other = us.filter(u=>!CNT_LOSS_REASONS.includes(u.reason)).reduce((s,u)=>s+Number(u.kg||0),0);
+    const lossUse = us.filter(u=>CNT_LOSS_REASONS.includes(u.reason)).reduce((s,u)=>s+Number(u.kg||0),0);   // 생산 외 사용 중 로스·폐기·원인불명
+    /* 실측 차이 — 이유가 로스·폐기·원인불명이면 로스, 세다 틀림·입고 누락이면 장부 정정(입고에 반영) */
+    const cm = (DB.stock_moves||[]).filter(x=>x.mms_id===m.id && x.ref_type==="count");
+    const cntLoss = -cm.filter(x=>Number(x.qty)<0 && CNT_LOSS_REASONS.some(k=>String(x.note||"").includes(`[${k}]`))).reduce((s,x)=>s+Number(x.qty||0),0);
+    const cntFix  = cm.filter(x=>!(Number(x.qty)<0 && CNT_LOSS_REASONS.some(k=>String(x.note||"").includes(`[${k}]`)))).reduce((s,x)=>s+Number(x.qty||0),0);
+    const left = Number(m.stock_kg||0), inKg = Math.round((left + used + other + lossUse + cntLoss - cntFix)*1000)/1000;
     let out = 0; cs.forEach(c=>{ const l = DB.logs.find(x=>x.id===c.log_id); if (!l || !logLive(l)) return; const p = prodById(l.product_id); if (!p) return;
       const tot = CONSL().filter(x=>x.log_id===l.id).reduce((s,x)=>s+Number(x.used_kg||0),0) || Number(c.used_kg||0);
       out += stdKg(p, l.qty_ea) * Number(c.used_kg||0) / tot; });
     out = Math.round(out*1000)/1000;
-    const loss = Math.round((inKg - out - other - left)*1000)/1000, pct = inKg > 0 ? Math.round(loss/inKg*10000)/100 : 0;
+    const loss = Math.round((inKg - out - other - left)*1000)/1000, pct = inKg > 0 ? Math.round(loss/inKg*10000)/100 : 0;   // 로스 = 생산 로스 + 로스·폐기·원인불명 (실측 차이 포함)
     const done = left <= 0.0005 && used > 0;
     return { m, inKg, used, other, left, out, loss, pct, done, n:new Set(cs.map(c=>c.log_id)).size };
   }).filter(x=>x.inKg > 0).sort((a,b)=>String(b.m.roast_date).localeCompare(String(a.m.roast_date)) || (Number(b.m.batch)||0)-(Number(a.m.batch)||0));
@@ -12595,7 +12644,7 @@ function renderLossBatch(lo, hi){
   tbl("lossBatch", ["로스팅","봉지(배치)","원두","입고(kg)","생산에 씀(kg)","정상 생산(kg)","생산 외(kg)","봉지에 남음(kg)","로스(kg)","로스율","상태"],
     rows.map(x=>`<tr><td class="c">${x.m.roast_date||"—"}</td><td class="l"><b>${batchLabel(x.m)}</b></td><td class="l">${x.m.bean||""}</td>
       <td>${fmt(x.inKg)}</td><td>${fmt(x.used)}${x.n?`<br><span class="hint" style="padding:0;font-size:11px">${x.n}건</span>`:""}</td><td>${fmt(x.out)}</td><td>${x.other?fmt(x.other):"—"}</td><td>${fmt(x.left)}</td>
-      <td class="${col(x)}"><b>${x.done ? fmt(x.loss) : "—"}</b></td><td class="${col(x)}"><b>${x.done ? x.pct+"%" : "—"}</b></td>
+      <td class="${col(x)}"><b>${x.done ? fmt(x.loss) : (Math.abs(x.loss)>0.0005 ? `<span class="hint" style="padding:0" title="아직 쓰는 중 — 지금까지의 로스(실측 차이 포함)">${fmt(x.loss)}</span>` : "—")}</b></td><td class="${col(x)}"><b>${x.done ? x.pct+"%" : "—"}</b></td>
       <td class="c" style="white-space:nowrap">${x.done ? `<span class="tag ${col(x)==="bad"?"bad":"ok"}">${col(x)==="bad"?"기준 벗어남":"정상"}</span>` : x.used>0 ? `<span class="tag warn">쓰는 중 (${fmt(x.left)}kg 남음)</span>${isManager()?` <button class="btn" style="height:26px;padding:0 8px" onclick="emptyBagToLog('${x.m.id}')" title="옛 방식으로 완료된 생산 — 남은 kg 를 마지막 생산에서 다 쓴 것으로 넣어 입고 기준 로스로 맞춤">봉지 비움</button>`:""}` : `<span class="tag">아직 안 씀</span>`}</td></tr>`),
     rows.length ? `<td colspan="3" class="c">합계 ${rows.length}봉지 · 남은 kg 가 있는 옛 생산은 [봉지 비움]으로 정정</td><td>${fmt(rows.reduce((s,x)=>s+x.inKg,0))}</td><td>${fmt(rows.reduce((s,x)=>s+x.used,0))}</td><td>${fmt(rows.reduce((s,x)=>s+x.out,0))}</td><td>${fmt(rows.reduce((s,x)=>s+x.other,0))}</td><td>${fmt(rows.reduce((s,x)=>s+x.left,0))}</td><td colspan="3">비운 봉지 로스 ${fmt(rows.filter(x=>x.done).reduce((s,x)=>s+x.loss,0))}kg</td>` : undefined);
 }
@@ -17722,29 +17771,36 @@ function renderCount(){
         <td class="c">${has && d ? `<button class="btn primary" style="height:34px" onclick="cntApplyOne('${r.key}')">반영</button>` : ""}</td></tr>`; }),
     rows.length ? `<td colspan="2" class="c">합 계 · ${rows.length}항목</td><td><b>${fmt(rows.reduce((s,r)=>s+r.app,0))}</b></td><td>${ent.length?`<b>${fmt(ent.reduce((s,r)=>s+r.act,0))}</b>`:""}</td><td colspan="3"></td>` : null);
 }
-async function cntApplyRow(r){
-  if (cntType === "cfe")
-    return mesCountProductStock({ product_id:r.key, counted:Number(r.act), date:today(), note:"재고 세기 반영", idem:`cnt-${r.key}-${uid()}` });
-  const d = r.act - r.app; if (!d) return { ok:true };
+async function cntApplyRow(r, why){
+  const d = Math.round((r.act - r.app)*1000)/1000;
+  if (cntType === "cfe") {
+    const res = await mesCountProductStock({ product_id:r.key, counted:Number(r.act), date:today(), note:cntNoteOf(why, "재고 세기 반영"), idem:`cnt-${r.key}-${uid()}` });
+    if (res && res.ok && why && d) logAudit(/오출고/.test(why.reason) ? "완제품 오출고 (재고 세기)" : `완제품 실측 차이 — ${why.reason}`, r.name, `${d>0?"+":""}${fmt(d)}EA → ${fmt(r.act)}EA${why.note?` · ${why.note}`:""}`);
+    return res;
+  }
+  if (!d) return { ok:true };
   const M = matById(r.key);
-  const res = await mesMoveMaterial({ material_id:r.key, kind:"조정", qty:d, note:`재고 세기 ${fmt(r.act)}${r.unit} (장부 ${fmt(r.app)}${r.unit})`, idem:`cnt-${r.key}-${uid()}` });
-  if (res && res.ok && M) logAudit(`${M.kind} 조정`, M.name, `${d>0?"+":""}${fmt(d)}${r.unit} → ${fmt(r.act)}${r.unit}`);
+  const res = await mesMoveMaterial({ material_id:r.key, kind:"조정", qty:d, note:cntNoteOf(why, `재고 세기 ${fmt(r.act)}${r.unit} (장부 ${fmt(r.app)}${r.unit})`), idem:`cnt-${r.key}-${uid()}` });
+  if (res && res.ok && M) logAudit(`${M.kind} 조정${why?` — ${why.reason}`:""}`, M.name, `${d>0?"+":""}${fmt(d)}${r.unit} → ${fmt(r.act)}${r.unit}${why?.note?` · ${why.note}`:""}`);
   return res;
 }
 async function cntApplyOne(key){
   if (!(await requireUser())) return;
   const r = cntRows().find(x=>x.key===key); if (!r || r.act == null) return;
-  const res = await cntApplyRow(r);
+  let why = null;
+  if (r.act !== r.app) { const w = await cntReasonDialog(cntType === "cfe" ? "cfe" : "mat", [r]); if (!w) return; why = w[r.key]; }
+  const res = await cntApplyRow(r, why);
   if (!res || !res.ok) { renderAll(); return toast(res?.message || "반영하지 못했습니다"); }
-  cntPut(cntType, key, null); renderAll(); toast(`${r.name} → ${fmt(r.act)}${r.unit} 반영`);
+  cntPut(cntType, key, null); renderAll(); toast(`${r.name} → ${fmt(r.act)}${r.unit} 반영${why?` — ${why.reason}`:""}`);
 }
 async function cntApplyAll(){
   if (!(await requireUser())) return;
   const diffs = cntRows().filter(r=>r.act != null && r.act !== r.app);
   if (!diffs.length) return toast("차이 나는 항목이 없습니다");
   if (!(await ask(`${diffs.length}건의 장부를 센 수량으로 고칩니다:\n` + diffs.slice(0,8).map(r=>`· ${r.name}  ${fmt(r.app)} → ${fmt(r.act)} (${r.act-r.app>0?"+":""}${fmt(r.act-r.app)})`).join("\n") + (diffs.length>8?`\n… 외 ${diffs.length-8}건`:"") + `\n\n조정 이력에 ${CURRENT_USER} 이름으로 남습니다.`, { title:"차이 전체 반영", yes:`${diffs.length}건 반영` }))) return;
+  const why = await cntReasonDialog(cntType === "cfe" ? "cfe" : "mat", diffs); if (!why) return;
   let ok = 0, fail = [];
-  for (const r of diffs) { const res = await cntApplyRow(r); if (res && res.ok) { ok++; cntPut(cntType, r.key, null); } else fail.push(r.name); }
+  for (const r of diffs) { const res = await cntApplyRow(r, why[r.key]); if (res && res.ok) { ok++; cntPut(cntType, r.key, null); } else fail.push(r.name); }
   /* 일치한 것도 입력을 비운다 — 다음 날 헷갈리지 않게 */
   cntRows().filter(r=>r.act != null && r.act === r.app).forEach(r=>cntPut(cntType, r.key, null));
   renderAll(); toast(fail.length ? `${ok}건 반영 · 실패 ${fail.length}건 (${fail.slice(0,2).join(", ")})` : `${ok}건 반영했습니다`);
