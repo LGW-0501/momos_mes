@@ -6654,6 +6654,7 @@ renderFavs();
 
 /* ══ 업데이트 내역 — 어디에 뭘 바꿨는지 (최근 것이 위) ══ */
 const CHANGELOG = [
+  ["2026-10-30", "생산계획 ↔ 현장 작업지시 맞추기", "계획(집계+여유분·손으로 고친 값)과 그날 작업지시 수량이 다르면 생산계획·현장 작업 위에 \"계획과 다른 대기 지시 N건\" 띠 + [현장 지시 계획에 맞추기] — 계획에서 빠진 품목의 대기 지시는 빼고, 수량이 달라진 대기 지시는 계획 수량으로(대기 지시가 한 장일 때 · 여럿이면 알려만 줌) · 시작한 지시는 안 건드림 · 집계 줄·차수를 지우면 바로 \"현장 지시도 맞출까요?\" · 변경이력에 남김"],
   ["2026-10-30", "이력추적 › 품목 고르기 · 전체 선택", "위에 [품목] 선택 — 고르면 검색어 없이도 그 품목의 생산 전부(최근 것부터)와 그 생산이 쓴 배치가 나옴 · 검색어와 같이 쓰면 그 품목 안에서만 찾음 · 시스템 관리자에게는 \"찾은 N건 전체 선택\" 체크가 생겨 한 번에 고른 뒤 [선택한 기록 지우기]"],
   ["2026-10-30", "이력추적 › 골라서 지우기 (시스템 관리자만)", "찾은 생산·배치마다 체크 → [선택한 기록 지우기] 한 번에 · 생산을 먼저 지우고 배치는 뒤에(같이 고른 생산이 쓴 배치는 함께 지워짐) · 살아 있는 실적은 먼저 취소해 재고 되돌린 뒤 · \"초기화\" 입력 · 변경이력에 남김 · [이 기록 지우기]·체크박스는 시스템 관리자 계정에만 보임 (현장 관리자·일반 관리자에게는 안 보임)"],
   ["2026-10-30", "로스관리 › 배치 표 › [봉지 비움] (055 SQL)", "옛 방식으로 완료돼 봉지에 kg 가 남아 있는 생산 — 관리자가 [봉지 비움]을 누르면 남은 kg 를 그 생산(마지막으로 쓴 것)의 사용분으로 넣고 배치 재고 0 · 투입 kg 올리고 로스 다시 계산 · 실적·상자 번호·검수는 그대로 · 변경이력에 남김"],
@@ -7779,7 +7780,7 @@ function renderPlan(){
     const bt = PRODS().reduce((t,p)=>t+planCalc(p, tallyDay()).buf, 0);
     set("buf", `여유분${bt ? ` <span style="opacity:.8">· 오늘 +${fmt(bt)}EA</span>` : ""}`);
   })();
-  if ($("planMode")) $("planMode").innerHTML = (manN
+  if ($("planMode")) $("planMode").innerHTML = planSyncBar(tallyDay()) + " " + (manN
     ? `<span class="tag warn">손으로 고친 품목 ${manN}건</span>`
     : `<span class="tag ok">전체 자동배분</span>`) +
     ` <button class="btn ${planSplit?"primary":""}" style="margin-left:8px"
@@ -8985,6 +8986,7 @@ async function delTally(id){
   if (t.product_id in planEA) delete planEA[t.product_id];
   logAudit("집계 삭제", `${t.date} ${t.round}`, `${t.product_name} ${fmt(t.qty)}EA`);
   renderAll(); toast("집계 줄을 지웠습니다");
+  planSyncAfterDelete(t.date);
 }
 async function clearRound(round){
   if (!(await requireUser())) return;
@@ -8997,6 +8999,7 @@ async function clearRound(round){
   DB.tallies = DB.tallies.filter(t=>!(t.date===d && t.round===round));
   logAudit("집계 삭제", `${d} ${round}`, `${rows.length}건`);
   renderAll(); toast(`${round} 집계를 지웠습니다`);
+  planSyncAfterDelete(d);
 }
 /* 계획을 손으로 고쳐 둔 것을 집계 기준으로 되돌린다 */
 function backToTally(){
@@ -15256,6 +15259,62 @@ const qcOK = o => QC_ITEMS.every(([k])=>o.qc && o.qc[k]);
 const stIdx = o => Math.max(0, WOST.indexOf(o.status||"대기"));
 const pctOf = o => { const q=Number(o.qty_plan||0); return q>0 ? Math.min(100, Math.round(Number(o.qty_done||0)/q*100)) : 0; };
 
+/* ══ 생산계획 ↔ 현장 작업지시 맞추기 (Lee 2026-10-30) ══
+   "생산계획에서 삭제했는데 작업현장에서는 그대로 — 서로 연동"
+   계획 목표(집계 + 여유분, 손으로 고친 값) 와 그날 작업지시 수량 합을 비교한다.
+   · 계획에서 빠진 품목의 "대기" 지시 → 뺀다 (시작한 것은 못 뺌 — 현장이 처리)
+   · 수량이 달라진 품목의 "대기" 지시 → 계획 수량에 맞춘다 (대기 지시가 하나일 때만 · 여럿이면 알려만 줌)
+   집계 줄을 지우거나 차수를 지우면 바로 묻고, 평소에는 생산계획·현장 작업 위에 띠로 알려 준다 */
+function planOrderDiff(d){
+  d = d || tallyDay();
+  const gone = [], changed = [], many = [];
+  const ords = ordsOf(d).filter(o=>o.status !== "폐기");
+  const byP = {}; ords.forEach(o=>{ (byP[o.product_id] = byP[o.product_id]||[]).push(o); });
+  Object.entries(byP).forEach(([pid, list])=>{
+    const p = prodById(pid); if (!p) return;
+    const target = (pid in planEA ? Number(planEA[pid]||0) : planCalc(p, d).total) + madeQty(pid, d);   // 계획 목표 (이미 만든 것 포함)
+    const sum = list.reduce((s,o)=>s+Number(o.qty_plan||0),0);
+    const wait = list.filter(o=>o.status === "대기");
+    if (Math.round(target) === Math.round(sum)) return;
+    if (target <= 0) { if (wait.length) gone.push(...wait); return; }
+    const diff = Math.round(target - sum);
+    if (!wait.length) return;                       // 전부 시작/완료됨 — 현장이 알아서
+    if (wait.length === 1) { const o = wait[0], q = Number(o.qty_plan||0) + diff; if (q <= 0) gone.push(o); else changed.push({ o, p, from:Number(o.qty_plan||0), to:q }); }
+    else many.push({ p, diff, n:wait.length });
+  });
+  return { d, gone, changed, many, n: gone.length + changed.length + many.length };
+}
+function planSyncBar(d){
+  if (!can("plan")) return "";
+  const D = planOrderDiff(d); if (!D.n) return "";
+  return `<span class="tag warn" style="font-size:12.5px">계획과 다른 대기 지시 ${D.n}건${D.gone.length?` · 빠질 것 ${D.gone.length}`:""}${D.changed.length?` · 수량 바꿀 것 ${D.changed.length}`:""}${D.many.length?` · 손으로 볼 것 ${D.many.length}`:""}</span> <button class="btn primary" style="height:28px" onclick="syncOrdersToPlan('${D.d}')">현장 지시 계획에 맞추기</button>`;
+}
+async function syncOrdersToPlan(d){
+  if (!(await requireUser())) return;
+  if (!can("plan")) return deny("plan");
+  const D = planOrderDiff(d);
+  if (!D.n) return toast("현장 지시가 계획과 같습니다");
+  const nm = o => `${o.order_no||""} ${o.product_name||prodById(o.product_id)?.name||""} ${fmt(o.qty_plan)}EA${o.machine?` · ${o.machine}`:""}`;
+  const msg = `${D.d} 현장 대기 지시를 생산계획에 맞춥니다.\n\n` +
+    (D.gone.length ? `빼는 지시 ${D.gone.length}건 (계획에서 빠짐):\n${D.gone.slice(0,8).map(o=>"· "+nm(o)).join("\n")}${D.gone.length>8?`\n… 외 ${D.gone.length-8}건`:""}\n\n` : "") +
+    (D.changed.length ? `수량 바꾸는 지시 ${D.changed.length}건:\n${D.changed.slice(0,8).map(x=>`· ${nm(x.o)} → ${fmt(x.to)}EA`).join("\n")}${D.changed.length>8?`\n… 외 ${D.changed.length-8}건`:""}\n\n` : "") +
+    (D.many.length ? `손으로 봐야 할 품목 ${D.many.length} (대기 지시가 여러 장이라 어디를 고칠지 못 정함):\n${D.many.map(x=>`· ${x.p.name} — 계획과 ${x.diff>0?"+":""}${fmt(x.diff)}EA 차이, 대기 ${x.n}장`).join("\n")}\n\n` : "") +
+    `이미 시작한 지시는 건드리지 않습니다.`;
+  if (!(await ask(msg, { title:"현장 지시 계획에 맞추기", yes:"맞추기", danger:!!D.gone.length }))) return;
+  let ok = 0; const fail = [];
+  for (const o of D.gone) { const r = await mesDeleteOrder({ order_id:o.id, idem:`od-${o.id}-${uid()}` }); if (r && r.ok) ok++; else fail.push(`${nm(o)} — ${r?.message||"오류"}`); }
+  for (const x of D.changed) { const r = await mesEditOrder({ order_id:x.o.id, patch:{ qty_plan:x.to }, idem:`oq-${x.o.id}-${uid()}` }); if (r && r.ok) { x.o.qty_plan = x.to; ok++; } else fail.push(`${nm(x.o)} — ${r?.message||"오류"}`); }
+  logAudit("현장 지시 계획에 맞춤", D.d, `뺌 ${D.gone.length} · 수량 변경 ${D.changed.length}${fail.length?` · 실패 ${fail.length}`:""}`);
+  if (sb) await Promise.all([pullWhere("orders","work_date",D.d)]).catch(()=>{});
+  renderAll();
+  if (fail.length) return ask(`${ok}건 맞춤 · ${fail.length}건 실패\n\n${fail.slice(0,8).join("\n")}`, { title:"맞추기 결과", yes:"확인", only:true });
+  toast(`현장 지시 ${ok}건을 계획에 맞췄습니다${D.many.length?` · ${D.many.length}품목은 손으로 봐 주세요`:""}`);
+}
+/* 집계를 지운 직후 — 현장에 대기 지시가 남으면 바로 묻는다 */
+async function planSyncAfterDelete(d){
+  const D = planOrderDiff(d); if (!D.gone.length && !D.changed.length) return;
+  if (await ask(`현장에 이 계획으로 낸 대기 지시가 ${D.gone.length + D.changed.length}건 있습니다.\n현장 지시도 같이 맞출까요?`, { title:"현장 지시도 맞추기", yes:"맞추기" })) await syncOrdersToPlan(d);
+}
 /* ── 생산계획 → 작업지시 자동 생성 ──
    계획에서 잡은 품목·수량·설비를 그대로 지시로 옮긴다 (다시 입력하지 않는다) */
 /* 생산계획에서 나눠 주기 전에 만든 지시(배치가 여러 개 묶인 것)를 지금 나눈다.
@@ -16589,7 +16648,7 @@ function renderWork(){
   /* 기계 고르는 버튼 — 현장은 자기 기계만 본다 */
   const mixedAll = all.filter(o=>isMixedOrder(o) && o.status==="대기");
   const canEdit = can("plan") && all.some(o=>o.status==="대기");
-  $("wkMachBtn").innerHTML =
+  $("wkMachBtn").innerHTML = planSyncBar(d) +
     (canEdit ? `<button class="btn ${wkLabelEdit?"primary":""}" onclick="setWkLabelEdit()">라벨 바꾸기</button>` : "") +
     (canEdit ? `<button class="btn" onclick="sortOrdersBySpec($('wkDate').value||today())"
        title="기계마다 규격순으로 순서를 한 번에 다시 매깁니다">규격순 정렬 (${specDir()==="asc"?"100g→1kg":"1kg→100g"})</button>` : "") +
